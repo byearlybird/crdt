@@ -1,4 +1,4 @@
-import { createClock, type JsonDocument } from "../core";
+import { createClock, type StarlingDocument } from "../core";
 import {
 	type Collection,
 	type CollectionWithInternals,
@@ -60,7 +60,7 @@ export type Database<Schemas extends SchemasMap> = Collections<Schemas> & {
 	begin<R>(callback: (tx: TransactionContext<Schemas>) => R): R;
 	query<R>(callback: (ctx: QueryContext<Schemas>) => R): QueryHandle<R>;
 	toDocuments(): {
-		[K in keyof Schemas]: JsonDocument<
+		[K in keyof Schemas]: StarlingDocument<
 			StandardSchemaV1.InferOutput<Schemas[K]>
 		>;
 	};

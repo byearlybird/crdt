@@ -1,6 +1,6 @@
 import {
 	deleteResource,
-	type JsonDocument,
+	type StarlingDocument,
 	makeResource,
 	mapToDocument,
 	mergeDocuments,
@@ -50,8 +50,8 @@ export type Collection<T extends AnyObjectSchema> = {
 	add(item: StandardSchemaV1.InferInput<T>): InferData<T>;
 	update(id: string, updates: Partial<StandardSchemaV1.InferInput<T>>): void;
 	remove(id: string): void;
-	merge(document: JsonDocument<InferData<T>>): void;
-	toDocument(): JsonDocument<InferData<T>>;
+	merge(document: StarlingDocument<InferData<T>>): void;
+	toDocument(): StarlingDocument<InferData<T>>;
 	on(
 		event: "mutation",
 		handler: (payload: CollectionMutationEvent<InferData<T>>) => void,
@@ -294,7 +294,7 @@ export function createCollection<T extends AnyObjectSchema>(
 		},
 
 		toDocument() {
-			return mapToDocument(data, getEventstamp());
+			return mapToDocument(name, data, getEventstamp());
 		},
 
 		on(event, handler) {

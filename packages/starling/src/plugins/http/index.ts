@@ -1,4 +1,4 @@
-import type { AnyObject, JsonDocument } from "../../core";
+import type { AnyObject, StarlingDocument } from "../../core";
 import type { Database, DatabasePlugin } from "../../database/db";
 import type { StandardSchemaV1 } from "../../database/standard-schema";
 import type { SchemasMap } from "../../database/types";
@@ -10,7 +10,7 @@ export type RequestContext<T extends AnyObject = AnyObject> = {
 	collection: string;
 	operation: "GET" | "PATCH";
 	url: string;
-	document?: JsonDocument<T>; // Present for PATCH operations
+	document?: StarlingDocument<T>; // Present for PATCH operations
 };
 
 /**
@@ -18,14 +18,14 @@ export type RequestContext<T extends AnyObject = AnyObject> = {
  */
 export type RequestHookResult<T extends AnyObject = AnyObject> =
 	| { skip: true }
-	| { headers?: Record<string, string>; document?: JsonDocument<T> }
+	| { headers?: Record<string, string>; document?: StarlingDocument<T> }
 	| undefined;
 
 /**
  * Result returned by the onResponse hook
  */
 export type ResponseHookResult<T extends AnyObject = AnyObject> =
-	| { document: JsonDocument<T> }
+	| { document: StarlingDocument<T> }
 	| { skip: true }
 	| undefined; // Use original document
 
@@ -67,7 +67,7 @@ export type HttpPluginConfig<_Schemas extends SchemasMap> = {
 	 */
 	onResponse?: <T extends AnyObject>(context: {
 		collection: string;
-		document: JsonDocument<T>;
+		document: StarlingDocument<T>;
 	}) => ResponseHookResult<T>;
 
 	/**
@@ -288,7 +288,7 @@ async function fetchCollection<Schemas extends SchemasMap>(
 	onResponse:
 		| (<T extends AnyObject>(context: {
 				collection: string;
-				document: JsonDocument<T>;
+				document: StarlingDocument<T>;
 		  }) => ResponseHookResult<T>)
 		| undefined,
 	enableRetry: boolean,
@@ -330,7 +330,7 @@ async function fetchCollection<Schemas extends SchemasMap>(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const document = (await response.json()) as JsonDocument<
+		const document = (await response.json()) as StarlingDocument<
 			StandardSchemaV1.InferOutput<Schemas[typeof collectionName]>
 		>;
 
@@ -377,7 +377,7 @@ async function pushCollection<Schemas extends SchemasMap>(
 	onResponse:
 		| (<T extends AnyObject>(context: {
 				collection: string;
-				document: JsonDocument<T>;
+				document: StarlingDocument<T>;
 		  }) => ResponseHookResult<T>)
 		| undefined,
 	maxAttempts = 3,
@@ -428,7 +428,7 @@ async function pushCollection<Schemas extends SchemasMap>(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const responseDocument = (await response.json()) as JsonDocument<
+		const responseDocument = (await response.json()) as StarlingDocument<
 			StandardSchemaV1.InferOutput<Schemas[typeof collectionName]>
 		>;
 

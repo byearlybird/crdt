@@ -35,8 +35,8 @@ describe("ResourceMap", () => {
 				MIN_EVENTSTAMP,
 			);
 			const map = new Map([
-				[doc1.id, doc1],
-				[doc2.id, doc2],
+				[doc1.id, doc1},
+				[doc2.id, doc2},
 			]);
 
 			const crdt = createMap<{ name: string }>("items", map);
@@ -86,8 +86,8 @@ describe("ResourceMap", () => {
 			const crdt = createMap<{ name: string }>(
 				"items",
 				new Map([
-					[doc1.id, doc1],
-					[doc2.id, doc2],
+					[doc1.id, doc1},
+					[doc2.id, doc2},
 				]),
 			);
 
@@ -242,8 +242,8 @@ describe("ResourceMap", () => {
 			const crdt = createMap(
 				"items",
 				new Map([
-					[doc1.id, doc1],
-					[doc2.id, doc2],
+					[doc1.id, doc1},
+					[doc2.id, doc2},
 				]),
 			);
 
@@ -285,12 +285,13 @@ describe("ResourceMap", () => {
 	describe("fromSnapshot", () => {
 		test("creates ResourceMap from collection", () => {
 			const collection: Document<AnyObject> = {
-				jsonapi: { version: "1.1" },
-				meta: { latest: "2025-01-01T00:00:00.000Z|0001|abcd" },
-				data: [
+				version: "1.0",
+			type: "items",
+				latest: "2025-01-01T00:00:00.000Z|0001|abcd",,
+				resources: {
 					makeResource("items", "id1", { name: "Alice" }, MIN_EVENTSTAMP),
 					makeResource("items", "id2", { name: "Bob" }, MIN_EVENTSTAMP),
-				],
+				},
 			};
 
 			const crdt = createMapFromDocument<{ name: string }>(
@@ -315,9 +316,10 @@ describe("ResourceMap", () => {
 			deletedDoc.meta.deletedAt = "2025-01-01T00:00:01.000Z|0001|abcd";
 
 			const collection: Document<AnyObject> = {
-				jsonapi: { version: "1.1" },
-				meta: { latest: "2025-01-01T00:00:01.000Z|0001|abcd" },
-				data: [deletedDoc],
+				version: "1.0",
+			type: "items",
+				latest: "2025-01-01T00:00:01.000Z|0001|abcd",,
+				resources: {deletedDoc},
 			};
 
 			const crdt = createMapFromDocument<{ name: string }>(
@@ -415,9 +417,10 @@ describe("ResourceMap", () => {
 	describe("clock forwarding", () => {
 		test("clock forwards when loading newer eventstamp", () => {
 			const collection: Document<AnyObject> = {
-				jsonapi: { version: "1.1" },
-				meta: { latest: "2025-01-01T00:00:10.000Z|0001|abcd" },
-				data: [],
+				version: "1.0",
+			type: "items",
+				latest: "2025-01-01T00:00:10.000Z|0001|abcd",,
+				resources: {},
 			};
 
 			const restored = createMapFromDocument<{ name: string }>(
@@ -439,9 +442,10 @@ describe("ResourceMap", () => {
 			crdt.set("id1", { name: "Alice" });
 
 			const remoteCollection: Document<AnyObject> = {
-				jsonapi: { version: "1.1" },
+				version: "1.0",
+			type: "items",
 				meta: { latest: MIN_EVENTSTAMP },
-				data: [makeResource("items", "id2", { name: "Bob" }, MIN_EVENTSTAMP)],
+				resources: {makeResource("items", "id2", { name: "Bob" }, MIN_EVENTSTAMP)},
 			};
 
 			const result = crdt.merge(remoteCollection);
@@ -474,9 +478,10 @@ describe("ResourceMap", () => {
 			// Create a remote document with a newer eventstamp for one field
 			const laterEventstamp = "2025-01-01T00:00:05.000Z|0001|efgh";
 			const remoteCollection: Document<AnyObject> = {
-				jsonapi: { version: "1.1" },
+				version: "1.0",
+			type: "items",
 				meta: { latest: laterEventstamp },
-				data: [makeResource("items", "id1", { age: 31 }, laterEventstamp)],
+				resources: {makeResource("items", "id1", { age: 31 }, laterEventstamp)},
 			};
 
 			const result = crdt.merge(remoteCollection);
@@ -504,9 +509,10 @@ describe("ResourceMap", () => {
 			deletedDoc.meta.deletedAt = deletionEventstamp;
 
 			const remoteCollection: Document<AnyObject> = {
-				jsonapi: { version: "1.1" },
+				version: "1.0",
+			type: "items",
 				meta: { latest: deletionEventstamp },
-				data: [deletedDoc],
+				resources: {deletedDoc},
 			};
 
 			const result = crdt.merge(remoteCollection);
@@ -528,9 +534,10 @@ describe("ResourceMap", () => {
 			);
 			const futureEventstamp = "2025-01-01T00:00:10.000Z|0001|abcd";
 			const remoteCollection: Document<AnyObject> = {
-				jsonapi: { version: "1.1" },
+				version: "1.0",
+			type: "items",
 				meta: { latest: futureEventstamp },
-				data: [],
+				resources: {},
 			};
 
 			const result = crdt.merge(remoteCollection);
@@ -551,16 +558,17 @@ describe("ResourceMap", () => {
 			crdt.set("id1", { name: "Alice", age: 30 });
 
 			const remoteCollection: Document<AnyObject> = {
-				jsonapi: { version: "1.1" },
+				version: "1.0",
+			type: "items",
 				meta: { latest: MIN_EVENTSTAMP },
-				data: [
+				resources: {
 					makeResource(
 						"items",
 						"id2",
 						{ name: "Bob", age: 25 },
 						MIN_EVENTSTAMP,
 					),
-				],
+				},
 			};
 
 			crdt.merge(remoteCollection);
@@ -587,9 +595,10 @@ describe("ResourceMap", () => {
 			const crdt = createMap("items", new Map([["id1", localDoc]]));
 			const olderEventstamp = "2025-01-01T00:00:05.000Z|0001|efgh";
 			const remoteCollection: Document<AnyObject> = {
-				jsonapi: { version: "1.1" },
+				version: "1.0",
+			type: "items",
 				meta: { latest: olderEventstamp },
-				data: [makeResource("items", "id1", { name: "Bob" }, olderEventstamp)],
+				resources: {makeResource("items", "id1", { name: "Bob" }, olderEventstamp)},
 			};
 
 			crdt.merge(remoteCollection);

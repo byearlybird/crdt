@@ -74,12 +74,11 @@ export function computeResourceLatest(
  * Resource object structure representing a single stored entity.
  * Resources are the primary unit of storage and synchronization in Starling.
  *
- * Each resource has a type, unique identifier, attributes containing the data,
+ * Each resource has a unique identifier, attributes containing the data,
  * and metadata for tracking deletion state and eventstamps.
+ * The resource type is stored at the document level.
  */
 export type ResourceObject<T extends AnyObject> = {
-	/** Resource type identifier */
-	type: string;
 	/** Unique identifier for this resource */
 	id: string;
 	/** The resource's data as a nested object structure */
@@ -96,7 +95,6 @@ export type ResourceObject<T extends AnyObject> = {
 };
 
 export function makeResource<T extends AnyObject>(
-	type: string,
 	id: string,
 	obj: T,
 	eventstamp: string,
@@ -127,7 +125,6 @@ export function makeResource<T extends AnyObject>(
 	const latest = computeResourceLatest(eventstamps, deletedAt, eventstamp);
 
 	return {
-		type,
 		id,
 		attributes: obj,
 		meta: {
@@ -211,7 +208,6 @@ export function mergeResources<T extends AnyObject>(
 			: dataLatest;
 
 	return {
-		type: into.type,
 		id: into.id,
 		attributes: resultAttributes as T,
 		meta: {
@@ -233,7 +229,6 @@ export function deleteResource<T extends AnyObject>(
 	const latest = eventstamp > dataLatest ? eventstamp : dataLatest;
 
 	return {
-		type: resource.type,
 		id: resource.id,
 		attributes: resource.attributes,
 		meta: {

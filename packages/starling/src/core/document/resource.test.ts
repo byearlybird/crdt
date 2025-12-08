@@ -8,28 +8,24 @@ import {
 
 test("makeResource creates EncodedDocument with null deletedAt", () => {
 	const result = makeResource(
-		"users",
 		"user-1",
 		{ name: "Alice", age: 30 },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
 
 	expect(result.id).toBe("user-1");
-	expect(result.type).toBe("users");
 	expect(result.meta.deletedAt).toBe(null);
 	expect(result.attributes).toBeDefined();
 });
 
 test("makeResource with id", () => {
 	const result = makeResource(
-		"users",
 		"user-2",
 		{ name: "Bob", email: "bob@example.com" },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
 
 	expect(result.id).toBe("user-2");
-	expect(result.type).toBe("users");
 	expect(result.meta.deletedAt).toBe(null);
 	expect(result.attributes).toBeDefined();
 });
@@ -38,10 +34,10 @@ test("mergeResources both deleted - keeps greater timestamp", () => {
 	const eventstamp1 = "2025-01-01T00:00:00.000Z|0000|a1b2";
 	const eventstamp2 = "2025-01-02T00:00:00.000Z|0000|c3d4";
 
-	const doc1 = makeResource("items", "doc-1", { name: "Alice" }, eventstamp1);
+	const doc1 = makeResource("doc-1", { name: "Alice" }, eventstamp1);
 	doc1.meta.deletedAt = "2025-01-01T12:00:00.000Z|0001|g7h8";
 
-	const doc2 = makeResource("items", "doc-2", { name: "Bob" }, eventstamp2);
+	const doc2 = makeResource("doc-1", { name: "Bob" }, eventstamp2);
 	doc2.meta.deletedAt = "2025-01-02T12:00:00.000Z|0002|i9j0";
 
 	const merged = mergeResources(doc1, doc2);
@@ -51,17 +47,13 @@ test("mergeResources both deleted - keeps greater timestamp", () => {
 });
 
 test("mergeResources both deleted - keeps greater timestamp (reverse order)", () => {
-	const doc1 = makeResource(
-		"items",
-		"doc-1",
+	const doc1 = makeResource("doc-1",
 		{ name: "Alice" },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
 	doc1.meta.deletedAt = "2025-01-02T12:00:00.000Z|0002|i9j0";
 
-	const doc2 = makeResource(
-		"items",
-		"doc-2",
+	const doc2 = makeResource("doc-2",
 		{ name: "Bob" },
 		"2025-01-02T00:00:00.000Z|0000|c3d4",
 	);
@@ -74,17 +66,13 @@ test("mergeResources both deleted - keeps greater timestamp (reverse order)", ()
 });
 
 test("mergeResources one deleted - keeps the deleted one", () => {
-	const doc1 = makeResource(
-		"items",
-		"doc-1",
+	const doc1 = makeResource("doc-1",
 		{ name: "Alice" },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
 	doc1.meta.deletedAt = "2025-01-01T12:00:00.000Z|0001|g7h8";
 
-	const doc2 = makeResource(
-		"items",
-		"doc-2",
+	const doc2 = makeResource("doc-2",
 		{ name: "Bob" },
 		"2025-01-02T00:00:00.000Z|0000|c3d4",
 	);
@@ -97,17 +85,13 @@ test("mergeResources one deleted - keeps the deleted one", () => {
 });
 
 test("mergeResources one deleted (from) - keeps the deleted one", () => {
-	const doc1 = makeResource(
-		"items",
-		"doc-1",
+	const doc1 = makeResource("doc-1",
 		{ name: "Alice" },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
 	doc1.meta.deletedAt = null;
 
-	const doc2 = makeResource(
-		"items",
-		"doc-2",
+	const doc2 = makeResource("doc-2",
 		{ name: "Bob" },
 		"2025-01-02T00:00:00.000Z|0000|c3d4",
 	);
@@ -120,15 +104,11 @@ test("mergeResources one deleted (from) - keeps the deleted one", () => {
 });
 
 test("mergeResources neither deleted - returns null", () => {
-	const doc1 = makeResource(
-		"items",
-		"doc-1",
+	const doc1 = makeResource("doc-1",
 		{ name: "Alice" },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
-	const doc2 = makeResource(
-		"items",
-		"doc-2",
+	const doc2 = makeResource("doc-2",
 		{ name: "Bob" },
 		"2025-01-02T00:00:00.000Z|0000|c3d4",
 	);
@@ -140,16 +120,12 @@ test("mergeResources neither deleted - returns null", () => {
 });
 
 test("mergeResources preserves id from into document", () => {
-	const doc1 = makeResource(
-		"items",
-		"doc-1",
+	const doc1 = makeResource("doc-1",
 		{ name: "Alice" },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
 
-	const doc2 = makeResource(
-		"items",
-		"doc-2",
+	const doc2 = makeResource("doc-2",
 		{ name: "Bob" },
 		"2025-01-02T00:00:00.000Z|0000|c3d4",
 	);
@@ -160,15 +136,11 @@ test("mergeResources preserves id from into document", () => {
 });
 
 test("mergeResources merges attributes using object mergeRecords", () => {
-	const doc1 = makeResource(
-		"items",
-		"doc-1",
+	const doc1 = makeResource("doc-1",
 		{ name: "Alice", age: 30 },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
-	const doc2 = makeResource(
-		"items",
-		"doc-1",
+	const doc2 = makeResource("doc-1",
 		{ name: "Alice Updated", email: "alice@example.com" },
 		"2025-01-02T00:00:00.000Z|0000|c3d4",
 	);
@@ -181,9 +153,7 @@ test("mergeResources merges attributes using object mergeRecords", () => {
 
 test("deleteResource marks document as deleted with eventstamp", () => {
 	const eventstamp = "2025-01-01T00:00:00.000Z|0000|a1b2";
-	const doc = makeResource(
-		"users",
-		"user-1",
+	const doc = makeResource("user-1",
 		{ name: "Alice", age: 30 },
 		eventstamp,
 	);
@@ -197,9 +167,7 @@ test("deleteResource marks document as deleted with eventstamp", () => {
 });
 
 test("deleteResource preserves original document id and data", () => {
-	const doc = makeResource(
-		"items",
-		"doc-123",
+	const doc = makeResource("doc-123",
 		{ status: "active" },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
@@ -211,9 +179,7 @@ test("deleteResource preserves original document id and data", () => {
 });
 
 test("deleteResource can be called on already deleted document", () => {
-	const doc = makeResource(
-		"users",
-		"user-1",
+	const doc = makeResource("user-1",
 		{ name: "Bob" },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
@@ -225,9 +191,7 @@ test("deleteResource can be called on already deleted document", () => {
 });
 
 test("deleteResource shows document is deleted", () => {
-	const doc = makeResource(
-		"users",
-		"user-1",
+	const doc = makeResource("user-1",
 		{ name: "Alice" },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
@@ -238,15 +202,11 @@ test("deleteResource shows document is deleted", () => {
 });
 
 test("mergeResources bubbles newest eventstamp from nested object fields", () => {
-	const doc1 = makeResource(
-		"users",
-		"doc-1",
+	const doc1 = makeResource("doc-1",
 		{ user: { name: "Alice", email: "alice@old.com" } },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
-	const doc2 = makeResource(
-		"users",
-		"doc-1",
+	const doc2 = makeResource("doc-1",
 		{ user: { email: "alice@new.com" } },
 		"2025-01-05T00:00:00.000Z|0000|k1l2", // Much newer
 	);
@@ -262,9 +222,7 @@ test("mergeResources bubbles newest eventstamp from nested object fields", () =>
 });
 
 test("mergeResources returns newest eventstamp even with multiple nested changes", () => {
-	const doc1 = makeResource(
-		"users",
-		"doc-1",
+	const doc1 = makeResource("doc-1",
 		{
 			profile: {
 				personal: { name: "Alice" },
@@ -273,9 +231,7 @@ test("mergeResources returns newest eventstamp even with multiple nested changes
 		},
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
-	const doc2 = makeResource(
-		"users",
-		"doc-1",
+	const doc2 = makeResource("doc-1",
 		{
 			profile: {
 				personal: { name: "Alice Updated" },
@@ -292,15 +248,11 @@ test("mergeResources returns newest eventstamp even with multiple nested changes
 });
 
 test("mergeResources returns newest eventstamp when adding new fields", () => {
-	const doc1 = makeResource(
-		"users",
-		"doc-1",
+	const doc1 = makeResource("doc-1",
 		{ name: "Alice", age: 30 },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
-	const doc2 = makeResource(
-		"users",
-		"doc-1",
+	const doc2 = makeResource("doc-1",
 		{ email: "alice@example.com", phone: "555-1234" },
 		"2025-01-08T00:00:00.000Z|0000|m3n4", // Newer
 	);
@@ -311,15 +263,11 @@ test("mergeResources returns newest eventstamp when adding new fields", () => {
 });
 
 test("mergeResources handles schema changes (object replaced with primitive)", () => {
-	const doc1 = makeResource(
-		"users",
-		"doc-1",
+	const doc1 = makeResource("doc-1",
 		{ settings: { theme: "dark", notifications: true } },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
-	const doc2 = makeResource(
-		"users",
-		"doc-1",
+	const doc2 = makeResource("doc-1",
 		{ settings: null },
 		"2025-01-02T00:00:00.000Z|0000|c3d4",
 	);
@@ -338,15 +286,11 @@ test("mergeResources handles schema changes (object replaced with primitive)", (
 });
 
 test("mergeResources handles schema changes in nested fields", () => {
-	const doc1 = makeResource(
-		"users",
-		"doc-1",
+	const doc1 = makeResource("doc-1",
 		{ profile: { personal: { name: "Alice" }, settings: { theme: "dark" } } },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
-	const doc2 = makeResource(
-		"users",
-		"doc-1",
+	const doc2 = makeResource("doc-1",
 		{ profile: { personal: "Alice Smith" } },
 		"2025-01-02T00:00:00.000Z|0000|c3d4",
 	);
@@ -366,9 +310,7 @@ test("mergeResources handles schema changes in nested fields", () => {
 // Cache validation tests
 
 test("makeResource: meta.latest matches computed value from eventstamps", () => {
-	const resource = makeResource(
-		"users",
-		"user-1",
+	const resource = makeResource("user-1",
 		{ name: "Alice", email: "alice@example.com", age: 30 },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
@@ -383,9 +325,7 @@ test("makeResource: meta.latest matches computed value from eventstamps", () => 
 });
 
 test("makeResource with nested objects: meta.latest matches computed value", () => {
-	const resource = makeResource(
-		"users",
-		"user-1",
+	const resource = makeResource("user-1",
 		{
 			name: "Alice",
 			profile: {
@@ -406,15 +346,11 @@ test("makeResource with nested objects: meta.latest matches computed value", () 
 });
 
 test("mergeResources: meta.latest matches computed value from merged eventstamps", () => {
-	const doc1 = makeResource(
-		"users",
-		"user-1",
+	const doc1 = makeResource("user-1",
 		{ name: "Alice", age: 30 },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
-	const doc2 = makeResource(
-		"users",
-		"user-1",
+	const doc2 = makeResource("user-1",
 		{ name: "Alice Updated", email: "alice@example.com" },
 		"2025-01-02T00:00:00.000Z|0000|c3d4",
 	);
@@ -432,9 +368,7 @@ test("mergeResources: meta.latest matches computed value from merged eventstamps
 });
 
 test("mergeResources with nested objects: meta.latest matches computed value", () => {
-	const doc1 = makeResource(
-		"users",
-		"user-1",
+	const doc1 = makeResource("user-1",
 		{
 			profile: {
 				personal: { name: "Alice", age: 30 },
@@ -443,9 +377,7 @@ test("mergeResources with nested objects: meta.latest matches computed value", (
 		},
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
-	const doc2 = makeResource(
-		"users",
-		"user-1",
+	const doc2 = makeResource("user-1",
 		{
 			profile: {
 				personal: { email: "alice@example.com" },
@@ -468,9 +400,7 @@ test("mergeResources with nested objects: meta.latest matches computed value", (
 });
 
 test("deleteResource: meta.latest matches computed value (first deletion)", () => {
-	const resource = makeResource(
-		"users",
-		"user-1",
+	const resource = makeResource("user-1",
 		{ name: "Alice", age: 30 },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
@@ -491,9 +421,7 @@ test("deleteResource: meta.latest matches computed value (first deletion)", () =
 });
 
 test("deleteResource: meta.latest matches computed value (re-deletion)", () => {
-	const resource = makeResource(
-		"users",
-		"user-1",
+	const resource = makeResource("user-1",
 		{ name: "Alice" },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
@@ -515,17 +443,13 @@ test("deleteResource: meta.latest matches computed value (re-deletion)", () => {
 });
 
 test("mergeResources with deleted resources: meta.latest matches computed value", () => {
-	const doc1 = makeResource(
-		"users",
-		"user-1",
+	const doc1 = makeResource("user-1",
 		{ name: "Alice" },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
 	doc1.meta.deletedAt = "2025-01-03T00:00:00.000Z|0000|e5f6";
 
-	const doc2 = makeResource(
-		"users",
-		"user-1",
+	const doc2 = makeResource("user-1",
 		{ name: "Bob" },
 		"2025-01-02T00:00:00.000Z|0000|c3d4",
 	);

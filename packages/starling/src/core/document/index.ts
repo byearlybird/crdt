@@ -2,7 +2,7 @@
 export type {
 	AnyObject,
 	DocumentChanges,
-	JsonDocument,
+	StarlingDocument,
 	MergeDocumentsResult,
 } from "./document";
 export { makeDocument, mergeDocuments } from "./document";

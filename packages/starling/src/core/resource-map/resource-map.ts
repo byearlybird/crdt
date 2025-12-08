@@ -1,7 +1,7 @@
 import { createClock } from "../clock/clock";
 import type {
 	AnyObject,
-	JsonDocument,
+	StarlingDocument,
 	MergeDocumentsResult,
 } from "../document/document";
 import { mergeDocuments } from "../document/document";
@@ -74,7 +74,7 @@ export function createMap<T extends AnyObject>(
 		 * @param object - Data to set (partial fields are merged, full objects replace)
 		 */
 		set(id: string, object: Partial<T>): void {
-			const encoded = makeResource(resourceType, id, object as T, clock.now());
+			const encoded = makeResource(id, object as T, clock.now());
 			const current = internalMap.get(id);
 			if (current) {
 				const merged = mergeResources(current, encoded);
@@ -100,22 +100,26 @@ export function createMap<T extends AnyObject>(
 		},
 
 		/**
-		 * Export the current state as a JsonDocument snapshot.
+		 * Export the current state as a StarlingDocument snapshot.
 		 */
-		toDocument(): JsonDocument<T> {
-			return mapToDocument(internalMap, clock.latest());
+		toDocument(): StarlingDocument<T> {
+			return mapToDocument(resourceType, internalMap, clock.latest());
 		},
 
 		/**
 		 * Merge another document into this ResourceMap using field-level Last-Write-Wins.
 		 * @returns The merge result containing the merged document and tracked changes
-		 * @param document - JsonDocument from another replica or storage
+		 * @param document - StarlingDocument from another replica or storage
 		 */
-		merge(document: JsonDocument<T>): MergeDocumentsResult<T> {
-			const currentDocument = mapToDocument(internalMap, clock.latest());
+		merge(document: StarlingDocument<T>): MergeDocumentsResult<T> {
+			const currentDocument = mapToDocument(
+				resourceType,
+				internalMap,
+				clock.latest(),
+			);
 			const result = mergeDocuments(currentDocument, document);
 
-			clock.forward(result.document.meta.latest);
+			clock.forward(result.document.latest);
 			internalMap = documentToMap(result.document);
 			return result;
 		},
@@ -123,19 +127,15 @@ export function createMap<T extends AnyObject>(
 }
 
 /**
- * Create a ResourceMap from a JsonDocument snapshot.
- * @param type - Resource type identifier (defaults to "default")
- * @param document - JsonDocument containing resource data
+ * Create a ResourceMap from a StarlingDocument snapshot.
+ * @param document - StarlingDocument containing resource data
  */
 export function createMapFromDocument<U extends AnyObject>(
-	type: string,
-	document: JsonDocument<U>,
+	document: StarlingDocument<U>,
 ): ReturnType<typeof createMap<U>> {
-	// Infer type from first resource if available, otherwise use provided type
-	const inferredType = document.data[0]?.type ?? type;
 	return createMap<U>(
-		inferredType,
+		document.type,
 		documentToMap(document),
-		document.meta.latest,
+		document.latest,
 	);
 }

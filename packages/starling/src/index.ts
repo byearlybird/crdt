@@ -11,7 +11,7 @@
  */
 
 // Re-export commonly needed core types
-export type { JsonDocument, AnyObject } from "./core";
+export type { StarlingDocument, AnyObject } from "./core";
 
 // Database features
 export { createDatabase } from "./database/db";
