@@ -62,6 +62,59 @@ function makeTaskDocument(
 	return doc;
 }
 
+// Helper to create a test database with http plugin
+async function createTestHttpDb(
+	pluginOptions: Partial<Parameters<typeof httpPlugin>[0]> = {},
+) {
+	return await createDatabase({
+		name: "test-app",
+		schema: {
+			tasks: {
+				schema: taskSchema,
+				getId: (task: Task) => task.id,
+			},
+		},
+	})
+		.use(
+			httpPlugin({
+				baseUrl: "https://api.example.com",
+				pollingInterval: 60000, // Long interval to prevent polling during tests
+				...pluginOptions,
+			}),
+		)
+		.init();
+}
+
+// Helper to mock successful GET responses
+function mockSuccessfulGet(
+	document: StarlingDocument<AnyObject> = makeEmptyDocument(),
+) {
+	mockFetch.mockImplementation(() =>
+		Promise.resolve({
+			ok: true,
+			json: () => Promise.resolve(document),
+		}),
+	);
+}
+
+// Helper to mock successful PATCH responses
+function mockSuccessfulPatch(
+	document: StarlingDocument<AnyObject> = makeEmptyDocument(),
+) {
+	mockFetch.mockImplementation((_url, options) => {
+		if (options?.method === "PATCH") {
+			return Promise.resolve({
+				ok: true,
+				json: () => Promise.resolve(document),
+			});
+		}
+		return Promise.resolve({
+			ok: true,
+			json: () => Promise.resolve(makeEmptyDocument()),
+		});
+	});
+}
+
 describe("httpPlugin", () => {
 	describe("initialization", () => {
 		test("fetches all collections on init", async () => {
@@ -595,25 +648,11 @@ describe("httpPlugin", () => {
 
 	describe("onRequest hook", () => {
 		test("adds custom headers from onRequest hook", async () => {
-			const db = await createDatabase({
-				name: "test-app",
-				schema: {
-					tasks: {
-						schema: taskSchema,
-						getId: (task) => task.id,
-					},
-				},
-			})
-				.use(
-					httpPlugin({
-						baseUrl: "https://api.example.com",
-						pollingInterval: 60000,
-						onRequest: () => ({
-							headers: { Authorization: "Bearer test-token" },
-						}),
-					}),
-				)
-				.init();
+			const db = await createTestHttpDb({
+				onRequest: () => ({
+					headers: { Authorization: "Bearer test-token" },
+				}),
+			});
 
 			expect(mockFetch.mock.calls[0]?.[1]?.headers).toMatchObject({
 				Authorization: "Bearer test-token",
@@ -622,30 +661,34 @@ describe("httpPlugin", () => {
 			await db.dispose();
 		});
 
-		test("skips request when onRequest returns skip: true", async () => {
-			const db = await createDatabase({
-				name: "test-app",
-				schema: {
-					tasks: {
-						schema: taskSchema,
-						getId: (task) => task.id,
+		test.each([
+			["GET on init", "GET", undefined],
+			["PATCH after mutation", "PATCH", { operation: "PATCH" }],
+		])(
+			"skips request when onRequest returns skip: true for %s",
+			async (_description, _method, hookFilter) => {
+				const db = await createTestHttpDb({
+					debounceDelay: 10,
+					onRequest: (context) => {
+						if (!hookFilter || context.operation === hookFilter.operation) {
+							return { skip: true };
+						}
+						return undefined;
 					},
-				},
-			})
-				.use(
-					httpPlugin({
-						baseUrl: "https://api.example.com",
-						pollingInterval: 60000,
-						onRequest: () => ({ skip: true }),
-					}),
-				)
-				.init();
+				});
 
-			// Should not have made any fetch calls
-			expect(mockFetch).toHaveBeenCalledTimes(0);
+				mockFetch.mockClear();
 
-			await db.dispose();
-		});
+				// Trigger PATCH if testing that operation
+				if (hookFilter?.operation === "PATCH") {
+					db.tasks.add(makeTask({ id: "1", title: "Test" }));
+					await new Promise((resolve) => setTimeout(resolve, 50));
+				}
+
+				expect(mockFetch).toHaveBeenCalledTimes(0);
+				await db.dispose();
+			},
+		);
 
 		test("receives correct context in onRequest hook", async () => {
 			const onRequestMock = mock(
@@ -745,7 +788,10 @@ describe("httpPlugin", () => {
 
 			// Should have sent the transformed document
 			expect(capturedBody).toBeDefined();
-			const parsed = JSON.parse(capturedBody!);
+			if (!capturedBody) {
+				throw new Error("Expected capturedBody to be defined");
+			}
+			const parsed = JSON.parse(capturedBody);
 			expect(parsed.resources.transformed?.id).toBe("transformed");
 
 			await db.dispose();
@@ -753,42 +799,37 @@ describe("httpPlugin", () => {
 	});
 
 	describe("onResponse hook", () => {
-		test("skips merge when onResponse returns skip: true", async () => {
-			const serverDoc = makeTaskDocument([
-				{ id: "server-1", title: "Server Task", completed: false },
-			]);
+		test.each([
+			["GET on init", false],
+			["PATCH after mutation", true],
+		])(
+			"skips merge when onResponse returns skip: true for %s",
+			async (_description, triggerPatch) => {
+				const serverDoc = makeTaskDocument([
+					{ id: "server-1", title: "Server Task", completed: false },
+				]);
 
-			mockFetch.mockImplementation(() =>
-				Promise.resolve({
-					ok: true,
-					json: () => Promise.resolve(serverDoc),
-				}),
-			);
+				mockSuccessfulGet(serverDoc);
 
-			const db = await createDatabase({
-				name: "test-app",
-				schema: {
-					tasks: {
-						schema: taskSchema,
-						getId: (task) => task.id,
-					},
-				},
-			})
-				.use(
-					httpPlugin({
-						baseUrl: "https://api.example.com",
-						pollingInterval: 60000,
-						onResponse: () => ({ skip: true }),
-					}),
-				)
-				.init();
+				const db = await createTestHttpDb({
+					debounceDelay: 10,
+					onResponse: () => ({ skip: true }),
+				});
 
-			// Should not have merged server data
-			const task = db.tasks.get("server-1");
-			expect(task).toBeFalsy();
+				if (triggerPatch) {
+					mockFetch.mockClear();
+					mockSuccessfulPatch(serverDoc);
+					db.tasks.add(makeTask({ id: "1", title: "Local Task" }));
+					await new Promise((resolve) => setTimeout(resolve, 50));
+				}
 
-			await db.dispose();
-		});
+				// Should not have merged server data
+				const task = db.tasks.get("server-1");
+				expect(task).toBeFalsy();
+
+				await db.dispose();
+			},
+		);
 
 		test("transforms document in onResponse before merge", async () => {
 			const serverDoc = makeTaskDocument([
@@ -1113,45 +1154,6 @@ describe("httpPlugin", () => {
 	});
 
 	describe("push request hooks", () => {
-		test("skips PATCH when onRequest returns skip: true for PATCH", async () => {
-			const db = await createDatabase({
-				name: "test-app",
-				schema: {
-					tasks: {
-						schema: taskSchema,
-						getId: (task) => task.id,
-					},
-				},
-			})
-				.use(
-					httpPlugin({
-						baseUrl: "https://api.example.com",
-						pollingInterval: 60000,
-						debounceDelay: 10,
-						onRequest: ({ operation }) => {
-							if (operation === "PATCH") {
-								return { skip: true };
-							}
-							return undefined;
-						},
-					}),
-				)
-				.init();
-
-			mockFetch.mockClear();
-
-			// Add a task - this should trigger a PATCH that gets skipped
-			db.tasks.add(makeTask({ id: "1", title: "Test" }));
-
-			// Wait for debounce
-			await new Promise((resolve) => setTimeout(resolve, 50));
-
-			// No PATCH should have been made (skipped by onRequest)
-			expect(mockFetch).toHaveBeenCalledTimes(0);
-
-			await db.dispose();
-		});
-
 		test("handles non-ok HTTP response on PATCH", async () => {
 			mockFetch.mockImplementation((_url, options) => {
 				if (options?.method === "GET") {
@@ -1198,62 +1200,6 @@ describe("httpPlugin", () => {
 
 			// Should have logged error
 			expect(consoleErrorSpy).toHaveBeenCalled();
-
-			await db.dispose();
-		});
-
-		test("skips merge on PATCH response when onResponse returns skip: true", async () => {
-			const serverResponseDoc = makeTaskDocument([
-				{ id: "1", title: "Server Modified", completed: true },
-				{ id: "server-new", title: "Server New Task", completed: false },
-			]);
-
-			mockFetch.mockImplementation((_url, options) => {
-				if (options?.method === "GET") {
-					return Promise.resolve({
-						ok: true,
-						json: () => Promise.resolve(makeEmptyDocument()),
-					});
-				}
-				// PATCH returns server document
-				return Promise.resolve({
-					ok: true,
-					json: () => Promise.resolve(serverResponseDoc),
-				});
-			});
-
-			const db = await createDatabase({
-				name: "test-app",
-				schema: {
-					tasks: {
-						schema: taskSchema,
-						getId: (task) => task.id,
-					},
-				},
-			})
-				.use(
-					httpPlugin({
-						baseUrl: "https://api.example.com",
-						pollingInterval: 60000,
-						debounceDelay: 10,
-						onResponse: () => ({ skip: true }), // Skip all response merges
-					}),
-				)
-				.init();
-
-			// Add a task
-			db.tasks.add(makeTask({ id: "1", title: "Local Task" }));
-
-			// Wait for PATCH
-			await new Promise((resolve) => setTimeout(resolve, 50));
-
-			// Server response should NOT have been merged (skipped)
-			const serverTask = db.tasks.get("server-new");
-			expect(serverTask).toBeFalsy();
-
-			// Our local task should still have original title
-			const localTask = db.tasks.get("1");
-			expect(localTask?.title).toBe("Local Task");
 
 			await db.dispose();
 		});

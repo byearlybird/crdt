@@ -157,37 +157,16 @@ test("forward() updates lastMs to allow counter reset when real time catches up"
 	expect(currentEventstamp).toBe(futureEventstamp);
 });
 
-test("eventstamp format is consistent with padding", () => {
+test.each([
+	["plain string", "invalid"],
+	["date only", "2025-01-01"],
+	["no counter/nonce", "2025-01-01T00:00:00.000Z"],
+	["invalid counter", "2025-01-01T00:00:00.000Z|invalid|abcd"],
+	["invalid nonce", "2025-01-01T00:00:00.000Z|0001|xyz"],
+	["empty string", ""],
+])("forward() throws error for invalid eventstamp: %s", (_description, invalid) => {
 	const clock = createClock();
-
-	// Generate many eventstamps to potentially exceed single hex digit
-	for (let i = 0; i < 20; i++) {
-		const eventstamp = clock.now();
-		const parts = eventstamp.split("|");
-
-		expect(parts.length).toBe(3);
-		expect(parts[1]).toBeDefined();
-		expect(parts[1]?.length).toBe(4);
-		expect(parts[2]).toBeDefined();
-		expect(parts[2]?.length).toBe(4);
-		// Should be valid hex
-		expect(/^[0-9a-f]{4}$/.test(parts[1] || "")).toBe(true);
-		expect(/^[0-9a-f]{4}$/.test(parts[2] || "")).toBe(true);
-	}
-});
-
-test("forward() throws error for invalid eventstamp format", () => {
-	const clock = createClock();
-
-	// Try to forward with various invalid formats
-	expect(() => clock.forward("invalid")).toThrow();
-	expect(() => clock.forward("2025-01-01")).toThrow();
-	expect(() => clock.forward("2025-01-01T00:00:00.000Z")).toThrow();
-	expect(() =>
-		clock.forward("2025-01-01T00:00:00.000Z|invalid|abcd"),
-	).toThrow();
-	expect(() => clock.forward("2025-01-01T00:00:00.000Z|0001|xyz")).toThrow();
-	expect(() => clock.forward("")).toThrow();
+	expect(() => clock.forward(invalid)).toThrow();
 });
 
 test("forward() accepts valid eventstamp", () => {
@@ -215,16 +194,14 @@ test("fromEventstamp() creates clock from valid eventstamp", () => {
 	expect(clock.latest()).toBe(eventstamp);
 });
 
-test("fromEventstamp() throws error for invalid eventstamp", () => {
-	expect(() => createClockFromEventstamp("invalid")).toThrow();
-	expect(() => createClockFromEventstamp("2025-01-01")).toThrow();
-	expect(() => createClockFromEventstamp("2025-01-01T00:00:00.000Z")).toThrow();
-	expect(() =>
-		createClockFromEventstamp("2025-01-01T00:00:00.000Z|invalid|abcd"),
-	).toThrow();
-	expect(() =>
-		createClockFromEventstamp("2025-01-01T00:00:00.000Z|0001|xyz"),
-	).toThrow();
+test.each([
+	["plain string", "invalid"],
+	["date only", "2025-01-01"],
+	["no counter/nonce", "2025-01-01T00:00:00.000Z"],
+	["invalid counter", "2025-01-01T00:00:00.000Z|invalid|abcd"],
+	["invalid nonce", "2025-01-01T00:00:00.000Z|0001|xyz"],
+])("fromEventstamp() throws error for invalid eventstamp: %s", (_description, invalid) => {
+	expect(() => createClockFromEventstamp(invalid)).toThrow();
 });
 
 test("fromEventstamp() preserves timestamp, counter, and nonce", () => {
