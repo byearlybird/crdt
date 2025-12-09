@@ -1,11 +1,11 @@
 import {
 	deleteResource,
-	type StarlingDocument,
 	makeResource,
 	mapToDocument,
 	mergeDocuments,
 	mergeResources,
 	type ResourceObject,
+	type StarlingDocument,
 } from "../core";
 import { createEmitter } from "./emitter";
 import { type StandardSchemaV1, standardValidate } from "./standard-schema";
@@ -175,7 +175,7 @@ export function createCollection<T extends AnyObjectSchema>(
 				throw new DuplicateIdError(id);
 			}
 
-			const resource = makeResource(name, id, validated, getEventstamp());
+			const resource = makeResource(id, validated, getEventstamp());
 			data.set(id, resource);
 
 			// Buffer the add mutation
@@ -201,7 +201,7 @@ export function createCollection<T extends AnyObjectSchema>(
 
 			const merged = mergeResources(
 				existing,
-				makeResource(name, id, updates, getEventstamp()),
+				makeResource(id, updates, getEventstamp()),
 			);
 
 			standardValidate(schema, merged.attributes);
@@ -243,7 +243,7 @@ export function createCollection<T extends AnyObjectSchema>(
 			}
 		},
 
-		merge(document: JsonDocument<InferData<T>>): void {
+		merge(document: StarlingDocument<InferData<T>>): void {
 			// Capture before state for update/delete event tracking
 			const beforeState = new Map<string, InferData<T>>();
 			for (const [id, resource] of data.entries()) {
@@ -251,15 +251,15 @@ export function createCollection<T extends AnyObjectSchema>(
 			}
 
 			// Build current document from collection state
-			const currentDoc = mapToDocument(data, getEventstamp());
+			const currentDoc = mapToDocument(name, data, getEventstamp());
 
 			// Merge using core mergeDocuments
 			const result = mergeDocuments(currentDoc, document);
 
 			// Replace collection data with merged result
 			data.clear();
-			for (const resource of result.document.data) {
-				data.set(resource.id, resource);
+			for (const [id, resource] of Object.entries(result.document.resources)) {
+				data.set(id, resource);
 			}
 
 			// Emit events for changes

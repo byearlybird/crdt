@@ -1,8 +1,8 @@
 import { createClock } from "../clock/clock";
 import type {
 	AnyObject,
-	StarlingDocument,
 	MergeDocumentsResult,
+	StarlingDocument,
 } from "../document/document";
 import { mergeDocuments } from "../document/document";
 import type { ResourceObject } from "../document/resource";
@@ -133,9 +133,5 @@ export function createMap<T extends AnyObject>(
 export function createMapFromDocument<U extends AnyObject>(
 	document: StarlingDocument<U>,
 ): ReturnType<typeof createMap<U>> {
-	return createMap<U>(
-		document.type,
-		documentToMap(document),
-		document.latest,
-	);
+	return createMap<U>(document.type, documentToMap(document), document.latest);
 }

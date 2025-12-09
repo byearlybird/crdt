@@ -34,7 +34,7 @@ afterEach(() => {
 
 // Helper to create an empty document
 function makeEmptyDocument() {
-	return makeDocument("2099-01-01T00:00:00.000Z|0001|a1b2");
+	return makeDocument("tasks", "2099-01-01T00:00:00.000Z|0001|a1b2");
 }
 
 // Helper to create a document with tasks
@@ -43,10 +43,11 @@ function makeTaskDocument(
 	eventstamp = "2099-01-01T00:00:00.000Z|0001|a1b2",
 ) {
 	const doc = makeDocument<{ id: string; title: string; completed: boolean }>(
+		"tasks",
 		eventstamp,
 	);
 	for (const task of tasks) {
-		doc.data.push(makeResource("tasks", task.id, task, eventstamp));
+		doc.resources[task.id] = makeResource(task.id, task, eventstamp);
 	}
 	return doc;
 }
@@ -731,7 +732,7 @@ describe("httpPlugin", () => {
 			// Should have sent the transformed document
 			expect(capturedBody).toBeDefined();
 			const parsed = JSON.parse(capturedBody!);
-			expect(parsed.data[0]?.id).toBe("transformed");
+			expect(parsed.resources.transformed?.id).toBe("transformed");
 
 			await db.dispose();
 		});

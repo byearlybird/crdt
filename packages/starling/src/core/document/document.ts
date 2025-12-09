@@ -106,9 +106,10 @@ export function mergeDocuments<T extends AnyObject>(
 	const deleted = new Set<string>();
 
 	// Start with base resources
-	const mergedResources: Record<string, ResourceObject<T>> = { ...into.resources };
-	let newestEventstamp =
-		into.latest >= from.latest ? into.latest : from.latest;
+	const mergedResources: Record<string, ResourceObject<T>> = {
+		...into.resources,
+	};
+	let newestEventstamp = into.latest >= from.latest ? into.latest : from.latest;
 
 	// Process each source resource
 	for (const [id, fromDoc] of Object.entries(from.resources)) {

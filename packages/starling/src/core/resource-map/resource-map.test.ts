@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { MIN_EVENTSTAMP } from "../clock/eventstamp";
-import type { AnyObject, Document } from "../document/document";
+import type { AnyObject, StarlingDocument } from "../document/document";
 import { makeResource } from "../document/resource";
 import { createMap, createMapFromDocument } from "./resource-map";
 
@@ -9,8 +9,8 @@ describe("ResourceMap", () => {
 		test("creates empty ResourceMap with default eventstamp", () => {
 			const crdt = createMap("default");
 			const collection = crdt.toDocument();
-			expect(collection.data).toHaveLength(0);
-			expect(collection.meta.latest).toBeDefined();
+			expect(Object.keys(collection.resources)).toHaveLength(0);
+			expect(collection.latest).toBeDefined();
 		});
 
 		test("creates ResourceMap with initial eventstamp and forwards clock", () => {
@@ -18,25 +18,15 @@ describe("ResourceMap", () => {
 			const crdt = createMap("default", new Map(), eventstamp);
 			const collection = crdt.toDocument();
 			// Clock should be at least at the provided eventstamp
-			expect(collection.meta.latest >= eventstamp).toBe(true);
+			expect(collection.latest >= eventstamp).toBe(true);
 		});
 
 		test("creates ResourceMap with existing documents", () => {
-			const doc1 = makeResource(
-				"items",
-				"id1",
-				{ name: "Alice" },
-				MIN_EVENTSTAMP,
-			);
-			const doc2 = makeResource(
-				"items",
-				"id2",
-				{ name: "Bob" },
-				MIN_EVENTSTAMP,
-			);
+			const doc1 = makeResource("id1", { name: "Alice" }, MIN_EVENTSTAMP);
+			const doc2 = makeResource("id2", { name: "Bob" }, MIN_EVENTSTAMP);
 			const map = new Map([
-				[doc1.id, doc1},
-				[doc2.id, doc2},
+				[doc1.id, doc1],
+				[doc2.id, doc2],
 			]);
 
 			const crdt = createMap<{ name: string }>("items", map);
@@ -49,12 +39,7 @@ describe("ResourceMap", () => {
 
 	describe("has", () => {
 		test("returns true for existing documents", () => {
-			const doc = makeResource(
-				"items",
-				"id1",
-				{ name: "Alice" },
-				MIN_EVENTSTAMP,
-			);
+			const doc = makeResource("id1", { name: "Alice" }, MIN_EVENTSTAMP);
 			const crdt = createMap<{ name: string }>(
 				"items",
 				new Map([[doc.id, doc]]),
@@ -71,23 +56,13 @@ describe("ResourceMap", () => {
 
 	describe("entries", () => {
 		test("iterates over all resources as [id, resource] tuples", () => {
-			const doc1 = makeResource(
-				"items",
-				"id1",
-				{ name: "Alice" },
-				MIN_EVENTSTAMP,
-			);
-			const doc2 = makeResource(
-				"items",
-				"id2",
-				{ name: "Bob" },
-				MIN_EVENTSTAMP,
-			);
+			const doc1 = makeResource("id1", { name: "Alice" }, MIN_EVENTSTAMP);
+			const doc2 = makeResource("id2", { name: "Bob" }, MIN_EVENTSTAMP);
 			const crdt = createMap<{ name: string }>(
 				"items",
 				new Map([
-					[doc1.id, doc1},
-					[doc2.id, doc2},
+					[doc1.id, doc1],
+					[doc2.id, doc2],
 				]),
 			);
 
@@ -108,12 +83,7 @@ describe("ResourceMap", () => {
 
 	describe("get", () => {
 		test("returns document for existing id", () => {
-			const doc = makeResource(
-				"items",
-				"id1",
-				{ name: "Alice" },
-				MIN_EVENTSTAMP,
-			);
+			const doc = makeResource("id1", { name: "Alice" }, MIN_EVENTSTAMP);
 			const crdt = createMap<{ name: string }>(
 				"items",
 				new Map([[doc.id, doc]]),
@@ -199,7 +169,7 @@ describe("ResourceMap", () => {
 			const collection2 = crdt.toDocument();
 
 			// Collections should have different eventstamps due to second delete
-			expect(collection2.meta.latest > collection1.meta.latest).toBe(true);
+			expect(collection2.latest > collection1.latest).toBe(true);
 		});
 	});
 
@@ -227,30 +197,20 @@ describe("ResourceMap", () => {
 
 	describe("snapshot", () => {
 		test("returns collection with documents and eventstamp", () => {
-			const doc1 = makeResource(
-				"items",
-				"id1",
-				{ name: "Alice" },
-				MIN_EVENTSTAMP,
-			);
-			const doc2 = makeResource(
-				"items",
-				"id2",
-				{ name: "Bob" },
-				MIN_EVENTSTAMP,
-			);
+			const doc1 = makeResource("id1", { name: "Alice" }, MIN_EVENTSTAMP);
+			const doc2 = makeResource("id2", { name: "Bob" }, MIN_EVENTSTAMP);
 			const crdt = createMap(
 				"items",
 				new Map([
-					[doc1.id, doc1},
-					[doc2.id, doc2},
+					[doc1.id, doc1],
+					[doc2.id, doc2],
 				]),
 			);
 
 			const collection = crdt.toDocument();
 
-			expect(collection.data).toHaveLength(2);
-			expect(collection.meta.latest).toBeDefined();
+			expect(Object.keys(collection.resources)).toHaveLength(2);
+			expect(collection.latest).toBeDefined();
 		});
 
 		test("includes deleted documents in collection", () => {
@@ -260,8 +220,10 @@ describe("ResourceMap", () => {
 
 			const collection = crdt.toDocument();
 
-			expect(collection.data).toHaveLength(1);
-			expect(collection.data[0]?.meta.deletedAt).not.toBeNull();
+			expect(Object.keys(collection.resources)).toHaveLength(1);
+			expect(
+				Object.values(collection.resources)[0]?.meta.deletedAt,
+			).not.toBeNull();
 		});
 
 		test("eventstamp reflects latest operation", () => {
@@ -276,56 +238,43 @@ describe("ResourceMap", () => {
 			const collection = crdt.toDocument();
 
 			// Eventstamp should be from the delete operation, which is more recent
-			expect(
-				collection.meta.latest > "2025-01-01T00:00:00.000Z|0001|abcd",
-			).toBe(true);
+			expect(collection.latest > "2025-01-01T00:00:00.000Z|0001|abcd").toBe(
+				true,
+			);
 		});
 	});
 
 	describe("fromSnapshot", () => {
 		test("creates ResourceMap from collection", () => {
-			const collection: Document<AnyObject> = {
+			const collection: StarlingDocument<AnyObject> = {
 				version: "1.0",
-			type: "items",
-				latest: "2025-01-01T00:00:00.000Z|0001|abcd",,
+				type: "items",
+				latest: "2025-01-01T00:00:00.000Z|0001|abcd",
 				resources: {
-					makeResource("items", "id1", { name: "Alice" }, MIN_EVENTSTAMP),
-					makeResource("items", "id2", { name: "Bob" }, MIN_EVENTSTAMP),
+					id1: makeResource("id1", { name: "Alice" }, MIN_EVENTSTAMP),
+					id2: makeResource("id2", { name: "Bob" }, MIN_EVENTSTAMP),
 				},
 			};
 
-			const crdt = createMapFromDocument<{ name: string }>(
-				"default",
-				collection,
-			);
+			const crdt = createMapFromDocument<{ name: string }>(collection);
 			expect(crdt.has("id1")).toBe(true);
 			expect(crdt.has("id2")).toBe(true);
 			// Clock forwards to at least the provided eventstamp
-			expect(crdt.toDocument().meta.latest >= collection.meta.latest).toBe(
-				true,
-			);
+			expect(crdt.toDocument().latest >= collection.latest).toBe(true);
 		});
 
 		test("preserves deleted documents", () => {
-			const deletedDoc = makeResource(
-				"items",
-				"id1",
-				{ name: "Alice" },
-				MIN_EVENTSTAMP,
-			);
+			const deletedDoc = makeResource("id1", { name: "Alice" }, MIN_EVENTSTAMP);
 			deletedDoc.meta.deletedAt = "2025-01-01T00:00:01.000Z|0001|abcd";
 
-			const collection: Document<AnyObject> = {
+			const collection: StarlingDocument<AnyObject> = {
 				version: "1.0",
-			type: "items",
-				latest: "2025-01-01T00:00:01.000Z|0001|abcd",,
-				resources: {deletedDoc},
+				type: "items",
+				latest: "2025-01-01T00:00:01.000Z|0001|abcd",
+				resources: { id1: deletedDoc },
 			};
 
-			const crdt = createMapFromDocument<{ name: string }>(
-				"default",
-				collection,
-			);
+			const crdt = createMapFromDocument<{ name: string }>(collection);
 			// ResourceMap returns deleted documents, just marks them with deletedAt
 			expect(crdt.has("id1")).toBe(true);
 			expect(crdt.get("id1")).toBeDefined();
@@ -344,7 +293,7 @@ describe("ResourceMap", () => {
 			const restored = createMapFromDocument<{
 				name: string;
 				age: number;
-			}>("default", collection);
+			}>(collection);
 			expect(restored.has("id1")).toBe(true);
 			expect(restored.get("id1")?.attributes).toEqual({
 				name: "Alice",
@@ -372,7 +321,7 @@ describe("ResourceMap", () => {
 
 			// Merge replica1 into replica2
 			const collection1 = replica1.toDocument();
-			for (const encodedDoc of collection1.data) {
+			for (const encodedDoc of Object.values(collection1.resources)) {
 				replica2.set(encodedDoc.id, encodedDoc.attributes as any);
 			}
 
@@ -409,30 +358,29 @@ describe("ResourceMap", () => {
 
 			// Should still be deleted (delete eventstamp is newer)
 			const collection = crdt.toDocument();
-			const doc = collection.data.find((d) => d.id === "id1");
+			const doc = Object.values(collection.resources).find(
+				(d) => d.id === "id1",
+			);
 			expect(doc?.meta.deletedAt).not.toBeNull();
 		});
 	});
 
 	describe("clock forwarding", () => {
 		test("clock forwards when loading newer eventstamp", () => {
-			const collection: Document<AnyObject> = {
+			const collection: StarlingDocument<AnyObject> = {
 				version: "1.0",
-			type: "items",
-				latest: "2025-01-01T00:00:10.000Z|0001|abcd",,
+				type: "items",
+				latest: "2025-01-01T00:00:10.000Z|0001|abcd",
 				resources: {},
 			};
 
-			const restored = createMapFromDocument<{ name: string }>(
-				"default",
-				collection,
-			);
+			const restored = createMapFromDocument<{ name: string }>(collection);
 			restored.set("id1", { name: "Alice" });
 
 			// New operations should have eventstamps >= the loaded eventstamp
 			restored.delete("id1");
 			const collectionAfter = restored.toDocument();
-			expect(collectionAfter.meta.latest >= collection.meta.latest).toBe(true);
+			expect(collectionAfter.latest >= collection.latest).toBe(true);
 		});
 	});
 
@@ -441,11 +389,13 @@ describe("ResourceMap", () => {
 			const crdt = createMap<{ name: string }>("items", new Map());
 			crdt.set("id1", { name: "Alice" });
 
-			const remoteCollection: Document<AnyObject> = {
+			const remoteCollection: StarlingDocument<AnyObject> = {
 				version: "1.0",
-			type: "items",
-				meta: { latest: MIN_EVENTSTAMP },
-				resources: {makeResource("items", "id2", { name: "Bob" }, MIN_EVENTSTAMP)},
+				type: "items",
+				latest: MIN_EVENTSTAMP,
+				resources: {
+					id2: makeResource("id2", { name: "Bob" }, MIN_EVENTSTAMP),
+				},
 			};
 
 			const result = crdt.merge(remoteCollection);
@@ -464,7 +414,6 @@ describe("ResourceMap", () => {
 			// Create a local document with an older eventstamp
 			const localEventstamp = "2025-01-01T00:00:00.000Z|0001|aaaa";
 			const localDoc = makeResource(
-				"items",
 				"id1",
 				{ name: "Alice", age: 30 },
 				localEventstamp,
@@ -477,11 +426,11 @@ describe("ResourceMap", () => {
 
 			// Create a remote document with a newer eventstamp for one field
 			const laterEventstamp = "2025-01-01T00:00:05.000Z|0001|efgh";
-			const remoteCollection: Document<AnyObject> = {
+			const remoteCollection: StarlingDocument<AnyObject> = {
 				version: "1.0",
-			type: "items",
-				meta: { latest: laterEventstamp },
-				resources: {makeResource("items", "id1", { age: 31 }, laterEventstamp)},
+				type: "items",
+				latest: laterEventstamp,
+				resources: { id1: makeResource("id1", { age: 31 }, laterEventstamp) },
 			};
 
 			const result = crdt.merge(remoteCollection);
@@ -499,27 +448,24 @@ describe("ResourceMap", () => {
 			const crdt = createMap<{ name: string }>("items", new Map());
 			crdt.set("id1", { name: "Alice" });
 
-			const deletedDoc = makeResource(
-				"items",
-				"id1",
-				{ name: "Alice" },
-				MIN_EVENTSTAMP,
-			);
+			const deletedDoc = makeResource("id1", { name: "Alice" }, MIN_EVENTSTAMP);
 			const deletionEventstamp = "2025-01-01T00:00:05.000Z|0001|efgh";
 			deletedDoc.meta.deletedAt = deletionEventstamp;
 
-			const remoteCollection: Document<AnyObject> = {
+			const remoteCollection: StarlingDocument<AnyObject> = {
 				version: "1.0",
-			type: "items",
-				meta: { latest: deletionEventstamp },
-				resources: {deletedDoc},
+				type: "items",
+				latest: deletionEventstamp,
+				resources: { id1: deletedDoc },
 			};
 
 			const result = crdt.merge(remoteCollection);
 
 			// Document is soft-deleted
 			const collection = crdt.toDocument();
-			const doc = collection.data.find((d) => d.id === "id1");
+			const doc = Object.values(collection.resources).find(
+				(d) => d.id === "id1",
+			);
 			expect(doc?.meta.deletedAt).not.toBeNull();
 
 			// Check merge result - deletion is tracked in deleted set
@@ -533,41 +479,36 @@ describe("ResourceMap", () => {
 				MIN_EVENTSTAMP,
 			);
 			const futureEventstamp = "2025-01-01T00:00:10.000Z|0001|abcd";
-			const remoteCollection: Document<AnyObject> = {
+			const remoteCollection: StarlingDocument<AnyObject> = {
 				version: "1.0",
-			type: "items",
-				meta: { latest: futureEventstamp },
+				type: "items",
+				latest: futureEventstamp,
 				resources: {},
 			};
 
 			const result = crdt.merge(remoteCollection);
 
 			// Check merge result has forwarded clock
-			expect(result.document.meta.latest >= futureEventstamp).toBe(true);
+			expect(result.document.latest >= futureEventstamp).toBe(true);
 
 			// Add a new document after merge
 			crdt.set("id1", { name: "Alice" });
 			const collection = crdt.toDocument();
 
 			// New eventstamp should be >= remote eventstamp
-			expect(collection.meta.latest >= futureEventstamp).toBe(true);
+			expect(collection.latest >= futureEventstamp).toBe(true);
 		});
 
 		test("merge is idempotent", () => {
 			const crdt = createMap<{ name: string; age: number }>("items", new Map());
 			crdt.set("id1", { name: "Alice", age: 30 });
 
-			const remoteCollection: Document<AnyObject> = {
+			const remoteCollection: StarlingDocument<AnyObject> = {
 				version: "1.0",
-			type: "items",
-				meta: { latest: MIN_EVENTSTAMP },
+				type: "items",
+				latest: MIN_EVENTSTAMP,
 				resources: {
-					makeResource(
-						"items",
-						"id2",
-						{ name: "Bob", age: 25 },
-						MIN_EVENTSTAMP,
-					),
+					id2: makeResource("id2", { name: "Bob", age: 25 }, MIN_EVENTSTAMP),
 				},
 			};
 
@@ -579,26 +520,25 @@ describe("ResourceMap", () => {
 			const collection3 = crdt.toDocument();
 
 			// Results should be identical
-			expect(collection2.data.length).toBe(collection3.data.length);
+			expect(Object.keys(collection2.resources).length).toBe(
+				Object.keys(collection3.resources).length,
+			);
 			expect(crdt.get("id1")?.attributes).toEqual({ name: "Alice", age: 30 });
 			expect(crdt.get("id2")?.attributes).toEqual({ name: "Bob", age: 25 });
 		});
 
 		test("merge preserves local data when remote is older", () => {
 			const localEventstamp = "2025-01-01T00:00:10.000Z|0001|abcd";
-			const localDoc = makeResource(
-				"items",
-				"id1",
-				{ name: "Alice" },
-				localEventstamp,
-			);
+			const localDoc = makeResource("id1", { name: "Alice" }, localEventstamp);
 			const crdt = createMap("items", new Map([["id1", localDoc]]));
 			const olderEventstamp = "2025-01-01T00:00:05.000Z|0001|efgh";
-			const remoteCollection: Document<AnyObject> = {
+			const remoteCollection: StarlingDocument<AnyObject> = {
 				version: "1.0",
-			type: "items",
-				meta: { latest: olderEventstamp },
-				resources: {makeResource("items", "id1", { name: "Bob" }, olderEventstamp)},
+				type: "items",
+				latest: olderEventstamp,
+				resources: {
+					id1: makeResource("id1", { name: "Bob" }, olderEventstamp),
+				},
 			};
 
 			crdt.merge(remoteCollection);
