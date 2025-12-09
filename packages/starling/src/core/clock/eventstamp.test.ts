@@ -74,72 +74,36 @@ test("isValidEventstamp() returns true for various valid timestamps", () => {
 	expect(isValidEventstamp("2025-06-15T12:30:45.123Z|00ff|1234")).toBe(true);
 });
 
-test("isValidEventstamp() returns false for missing nonce", () => {
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|0001")).toBe(false);
-});
-
-test("isValidEventstamp() returns false for missing counter", () => {
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|a1b2")).toBe(false);
-});
-
-test("isValidEventstamp() returns false for invalid ISO timestamp format", () => {
-	expect(isValidEventstamp("2025-01-01|0001|a1b2")).toBe(false);
-	expect(isValidEventstamp("2025/01/01T00:00:00.000Z|0001|a1b2")).toBe(false);
-	expect(isValidEventstamp("2025-1-1T00:00:00.000Z|0001|a1b2")).toBe(false);
-	expect(isValidEventstamp("2025-01-01T00:00:00Z|0001|a1b2")).toBe(false); // missing milliseconds
-});
-
-test("isValidEventstamp() returns false for wrong delimiter", () => {
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z:0001:a1b2")).toBe(false);
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z-0001-a1b2")).toBe(false);
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z 0001 a1b2")).toBe(false);
-});
-
-test("isValidEventstamp() returns false for uppercase hex in counter", () => {
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|ABCD|a1b2")).toBe(false);
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|00FF|a1b2")).toBe(false);
-});
-
-test("isValidEventstamp() returns false for uppercase hex in nonce", () => {
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|0001|ABCD")).toBe(false);
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|0001|A1B2")).toBe(false);
-});
-
-test("isValidEventstamp() returns false for counter too short", () => {
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|001|a1b2")).toBe(false);
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|01|a1b2")).toBe(false);
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|1|a1b2")).toBe(false);
-});
-
-test("isValidEventstamp() returns false for nonce too short", () => {
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|0001|a1b")).toBe(false);
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|0001|ab")).toBe(false);
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|0001|a")).toBe(false);
-});
-
-test("isValidEventstamp() returns false for nonce too long", () => {
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|0001|a1b2c")).toBe(false);
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|0001|a1b2c3")).toBe(false);
-});
-
-test("isValidEventstamp() returns false for non-hex characters in counter", () => {
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|00g1|a1b2")).toBe(false);
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|xyz1|a1b2")).toBe(false);
-});
-
-test("isValidEventstamp() returns false for non-hex characters in nonce", () => {
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|0001|xyz1")).toBe(false);
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|0001|g1b2")).toBe(false);
-});
-
-test("isValidEventstamp() returns false for empty string", () => {
-	expect(isValidEventstamp("")).toBe(false);
-});
-
-test("isValidEventstamp() returns false for extra parts", () => {
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|0001|a1b2|extra")).toBe(
-		false,
-	);
+test.each([
+	["missing nonce", "2025-01-01T00:00:00.000Z|0001"],
+	["missing counter", "2025-01-01T00:00:00.000Z|a1b2"],
+	["invalid ISO (no time)", "2025-01-01|0001|a1b2"],
+	["invalid ISO (slashes)", "2025/01/01T00:00:00.000Z|0001|a1b2"],
+	["invalid ISO (single digits)", "2025-1-1T00:00:00.000Z|0001|a1b2"],
+	["invalid ISO (no millis)", "2025-01-01T00:00:00Z|0001|a1b2"],
+	["wrong delimiter (colon)", "2025-01-01T00:00:00.000Z:0001:a1b2"],
+	["wrong delimiter (dash)", "2025-01-01T00:00:00.000Z-0001-a1b2"],
+	["wrong delimiter (space)", "2025-01-01T00:00:00.000Z 0001 a1b2"],
+	["uppercase hex in counter", "2025-01-01T00:00:00.000Z|ABCD|a1b2"],
+	["uppercase hex in counter (mixed)", "2025-01-01T00:00:00.000Z|00FF|a1b2"],
+	["uppercase hex in nonce", "2025-01-01T00:00:00.000Z|0001|ABCD"],
+	["uppercase hex in nonce (mixed)", "2025-01-01T00:00:00.000Z|0001|A1B2"],
+	["counter too short (3 chars)", "2025-01-01T00:00:00.000Z|001|a1b2"],
+	["counter too short (2 chars)", "2025-01-01T00:00:00.000Z|01|a1b2"],
+	["counter too short (1 char)", "2025-01-01T00:00:00.000Z|1|a1b2"],
+	["nonce too short (3 chars)", "2025-01-01T00:00:00.000Z|0001|a1b"],
+	["nonce too short (2 chars)", "2025-01-01T00:00:00.000Z|0001|ab"],
+	["nonce too short (1 char)", "2025-01-01T00:00:00.000Z|0001|a"],
+	["nonce too long (5 chars)", "2025-01-01T00:00:00.000Z|0001|a1b2c"],
+	["nonce too long (6 chars)", "2025-01-01T00:00:00.000Z|0001|a1b2c3"],
+	["non-hex in counter (g)", "2025-01-01T00:00:00.000Z|00g1|a1b2"],
+	["non-hex in counter (xyz)", "2025-01-01T00:00:00.000Z|xyz1|a1b2"],
+	["non-hex in nonce (xyz)", "2025-01-01T00:00:00.000Z|0001|xyz1"],
+	["non-hex in nonce (g)", "2025-01-01T00:00:00.000Z|0001|g1b2"],
+	["empty string", ""],
+	["extra parts", "2025-01-01T00:00:00.000Z|0001|a1b2|extra"],
+])("isValidEventstamp() returns false for %s", (_description, eventstamp) => {
+	expect(isValidEventstamp(eventstamp)).toBe(false);
 });
 
 // ============================================================================
