@@ -121,11 +121,10 @@ Merged: { name: "Alice Smith", email: "alice@new.com" }
 
 ### Document Format
 
-The `StarlingDocument` type represents the complete persistent state of a collection, containing version information, type identifier, latest eventstamp, and resources as a keyed object:
+The `StarlingDocument` type represents the complete persistent state of a collection, containing a type identifier, latest eventstamp, and resources as a keyed object:
 
 ```typescript
 export type StarlingDocument<T extends AnyObject> = {
-  version: "1.0";
   type: string;
   latest: string;
   resources: Record<string, ResourceObject<T>>;
@@ -134,7 +133,6 @@ export type StarlingDocument<T extends AnyObject> = {
 
 **Design notes:**
 
-- **`version`**: Document schema version (currently "1.0")
 - **`type`**: Resource type identifier for this collection (e.g., "users", "todos", "posts")
 - **`latest`**: The highest eventstamp observed by the document. When merging documents, the clock forwards to the newest eventstamp to prevent collisions across sync boundaries
 - **`resources`**: Object mapping resource IDs to ResourceObjects, including soft-deleted items (those with `meta.deletedAt` set). This ensures deletion events propagate during sync
@@ -143,7 +141,6 @@ Example document:
 
 ```typescript
 {
-  version: "1.0",
   type: "users",
   latest: "2025-10-26T10:00:00.000Z|0001|a7f2",
   resources: {

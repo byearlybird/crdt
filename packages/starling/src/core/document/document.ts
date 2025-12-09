@@ -8,7 +8,6 @@ export type AnyObject = Record<string, unknown>;
 
 /**
  * A Starling document represents the complete state of a collection:
- * - Schema version for evolution
  * - Resource type identifier
  * - Latest eventstamp for clock synchronization
  * - Map of resources keyed by ID
@@ -16,9 +15,6 @@ export type AnyObject = Record<string, unknown>;
  * Documents are the unit of synchronization between replicas.
  */
 export type StarlingDocument<T extends AnyObject> = {
-	/** Schema version for evolution */
-	version: "1.0";
-
 	/** Resource type for this homogeneous collection */
 	type: string;
 
@@ -74,14 +70,12 @@ export type MergeDocumentsResult<T extends AnyObject> = {
  * @example
  * ```typescript
  * const into = {
- *   version: "1.0",
  *   type: "items",
  *   latest: "2025-01-01T00:00:00.000Z|0001|a1b2",
  *   resources: { "doc1": { id: "doc1", attributes: {...}, meta: {...} } }
  * };
  *
  * const from = {
- *   version: "1.0",
  *   type: "items",
  *   latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
  *   resources: {
@@ -158,7 +152,6 @@ export function mergeDocuments<T extends AnyObject>(
 
 	return {
 		document: {
-			version: "1.0",
 			type: into.type,
 			latest: newestEventstamp,
 			resources: mergedResources,
@@ -189,7 +182,6 @@ export function makeDocument<T extends AnyObject>(
 	eventstamp: string,
 ): StarlingDocument<T> {
 	return {
-		version: "1.0",
 		type,
 		latest: eventstamp,
 		resources: {},

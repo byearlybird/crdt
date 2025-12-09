@@ -651,7 +651,6 @@ describe("Collection", () => {
 
 			const doc = db.tasks.toDocument();
 
-			expect(doc.version).toBe("1.0");
 			expect(doc.type).toBe("tasks");
 			expect(doc.latest).toBeDefined();
 			expect(Object.keys(doc.resources)).toHaveLength(2);
@@ -666,7 +665,6 @@ describe("Collection", () => {
 
 			const doc = db.tasks.toDocument();
 
-			expect(doc.version).toBe("1.0");
 			expect(doc.latest).toBeDefined();
 			expect(Object.keys(doc.resources)).toHaveLength(0);
 		});

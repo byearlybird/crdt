@@ -251,7 +251,6 @@ describe("ResourceMap", () => {
 	describe("fromSnapshot", () => {
 		test("creates ResourceMap from collection", () => {
 			const collection: StarlingDocument<NameAttrs> = {
-				version: "1.0",
 				type: "items",
 				latest: "2025-01-01T00:00:00.000Z|0001|abcd",
 				resources: {
@@ -272,7 +271,6 @@ describe("ResourceMap", () => {
 			deletedDoc.meta.deletedAt = "2025-01-01T00:00:01.000Z|0001|abcd";
 
 			const collection: StarlingDocument<NameAttrs> = {
-				version: "1.0",
 				type: "items",
 				latest: "2025-01-01T00:00:01.000Z|0001|abcd",
 				resources: { id1: deletedDoc },
@@ -372,7 +370,6 @@ describe("ResourceMap", () => {
 	describe("clock forwarding", () => {
 		test("clock forwards when loading newer eventstamp", () => {
 			const collection: StarlingDocument<NameAttrs> = {
-				version: "1.0",
 				type: "items",
 				latest: "2025-01-01T00:00:10.000Z|0001|abcd",
 				resources: {},
@@ -394,7 +391,6 @@ describe("ResourceMap", () => {
 			crdt.set("id1", { name: "Alice" });
 
 			const remoteCollection: StarlingDocument<NameAttrs> = {
-				version: "1.0",
 				type: "items",
 				latest: MIN_EVENTSTAMP,
 				resources: {
@@ -431,7 +427,6 @@ describe("ResourceMap", () => {
 			// Create a remote document with a newer eventstamp for one field
 			const laterEventstamp = "2025-01-01T00:00:05.000Z|0001|efgh";
 			const remoteCollection: StarlingDocument<NameAgeAttrs> = {
-				version: "1.0",
 				type: "items",
 				latest: laterEventstamp,
 				resources: {
@@ -459,7 +454,6 @@ describe("ResourceMap", () => {
 			deletedDoc.meta.deletedAt = deletionEventstamp;
 
 			const remoteCollection: StarlingDocument<NameAttrs> = {
-				version: "1.0",
 				type: "items",
 				latest: deletionEventstamp,
 				resources: { id1: deletedDoc },
@@ -486,7 +480,6 @@ describe("ResourceMap", () => {
 			);
 			const futureEventstamp = "2025-01-01T00:00:10.000Z|0001|abcd";
 			const remoteCollection: StarlingDocument<NameAttrs> = {
-				version: "1.0",
 				type: "items",
 				latest: futureEventstamp,
 				resources: {},
@@ -510,7 +503,6 @@ describe("ResourceMap", () => {
 			crdt.set("id1", { name: "Alice", age: 30 });
 
 			const remoteCollection: StarlingDocument<NameAgeAttrs> = {
-				version: "1.0",
 				type: "items",
 				latest: MIN_EVENTSTAMP,
 				resources: {
@@ -539,7 +531,6 @@ describe("ResourceMap", () => {
 			const crdt = createMap("items", new Map([["id1", localDoc]]));
 			const olderEventstamp = "2025-01-01T00:00:05.000Z|0001|efgh";
 			const remoteCollection: StarlingDocument<NameAttrs> = {
-				version: "1.0",
 				type: "items",
 				latest: olderEventstamp,
 				resources: {

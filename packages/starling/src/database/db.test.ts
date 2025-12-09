@@ -156,8 +156,6 @@ describe("Database", () => {
 
 			expect(documents.tasks).toBeDefined();
 			expect(documents.users).toBeDefined();
-			expect(documents.tasks.version).toBe("1.0");
-			expect(documents.users.version).toBe("1.0");
 			expect(Object.keys(documents.tasks.resources)).toHaveLength(2);
 			expect(Object.keys(documents.users.resources)).toHaveLength(1);
 		});

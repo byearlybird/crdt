@@ -42,7 +42,6 @@ export function mapToDocument<T extends AnyObject>(
 	}
 
 	return {
-		version: "1.0",
 		type,
 		latest,
 		resources: resourcesRecord,

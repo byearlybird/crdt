@@ -60,7 +60,6 @@ test("mapToDocument() converts map to document", () => {
 
 	const doc = mapToDocument(USERS_TYPE, map);
 
-	expect(doc.version).toBe("1.0");
 	expect(doc.type).toBe(USERS_TYPE);
 	expect(doc.latest).toBe("2025-01-01T00:05:00.000Z|0001|c3d4");
 	expect(Object.keys(doc.resources)).toHaveLength(2);
@@ -82,7 +81,6 @@ test("mapToDocument() includes fallback eventstamp in max calculation", () => {
 	const fallback = "2025-01-01T00:10:00.000Z|0001|f1f2";
 	const doc = mapToDocument(USERS_TYPE, map, fallback);
 
-	expect(doc.version).toBe("1.0");
 	expect(doc.latest).toBe(fallback);
 	expect(Object.keys(doc.resources)).toHaveLength(1);
 });
@@ -91,7 +89,6 @@ test("mapToDocument() uses fallback eventstamp for empty map", () => {
 	const fallback = "2025-01-01T00:10:00.000Z|0001|f1f2";
 	const doc = mapToDocument(USERS_TYPE, new Map(), fallback);
 
-	expect(doc.version).toBe("1.0");
 	expect(doc.latest).toBe(fallback);
 	expect(Object.keys(doc.resources)).toHaveLength(0);
 });
@@ -99,7 +96,6 @@ test("mapToDocument() uses fallback eventstamp for empty map", () => {
 test("mapToDocument() uses MIN_EVENTSTAMP when no fallback provided", () => {
 	const doc = mapToDocument(USERS_TYPE, new Map());
 
-	expect(doc.version).toBe("1.0");
 	expect(doc.latest).toBe("1970-01-01T00:00:00.000Z|0000|0000");
 	expect(Object.keys(doc.resources)).toHaveLength(0);
 });
@@ -123,7 +119,6 @@ test("documentToMap() and mapToDocument() are inverses", () => {
 	const map = documentToMap(originalDoc);
 	const reconstructedDoc = mapToDocument(USERS_TYPE, map);
 
-	expect(reconstructedDoc.version).toBe(originalDoc.version);
 	expect(reconstructedDoc.type).toBe(USERS_TYPE);
 	expect(reconstructedDoc.latest).toBe("2025-01-01T00:05:00.000Z|0001|c3d4");
 	expect(Object.keys(reconstructedDoc.resources)).toHaveLength(

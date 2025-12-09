@@ -13,7 +13,6 @@ test("makeDocument returns empty collection with given eventstamp", () => {
 
 	expect(Object.keys(collection.resources).length).toBe(0);
 	expect(collection.latest).toBe(eventstamp);
-	expect(collection.version).toBe("1.0");
 });
 
 test("mergeDocuments with empty collections", () => {
@@ -71,7 +70,6 @@ test("mergeDocuments adds new document from source", () => {
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
 		resources: {
@@ -95,7 +93,6 @@ test("mergeDocuments adds new document from source", () => {
 
 test("mergeDocuments updates existing document", () => {
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:00:00.000Z|0000|a1b2",
 		resources: {
@@ -107,7 +104,6 @@ test("mergeDocuments updates existing document", () => {
 		},
 	};
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
 		resources: {
@@ -130,7 +126,6 @@ test("mergeDocuments updates existing document", () => {
 
 test("mergeDocuments marks document as deleted", () => {
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:00:00.000Z|0000|a1b2",
 		resources: {
@@ -150,7 +145,6 @@ test("mergeDocuments marks document as deleted", () => {
 	deletedDoc.meta.deletedAt = "2025-01-01T00:05:00.000Z|0001|c3d4";
 
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
 		resources: {
@@ -179,7 +173,6 @@ test("mergeDocuments keeps deleted document deleted on update", () => {
 	deletedDoc.meta.deletedAt = "2025-01-01T00:02:00.000Z|0001|b2c3";
 
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:02:00.000Z|0001|b2c3",
 		resources: {
@@ -188,7 +181,6 @@ test("mergeDocuments keeps deleted document deleted on update", () => {
 	};
 
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:05:00.000Z|0002|c3d4",
 		resources: {
@@ -226,7 +218,6 @@ test("mergeDocuments does not track deleted documents as added", () => {
 	deletedDoc.meta.deletedAt = "2025-01-01T00:05:00.000Z|0001|c3d4";
 
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
 		resources: {
@@ -244,7 +235,6 @@ test("mergeDocuments does not track deleted documents as added", () => {
 
 test("mergeDocuments merges multiple documents with mixed operations", () => {
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:00:00.000Z|0000|a1b2",
 		resources: {
@@ -269,7 +259,6 @@ test("mergeDocuments merges multiple documents with mixed operations", () => {
 	deletedDoc.meta.deletedAt = "2025-01-01T00:05:00.000Z|0001|c3d4";
 
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
 		resources: {
@@ -300,7 +289,6 @@ test("mergeDocuments merges multiple documents with mixed operations", () => {
 
 test("mergeDocuments preserves documents only in base collection", () => {
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:00:00.000Z|0000|a1b2",
 		resources: {
@@ -317,7 +305,6 @@ test("mergeDocuments preserves documents only in base collection", () => {
 		},
 	};
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
 		resources: {
@@ -346,7 +333,6 @@ test("mergeDocuments does not mark unchanged documents as updated", () => {
 	);
 
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:00:00.000Z|0000|a1b2",
 		resources: {
@@ -354,7 +340,6 @@ test("mergeDocuments does not mark unchanged documents as updated", () => {
 		},
 	};
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:00:00.000Z|0000|a1b2",
 		resources: {
@@ -372,7 +357,6 @@ test("mergeDocuments does not mark unchanged documents as updated", () => {
 
 test("mergeDocuments field-level LWW for nested objects", () => {
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:00:00.000Z|0000|a1b2",
 		resources: {
@@ -385,7 +369,6 @@ test("mergeDocuments field-level LWW for nested objects", () => {
 	};
 
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
 		resources: {
@@ -413,7 +396,6 @@ test("mergeDocuments detects no changes when content is identical", () => {
 	);
 
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: eventstamp,
 		resources: {
@@ -429,7 +411,6 @@ test("mergeDocuments detects no changes when content is identical", () => {
 	);
 
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: eventstamp,
 		resources: {
@@ -450,7 +431,6 @@ test("mergeDocuments detects no changes when content is identical", () => {
 
 test("mergeDocuments: document meta.latest matches max of resource meta.latest values", () => {
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:00:00.000Z|0000|a1b2",
 		resources: {
@@ -468,7 +448,6 @@ test("mergeDocuments: document meta.latest matches max of resource meta.latest v
 	};
 
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
 		resources: {
@@ -488,7 +467,6 @@ test("mergeDocuments: document meta.latest matches max of resource meta.latest v
 
 test("mergeDocuments: document meta.latest after adding new resource", () => {
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:00:00.000Z|0000|a1b2",
 		resources: {
@@ -501,7 +479,6 @@ test("mergeDocuments: document meta.latest after adding new resource", () => {
 	};
 
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:10:00.000Z|0002|i9j0",
 		resources: {
@@ -520,7 +497,6 @@ test("mergeDocuments: document meta.latest after adding new resource", () => {
 
 test("mergeDocuments: document meta.latest after update", () => {
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:00:00.000Z|0000|a1b2",
 		resources: {
@@ -533,7 +509,6 @@ test("mergeDocuments: document meta.latest after update", () => {
 	};
 
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:08:00.000Z|0001|g7h8",
 		resources: {
@@ -552,7 +527,6 @@ test("mergeDocuments: document meta.latest after update", () => {
 
 test("mergeDocuments: document meta.latest with deleted resource", () => {
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:00:00.000Z|0000|a1b2",
 		resources: {
@@ -572,7 +546,6 @@ test("mergeDocuments: document meta.latest with deleted resource", () => {
 	deletedDoc.meta.deletedAt = "2025-01-01T00:12:00.000Z|0003|k1l2";
 
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:12:00.000Z|0003|k1l2",
 		resources: {
@@ -588,7 +561,6 @@ test("mergeDocuments: document meta.latest with deleted resource", () => {
 
 test("mergeDocuments: document meta.latest with multiple resources at different times", () => {
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:03:00.000Z|0001|c3d4",
 		resources: {
@@ -606,7 +578,6 @@ test("mergeDocuments: document meta.latest with multiple resources at different 
 	};
 
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:07:00.000Z|0002|g7h8",
 		resources: {
@@ -633,7 +604,6 @@ test("mergeDocuments: updates newestEventstamp from new resource with later time
 	// Edge case: document latest is older than a resource's latest
 	// This can happen with inconsistent document construction
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:00:00.000Z|0000|a1b2",
 		resources: {},
@@ -641,7 +611,6 @@ test("mergeDocuments: updates newestEventstamp from new resource with later time
 
 	// Resource has a later timestamp than the document's latest
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:01:00.000Z|0000|b2c3",
 		resources: {
@@ -664,7 +633,6 @@ test("mergeDocuments: updates newestEventstamp from new resource with later time
 test("mergeDocuments: updates newestEventstamp from merged resource with later timestamp than document meta", () => {
 	// Edge case: merged resource's latest exceeds both documents' latest
 	const into: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:00:00.000Z|0000|a1b2",
 		resources: {
@@ -678,7 +646,6 @@ test("mergeDocuments: updates newestEventstamp from merged resource with later t
 
 	// from document has resource with later timestamp but document latest is older
 	const from: StarlingDocument<AnyObject> = {
-		version: "1.0",
 		type: "items",
 		latest: "2025-01-01T00:01:00.000Z|0000|b2c3",
 		resources: {
