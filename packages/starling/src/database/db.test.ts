@@ -156,10 +156,8 @@ describe("Database", () => {
 
 			expect(documents.tasks).toBeDefined();
 			expect(documents.users).toBeDefined();
-			expect(documents.tasks.jsonapi.version).toBe("1.1");
-			expect(documents.users.jsonapi.version).toBe("1.1");
-			expect(documents.tasks.data).toHaveLength(2);
-			expect(documents.users.data).toHaveLength(1);
+			expect(Object.keys(documents.tasks.resources)).toHaveLength(2);
+			expect(Object.keys(documents.users.resources)).toHaveLength(1);
 		});
 
 		test("returns empty documents for empty collections", () => {
@@ -169,10 +167,10 @@ describe("Database", () => {
 
 			expect(documents.tasks).toBeDefined();
 			expect(documents.users).toBeDefined();
-			expect(documents.tasks.data).toHaveLength(0);
-			expect(documents.users.data).toHaveLength(0);
-			expect(documents.tasks.meta.latest).toBeDefined();
-			expect(documents.users.meta.latest).toBeDefined();
+			expect(Object.keys(documents.tasks.resources)).toHaveLength(0);
+			expect(Object.keys(documents.users.resources)).toHaveLength(0);
+			expect(documents.tasks.latest).toBeDefined();
+			expect(documents.users.latest).toBeDefined();
 		});
 
 		test("includes soft-deleted items in documents", () => {
@@ -182,9 +180,13 @@ describe("Database", () => {
 
 			const documents = db.toDocuments();
 
-			expect(documents.tasks.data).toHaveLength(1);
-			expect(documents.tasks.data[0]?.meta.deletedAt).toBeDefined();
-			expect(documents.tasks.data[0]?.meta.deletedAt).not.toBeNull();
+			expect(Object.keys(documents.tasks.resources)).toHaveLength(1);
+			expect(
+				Object.values(documents.tasks.resources)[0]?.meta.deletedAt,
+			).toBeDefined();
+			expect(
+				Object.values(documents.tasks.resources)[0]?.meta.deletedAt,
+			).not.toBeNull();
 		});
 
 		test("includes correct latest eventstamps for each collection", () => {
@@ -194,14 +196,14 @@ describe("Database", () => {
 
 			const documents = db.toDocuments();
 
-			expect(documents.tasks.meta.latest).toBeDefined();
-			expect(documents.users.meta.latest).toBeDefined();
-			expect(typeof documents.tasks.meta.latest).toBe("string");
-			expect(typeof documents.users.meta.latest).toBe("string");
-			expect(documents.tasks.meta.latest).toMatch(
+			expect(documents.tasks.latest).toBeDefined();
+			expect(documents.users.latest).toBeDefined();
+			expect(typeof documents.tasks.latest).toBe("string");
+			expect(typeof documents.users.latest).toBe("string");
+			expect(documents.tasks.latest).toMatch(
 				/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]+\|[0-9a-f]+$/,
 			);
-			expect(documents.users.meta.latest).toMatch(
+			expect(documents.users.latest).toMatch(
 				/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]+\|[0-9a-f]+$/,
 			);
 		});

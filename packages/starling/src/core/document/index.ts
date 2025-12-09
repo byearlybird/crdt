@@ -2,8 +2,8 @@
 export type {
 	AnyObject,
 	DocumentChanges,
-	JsonDocument,
 	MergeDocumentsResult,
+	StarlingDocument,
 } from "./document";
 export { makeDocument, mergeDocuments } from "./document";
 export type { ResourceObject } from "./resource";

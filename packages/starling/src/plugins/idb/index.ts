@@ -1,4 +1,4 @@
-import type { JsonDocument } from "../../core";
+import type { StarlingDocument } from "../../core";
 import type { Database, DatabasePlugin } from "../../database/db";
 
 export type IdbPluginConfig = {
@@ -193,12 +193,12 @@ function openDatabase(
 async function loadDocuments(
 	db: IDBDatabase,
 	collectionNames: string[],
-): Promise<Record<string, JsonDocument<any>>> {
-	const documents: Record<string, JsonDocument<any>> = {};
+): Promise<Record<string, StarlingDocument<any>>> {
+	const documents: Record<string, StarlingDocument<any>> = {};
 
 	for (const collectionName of collectionNames) {
 		if (db.objectStoreNames.contains(collectionName)) {
-			const doc = await getFromStore<JsonDocument<any>>(
+			const doc = await getFromStore<StarlingDocument<any>>(
 				db,
 				collectionName,
 				"document",
@@ -217,7 +217,7 @@ async function loadDocuments(
  */
 async function saveDocuments(
 	db: IDBDatabase,
-	documents: Record<string, JsonDocument<any>>,
+	documents: Record<string, StarlingDocument<any>>,
 ): Promise<void> {
 	const promises: Promise<void>[] = [];
 

@@ -7,27 +7,22 @@ import { mergeResources, type ResourceObject } from "./resource";
 export type AnyObject = Record<string, unknown>;
 
 /**
- * A JSON:API document represents the complete state of a store:
- * - API version information
- * - Metadata including the highest eventstamp observed across all operations
- * - A set of resource objects (including soft-deleted ones)
+ * A Starling document represents the complete state of a collection:
+ * - Resource type identifier
+ * - Latest eventstamp for clock synchronization
+ * - Map of resources keyed by ID
  *
- * Documents are the unit of synchronization between store replicas.
+ * Documents are the unit of synchronization between replicas.
  */
-export type JsonDocument<T extends AnyObject> = {
-	/** API version information */
-	jsonapi: {
-		version: "1.1";
-	};
+export type StarlingDocument<T extends AnyObject> = {
+	/** Resource type for this homogeneous collection */
+	type: string;
 
-	/** Document-level metadata */
-	meta: {
-		/** Latest eventstamp observed by this document for clock synchronization */
-		latest: string;
-	};
+	/** Latest eventstamp observed by this document for clock synchronization */
+	latest: string;
 
-	/** Array of resource objects with eventstamps and metadata */
-	data: ResourceObject<T>[];
+	/** Map of resources keyed by ID for efficient lookups */
+	resources: Record<string, ResourceObject<T>>;
 };
 
 /**
@@ -46,18 +41,18 @@ export type DocumentChanges<T extends AnyObject> = {
 };
 
 /**
- * Result of merging two JSON:API documents.
+ * Result of merging two Starling documents.
  */
 export type MergeDocumentsResult<T extends AnyObject> = {
 	/** The merged document with updated resources and forwarded clock */
-	document: JsonDocument<T>;
+	document: StarlingDocument<T>;
 
 	/** Change tracking for plugin hook notifications */
 	changes: DocumentChanges<T>;
 };
 
 /**
- * Merges two JSON:API documents using field-level Last-Write-Wins semantics.
+ * Merges two Starling documents using field-level Last-Write-Wins semantics.
  *
  * The merge operation:
  * 1. Forwards the clock to the newest eventstamp from either document
@@ -75,54 +70,48 @@ export type MergeDocumentsResult<T extends AnyObject> = {
  * @example
  * ```typescript
  * const into = {
- *   jsonapi: { version: "1.1" },
- *   meta: { latest: "2025-01-01T00:00:00.000Z|0001|a1b2" },
- *   data: [{ type: "items", id: "doc1", attributes: {...}, meta: { deletedAt: null, latest: "..." } }]
+ *   type: "items",
+ *   latest: "2025-01-01T00:00:00.000Z|0001|a1b2",
+ *   resources: { "doc1": { id: "doc1", attributes: {...}, meta: {...} } }
  * };
  *
  * const from = {
- *   jsonapi: { version: "1.1" },
- *   meta: { latest: "2025-01-01T00:05:00.000Z|0001|c3d4" },
- *   data: [
- *     { type: "items", id: "doc1", attributes: {...}, meta: { deletedAt: null, latest: "..." } }, // updated
- *     { type: "items", id: "doc2", attributes: {...}, meta: { deletedAt: null, latest: "..." } }  // new
- *   ]
+ *   type: "items",
+ *   latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
+ *   resources: {
+ *     "doc1": { id: "doc1", attributes: {...}, meta: {...} }, // updated
+ *     "doc2": { id: "doc2", attributes: {...}, meta: {...} }  // new
+ *   }
  * };
  *
  * const result = mergeDocuments(into, from);
- * // result.document.meta.latest === "2025-01-01T00:05:00.000Z|0001|c3d4"
+ * // result.document.latest === "2025-01-01T00:05:00.000Z|0001|c3d4"
  * // result.changes.added has "doc2"
  * // result.changes.updated has "doc1"
  * ```
  */
 export function mergeDocuments<T extends AnyObject>(
-	into: JsonDocument<T>,
-	from: JsonDocument<T>,
+	into: StarlingDocument<T>,
+	from: StarlingDocument<T>,
 ): MergeDocumentsResult<T> {
-	// Build index of base resources by ID for efficient lookup
-	const intoDocsById = new Map<string, ResourceObject<T>>();
-	for (const doc of into.data) {
-		intoDocsById.set(doc.id, doc);
-	}
-
 	// Track changes for hook notifications
 	const added = new Map<string, ResourceObject<T>>();
 	const updated = new Map<string, ResourceObject<T>>();
 	const deleted = new Set<string>();
 
-	// Start with base resources, will update/add as we process source
-	const mergedDocsById = new Map<string, ResourceObject<T>>(intoDocsById);
-	let newestEventstamp =
-		into.meta.latest >= from.meta.latest ? into.meta.latest : from.meta.latest;
+	// Start with base resources
+	const mergedResources: Record<string, ResourceObject<T>> = {
+		...into.resources,
+	};
+	let newestEventstamp = into.latest >= from.latest ? into.latest : from.latest;
 
 	// Process each source resource
-	for (const fromDoc of from.data) {
-		const id = fromDoc.id;
-		const intoDoc = intoDocsById.get(id);
+	for (const [id, fromDoc] of Object.entries(from.resources)) {
+		const intoDoc = into.resources[id];
 
 		if (!intoDoc) {
 			// New resource from source - store it and track if not deleted
-			mergedDocsById.set(id, fromDoc);
+			mergedResources[id] = fromDoc;
 			if (!fromDoc.meta.deletedAt) {
 				added.set(id, fromDoc);
 			}
@@ -137,7 +126,7 @@ export function mergeDocuments<T extends AnyObject>(
 
 			// Merge existing resource using field-level LWW
 			const mergedDoc = mergeResources(intoDoc, fromDoc);
-			mergedDocsById.set(id, mergedDoc);
+			mergedResources[id] = mergedDoc;
 			if (mergedDoc.meta.latest > newestEventstamp) {
 				newestEventstamp = mergedDoc.meta.latest;
 			}
@@ -163,11 +152,9 @@ export function mergeDocuments<T extends AnyObject>(
 
 	return {
 		document: {
-			jsonapi: { version: "1.1" },
-			meta: {
-				latest: newestEventstamp,
-			},
-			data: Array.from(mergedDocsById.values()),
+			type: into.type,
+			latest: newestEventstamp,
+			resources: mergedResources,
 		},
 		changes: {
 			added,
@@ -178,25 +165,25 @@ export function mergeDocuments<T extends AnyObject>(
 }
 
 /**
- * Creates an empty JSON:API document with the given eventstamp.
+ * Creates an empty Starling document with the given type and eventstamp.
  * Useful for initializing new stores or testing.
  *
+ * @param type - Resource type identifier for this collection
  * @param eventstamp - Initial clock value for this document
  * @returns Empty document
  *
  * @example
  * ```typescript
- * const empty = makeDocument("2025-01-01T00:00:00.000Z|0000|0000");
+ * const empty = makeDocument("tasks", "2025-01-01T00:00:00.000Z|0000|0000");
  * ```
  */
 export function makeDocument<T extends AnyObject>(
+	type: string,
 	eventstamp: string,
-): JsonDocument<T> {
+): StarlingDocument<T> {
 	return {
-		jsonapi: { version: "1.1" },
-		meta: {
-			latest: eventstamp,
-		},
-		data: [],
+		type,
+		latest: eventstamp,
+		resources: {},
 	};
 }

@@ -11,33 +11,28 @@
  */
 
 // Re-export commonly needed core types
-export type { JsonDocument, AnyObject } from "./core";
-
-// Database features
-export { createDatabase } from "./database/db";
-export type {
-	Database,
-	DbConfig,
-	CollectionConfig,
-	DatabasePlugin,
-} from "./database/db";
-
+export type { AnyObject, StarlingDocument } from "./core";
 export {
 	type Collection,
 	CollectionInternals,
 	DuplicateIdError,
 	IdNotFoundError,
 } from "./database/collection";
-
 export type {
-	TransactionContext,
-	TransactionCollectionHandle,
-} from "./database/transaction";
-
+	CollectionConfig,
+	Database,
+	DatabasePlugin,
+	DbConfig,
+} from "./database/db";
+// Database features
+export { createDatabase } from "./database/db";
 export type {
+	QueryCollectionHandle,
 	QueryContext,
 	QueryHandle,
-	QueryCollectionHandle,
 } from "./database/query";
-
 export type { StandardSchemaV1 } from "./database/standard-schema";
+export type {
+	TransactionCollectionHandle,
+	TransactionContext,
+} from "./database/transaction";

@@ -28,38 +28,7 @@ Key-based serialization makes data self-documenting:
 
 ---
 
-## Decision 002 — Tilde Prefix for System Keys
-
-**Context**
-
-Internal metadata fields (IDs, timestamps, deletion markers) need to be:
-1. Clearly distinguishable from user-defined data
-2. Compact (don't bloat JSON payloads)
-3. Consistent across the codebase
-
-**Decision**
-
-Prefix all system-reserved keys with a tilde (`~`): `~id`, `~deletedAt`, `~createdAt`.
-
-This decision applies to higher-level store schemas that expose raw documents to users. The core CRDT types in `packages/core` use JSON:API-style `type`, `id`, `attributes`, and `meta` fields instead.
-
-**Rationale**
-
-The tilde prefix provides visual and functional separation:
-
-- **IDE ergonomics**: Tilde-prefixed keys sort to the bottom of IntelliSense suggestions, keeping user fields prominent
-- **Visual distinction**: The tilde is rarely used in user identifiers, making system keys immediately recognizable
-- **Compact**: Single-character prefix minimizes payload overhead
-
-**Alternatives Considered**
-
-- **Double underscore (`__id`)** — Common, but blends with user-defined private fields
-- **Dollar sign (`$id`)** — Reserved in some query languages (MongoDB) and can confuse developers familiar with those conventions
-- **Namespace object (`{ _meta: { id, deletedAt } }`)** — Cleaner separation but adds nesting depth and complicates field-level merging
-
----
-
-## Decision 003 — Last-Write-Wins with Hybrid Logical Clock
+## Decision 002 — Last-Write-Wins with Hybrid Logical Clock
 
 **Context**
 

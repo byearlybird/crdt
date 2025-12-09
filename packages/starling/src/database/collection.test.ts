@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { makeResource } from "../core";
+import { makeResource, type ResourceObject } from "../core";
 import {
 	CollectionInternals,
+	type CollectionMutationEvent,
+	type CollectionWithInternals,
 	createCollection,
 	DuplicateIdError,
 	IdNotFoundError,
@@ -10,8 +12,11 @@ import {
 	createTestDb,
 	makeTask,
 	makeTaskDocument,
+	type Task,
 	taskSchema,
 } from "./test-helpers";
+
+type TaskCollectionInternals = CollectionWithInternals<typeof taskSchema>;
 
 describe("Collection", () => {
 	describe("add", () => {
@@ -264,14 +269,13 @@ describe("Collection", () => {
 
 			const doc = makeTaskDocument([], "2099-01-01T00:05:00.000Z|0001|c3d4");
 			const resource = makeResource(
-				"tasks",
 				"task-1",
 				{ id: "task-1", title: "Buy milk", completed: false },
 				"2099-01-01T00:00:00.000Z|0001|a1b2",
 			);
 			resource.meta.deletedAt = "2099-01-01T00:05:00.000Z|0001|c3d4";
 			resource.meta.latest = "2099-01-01T00:05:00.000Z|0001|c3d4";
-			doc.data.push(resource);
+			doc.resources[resource.id] = resource;
 
 			db.tasks.merge(doc);
 
@@ -414,14 +418,13 @@ describe("Collection", () => {
 
 			const doc = makeTaskDocument([], "2099-01-01T00:05:00.000Z|0001|c3d4");
 			const resource = makeResource(
-				"tasks",
 				"task-1",
 				{ id: "task-1", title: "Buy milk", completed: false },
 				"2099-01-01T00:00:00.000Z|0001|a1b2",
 			);
 			resource.meta.deletedAt = "2099-01-01T00:05:00.000Z|0001|c3d4";
 			resource.meta.latest = "2099-01-01T00:05:00.000Z|0001|c3d4";
-			doc.data.push(resource);
+			doc.resources[resource.id] = resource;
 
 			db.tasks.merge(doc);
 
@@ -547,7 +550,7 @@ describe("Collection", () => {
 	describe("CollectionInternals.emitMutations", () => {
 		test("emits mutation event when mutations are non-empty", () => {
 			let eventstampCounter = 0;
-			const collection = createCollection(
+			const collection: TaskCollectionInternals = createCollection(
 				"tasks",
 				taskSchema,
 				(task) => task.id,
@@ -558,13 +561,19 @@ describe("Collection", () => {
 			const events: any[] = [];
 			collection.on("mutation", (e) => events.push(e));
 
-			collection[CollectionInternals.emitMutations]({
+			const mutations: CollectionMutationEvent<Task> = {
 				added: [
 					{ id: "1", item: { id: "1", title: "Test", completed: false } },
 				],
 				updated: [],
 				removed: [],
-			});
+			};
+
+			(
+				collection[CollectionInternals.emitMutations] as unknown as (
+					payload: CollectionMutationEvent<Task>,
+				) => void
+			)(mutations);
 
 			expect(events).toHaveLength(1);
 			expect(events[0].added).toHaveLength(1);
@@ -572,7 +581,7 @@ describe("Collection", () => {
 
 		test("does not emit when all mutation arrays are empty", () => {
 			let eventstampCounter = 0;
-			const collection = createCollection(
+			const collection: TaskCollectionInternals = createCollection(
 				"tasks",
 				taskSchema,
 				(task) => task.id,
@@ -583,11 +592,17 @@ describe("Collection", () => {
 			const events: any[] = [];
 			collection.on("mutation", (e) => events.push(e));
 
-			collection[CollectionInternals.emitMutations]({
+			const mutations: CollectionMutationEvent<Task> = {
 				added: [],
 				updated: [],
 				removed: [],
-			});
+			};
+
+			(
+				collection[CollectionInternals.emitMutations] as unknown as (
+					payload: CollectionMutationEvent<Task>,
+				) => void
+			)(mutations);
 
 			expect(events).toHaveLength(0);
 		});
@@ -596,7 +611,7 @@ describe("Collection", () => {
 	describe("CollectionInternals.replaceData", () => {
 		test("replaces the internal data map", () => {
 			let eventstampCounter = 0;
-			const collection = createCollection(
+			const collection: TaskCollectionInternals = createCollection(
 				"tasks",
 				taskSchema,
 				(task) => task.id,
@@ -606,18 +621,21 @@ describe("Collection", () => {
 
 			collection.add({ id: "1", title: "Keep?", completed: false });
 
-			const newData = new Map();
+			const newData: Map<string, ResourceObject<Task>> = new Map();
 			newData.set(
 				"2",
 				makeResource(
-					"tasks",
 					"2",
 					{ id: "2", title: "Replacement", completed: true },
 					"2025-01-01T00:00:00.000Z|0005|0000",
 				),
 			);
 
-			collection[CollectionInternals.replaceData](newData);
+			(
+				collection[CollectionInternals.replaceData] as unknown as (
+					payload: Map<string, ResourceObject<Task>>,
+				) => void
+			)(newData);
 
 			expect(collection.get("1")).toBeNull();
 			expect(collection.get("2")?.title).toBe("Replacement");
@@ -633,14 +651,13 @@ describe("Collection", () => {
 
 			const doc = db.tasks.toDocument();
 
-			expect(doc.jsonapi.version).toBe("1.1");
-			expect(doc.meta.latest).toBeDefined();
-			expect(doc.data).toHaveLength(2);
-			expect(doc.data[0]?.type).toBe("tasks");
-			expect(doc.data[0]?.id).toBe("task-1");
-			expect(doc.data[0]?.attributes.title).toBe("Buy milk");
-			expect(doc.data[1]?.id).toBe("task-2");
-			expect(doc.data[1]?.attributes.title).toBe("Walk dog");
+			expect(doc.type).toBe("tasks");
+			expect(doc.latest).toBeDefined();
+			expect(Object.keys(doc.resources)).toHaveLength(2);
+			expect(doc.resources["task-1"]?.id).toBe("task-1");
+			expect(doc.resources["task-1"]?.attributes.title).toBe("Buy milk");
+			expect(doc.resources["task-2"]?.id).toBe("task-2");
+			expect(doc.resources["task-2"]?.attributes.title).toBe("Walk dog");
 		});
 
 		test("returns empty document for empty collection", () => {
@@ -648,9 +665,8 @@ describe("Collection", () => {
 
 			const doc = db.tasks.toDocument();
 
-			expect(doc.jsonapi.version).toBe("1.1");
-			expect(doc.meta.latest).toBeDefined();
-			expect(doc.data).toHaveLength(0);
+			expect(doc.latest).toBeDefined();
+			expect(Object.keys(doc.resources)).toHaveLength(0);
 		});
 
 		test("includes soft-deleted items in document", () => {
@@ -660,9 +676,9 @@ describe("Collection", () => {
 
 			const doc = db.tasks.toDocument();
 
-			expect(doc.data).toHaveLength(1);
-			expect(doc.data[0]?.meta.deletedAt).toBeDefined();
-			expect(doc.data[0]?.meta.deletedAt).not.toBeNull();
+			expect(Object.keys(doc.resources)).toHaveLength(1);
+			expect(doc.resources["task-1"]?.meta.deletedAt).toBeDefined();
+			expect(doc.resources["task-1"]?.meta.deletedAt).not.toBeNull();
 		});
 
 		test("includes correct latest eventstamp", () => {
@@ -673,11 +689,11 @@ describe("Collection", () => {
 			const doc = db.tasks.toDocument();
 
 			// The latest should be the maximum of all resource eventstamps
-			expect(doc.meta.latest).toBeDefined();
-			expect(typeof doc.meta.latest).toBe("string");
+			expect(doc.latest).toBeDefined();
+			expect(typeof doc.latest).toBe("string");
 
 			// Verify it matches the format
-			expect(doc.meta.latest).toMatch(
+			expect(doc.latest).toMatch(
 				/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]+\|[0-9a-f]+$/,
 			);
 		});

@@ -1,5 +1,5 @@
-import { makeDocument, makeResource } from "../core";
 import { z } from "zod";
+import { makeDocument, makeResource } from "../core";
 import { createDatabase } from "./db";
 
 // Shared schemas
@@ -62,9 +62,9 @@ export function makeTaskDocument(
 	tasks: Array<{ id: string; title: string; completed: boolean }>,
 	eventstamp = "2099-01-01T00:00:00.000Z|0001|a1b2",
 ) {
-	const doc = makeDocument<Task>(eventstamp);
+	const doc = makeDocument<Task>("tasks", eventstamp);
 	for (const task of tasks) {
-		doc.data.push(makeResource("tasks", task.id, task, eventstamp));
+		doc.resources[task.id] = makeResource(task.id, task, eventstamp);
 	}
 	return doc;
 }
