@@ -9,7 +9,7 @@ This document covers the design and internals of Starling, including the state-b
 | Path | Description |
 | --- | --- |
 | `packages/starling` | Consolidated package containing core primitives, database layer, and plugins |
-| `packages/starling/src/core` | Core CRDT primitives (`JsonDocument`, `ResourceObject`, `createMap`, `createClock`) for state-based replication |
+| `packages/starling/src/core` | Core CRDT primitives (`StarlingDocument`, `ResourceObject`, `createMap`, `createClock`) for state-based replication |
 | `packages/starling/src/database` | Database utilities with typed collections, transactions, and mutation events |
 | `packages/starling/src/plugins` | Plugin implementations (IDB, HTTP) for persistence and sync |
 
@@ -121,37 +121,33 @@ Merged: { name: "Alice Smith", email: "alice@new.com" }
 
 ### Document Format
 
-The `JsonDocument` type represents the complete persistent state of a store, containing API version information, metadata, and an array of resource objects:
+The `StarlingDocument` type represents the complete persistent state of a collection, containing version information, type identifier, latest eventstamp, and resources as a keyed object:
 
 ```typescript
-export type JsonDocument = {
-  jsonapi: {
-    version: "1.1";
-  };
-  meta: {
-    latest: string;
-  };
-  data: ResourceObject[];
+export type StarlingDocument<T extends AnyObject> = {
+  version: "1.0";
+  type: string;
+  latest: string;
+  resources: Record<string, ResourceObject<T>>;
 };
 ```
 
 **Design notes:**
 
-- **`jsonapi`**: Version information for the document structure
-- **`meta.latest`**: The highest eventstamp observed by the document. When merging documents, the clock forwards to the newest eventstamp to prevent collisions across sync boundaries
-- **`data`**: Array of resource objects, including soft-deleted items (those with `meta.deletedAt` set). This ensures deletion events propagate during sync
+- **`version`**: Document schema version (currently "1.0")
+- **`type`**: Resource type identifier for this collection (e.g., "users", "todos", "posts")
+- **`latest`**: The highest eventstamp observed by the document. When merging documents, the clock forwards to the newest eventstamp to prevent collisions across sync boundaries
+- **`resources`**: Object mapping resource IDs to ResourceObjects, including soft-deleted items (those with `meta.deletedAt` set). This ensures deletion events propagate during sync
 
 Example document:
 
 ```typescript
 {
-  jsonapi: { version: "1.1" },
-  meta: {
-    latest: "2025-10-26T10:00:00.000Z|0001|a7f2"
-  },
-  data: [
-    {
-      type: "users",
+  version: "1.0",
+  type: "users",
+  latest: "2025-10-26T10:00:00.000Z|0001|a7f2",
+  resources: {
+    "user-1": {
       id: "user-1",
       attributes: {
         name: "Alice",
@@ -166,21 +162,20 @@ Example document:
         deletedAt: null
       }
     }
-  ]
+  }
 }
 ```
 
 ### Resource Object Format
 
-Each resource in the `data` array follows this structure:
+Each resource in the `resources` object follows this structure:
 
 ```typescript
-export type ResourceObject = {
-  type: string;
+export type ResourceObject<T extends AnyObject> = {
   id: string;
-  attributes: Record<string, unknown>;
+  attributes: T;
   meta: {
-    eventstamps: Record<string, unknown>;
+    eventstamps: Record<string, string>;
     latest: string;
     deletedAt: string | null;
   };
@@ -189,12 +184,13 @@ export type ResourceObject = {
 
 **Design notes:**
 
-- **`type`**: Resource type identifier (e.g., "users", "todos", "posts")
 - **`id`**: Unique identifier for this resource
 - **`attributes`**: The resource's data as a nested object structure (plain values, not wrapped)
 - **`meta.eventstamps`**: Mirrored structure containing eventstamps for each attribute field
 - **`meta.latest`**: The greatest eventstamp in this resource (including deletedAt if applicable)
 - **`meta.deletedAt`**: Eventstamp when this resource was soft-deleted, or null if not deleted
+
+Note: The resource type is stored at the document level (`StarlingDocument.type`), not on individual resources.
 
 ### Merging Documents
 
@@ -225,8 +221,8 @@ Each module handles a distinct responsibility in the state-based replication mod
 | --- | --- |
 | [`clock/clock.ts`](../packages/starling/src/core/clock/clock.ts) | Monotonic logical clock that increments a hex counter when the OS clock stalls, forwards itself when observing newer remote stamps, and exposes the shared clock used across resources and documents |
 | [`clock/eventstamp.ts`](../packages/starling/src/core/clock/eventstamp.ts) | Encoder/decoder for sortable `YYYY-MM-DDTHH:mm:ss.SSSZ\|counter\|nonce` strings, comparison helpers, and utilities used by resources to apply Last-Write-Wins semantics |
-| [`document/resource.ts`](../packages/starling/src/core/document/resource.ts) | Defines resource objects (`type`, `id`, `attributes`, `meta`), handles soft deletion, and merges field-level values with eventstamp comparisons |
-| [`document/document.ts`](../packages/starling/src/core/document/document.ts) | Coordinates `JsonDocument` creation and `mergeDocuments`, tracks added/updated/deleted resources, and keeps document metadata (latest eventstamp) synchronized |
+| [`document/resource.ts`](../packages/starling/src/core/document/resource.ts) | Defines resource objects (`id`, `attributes`, `meta`), handles soft deletion, and merges field-level values with eventstamp comparisons |
+| [`document/document.ts`](../packages/starling/src/core/document/document.ts) | Coordinates `StarlingDocument` creation and `mergeDocuments`, tracks added/updated/deleted resources, and keeps document metadata (latest eventstamp) synchronized |
 | [`resource-map/resource-map.ts`](../packages/starling/src/core/resource-map/resource-map.ts) | CRDT data structure providing a map-like interface for managing resources with field-level LWW semantics, document export/import, and soft deletion |
 
 ### Data Flow
@@ -261,7 +257,7 @@ Starling ships as a single consolidated package with subpath exports.
 - Collections: `Collection`, `CollectionHandle`, `CollectionConfig`
 - Transactions and events: `TransactionContext`, `DatabaseMutationEvent`
 - Schema utilities: `StandardSchemaV1`
-- Re-exported core types: `JsonDocument`, `AnyObject`
+- Re-exported core types: `StarlingDocument`, `AnyObject`
 
 The main export provides typed collections with CRUD operations, transactions, and mutation events built on top of core primitives.
 
@@ -270,7 +266,7 @@ The main export provides typed collections with CRUD operations, transactions, a
 **Core CRDT primitives exports:**
 
 - Clocks: `createClock`, `createClockFromEventstamp`, `MIN_EVENTSTAMP`, `isValidEventstamp`
-- Documents: `makeDocument`, `mergeDocuments`, types `JsonDocument`, `AnyObject`, `DocumentChanges`, `MergeDocumentsResult`
+- Documents: `makeDocument`, `mergeDocuments`, types `StarlingDocument`, `AnyObject`, `DocumentChanges`, `MergeDocumentsResult`
 - Resources: `makeResource`, `mergeResources`, `deleteResource`, type `ResourceObject`
 - Resource maps: `createMap`, `createMapFromDocument`
 
