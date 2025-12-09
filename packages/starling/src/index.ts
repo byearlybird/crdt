@@ -11,7 +11,7 @@
  */
 
 // Re-export commonly needed core types
-export type { AnyObject, StarlingDocument } from "./core";
+export type { AnyObject, AnyStarlingDocument, StarlingDocument } from "./core";
 export {
 	type Collection,
 	CollectionInternals,

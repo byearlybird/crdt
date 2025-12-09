@@ -26,6 +26,22 @@ export type StarlingDocument<T extends AnyObject> = {
 };
 
 /**
+ * Type helper for StarlingDocument with any object-like structure.
+ * Preserves type inference when a specific type is provided.
+ *
+ * @example
+ * ```typescript
+ * // Use without type argument as a catch-all
+ * function processDocument(doc: AnyStarlingDocument) { ... }
+ *
+ * // Use with type argument to preserve specific types
+ * function processTypedDocument<T extends AnyObject>(doc: AnyStarlingDocument<T>) { ... }
+ * ```
+ */
+export type AnyStarlingDocument<T extends AnyObject = AnyObject> =
+	StarlingDocument<T>;
+
+/**
  * Change tracking information returned by mergeDocuments.
  * Categorizes resources by mutation type for hook notifications.
  */
