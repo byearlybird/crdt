@@ -7,9 +7,19 @@ import {
 	spyOn,
 	test,
 } from "bun:test";
-import { makeDocument, makeResource } from "../../core";
+import {
+	type AnyObject,
+	makeDocument,
+	makeResource,
+	type StarlingDocument,
+} from "../../core";
 import { createDatabase } from "../../database/db";
-import { makeTask, taskSchema, userSchema } from "../../database/test-helpers";
+import {
+	makeTask,
+	type Task,
+	taskSchema,
+	userSchema,
+} from "../../database/test-helpers";
 import { httpPlugin, type RequestContext } from "./index";
 
 // Mock fetch
@@ -324,7 +334,7 @@ describe("httpPlugin", () => {
 
 			// Should have logged polling error
 			expect(consoleErrorSpy).toHaveBeenCalled();
-			const errorCall = consoleErrorSpy.mock.calls.find((call) =>
+			const errorCall = consoleErrorSpy.mock.calls.find((call: unknown[]) =>
 				String(call[0]).includes("Failed to poll collection"),
 			);
 			expect(errorCall).toBeDefined();
@@ -716,9 +726,13 @@ describe("httpPlugin", () => {
 						baseUrl: "https://api.example.com",
 						pollingInterval: 60000,
 						debounceDelay: 10,
-						onRequest: ({ operation }) => {
+						onRequest: <T extends AnyObject>({
+							operation,
+						}: RequestContext<T>) => {
 							if (operation === "PATCH") {
-								return { document: transformedDoc };
+								return {
+									document: transformedDoc as unknown as StarlingDocument<T>,
+								};
 							}
 							return undefined;
 						},
@@ -805,7 +819,9 @@ describe("httpPlugin", () => {
 					httpPlugin({
 						baseUrl: "https://api.example.com",
 						pollingInterval: 60000,
-						onResponse: () => ({ document: transformedDoc }),
+						onResponse: <T extends AnyObject>() => ({
+							document: transformedDoc as unknown as StarlingDocument<T>,
+						}),
 					}),
 				)
 				.init();
@@ -851,10 +867,19 @@ describe("httpPlugin", () => {
 				.init();
 
 			expect(onResponseMock).toHaveBeenCalledTimes(1);
-			expect(onResponseMock.mock.calls[0]?.[0]).toMatchObject({
+			const typedCalls = onResponseMock.mock.calls as unknown as Array<
+				[{ collection: string; document: StarlingDocument<Task> }]
+			>;
+			const firstCall = typedCalls[0];
+			expect(firstCall).toBeDefined();
+			if (!firstCall) {
+				throw new Error("onResponse hook was not invoked");
+			}
+			const [responseContext] = firstCall;
+			expect(responseContext).toMatchObject({
 				collection: "tasks",
 			});
-			expect(onResponseMock.mock.calls[0]?.[0]?.document).toBeDefined();
+			expect(responseContext.document).toBeDefined();
 
 			await db.dispose();
 		});

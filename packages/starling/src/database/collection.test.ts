@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { makeResource } from "../core";
+import { makeResource, type ResourceObject } from "../core";
 import {
 	CollectionInternals,
+	type CollectionMutationEvent,
+	type CollectionWithInternals,
 	createCollection,
 	DuplicateIdError,
 	IdNotFoundError,
@@ -10,8 +12,11 @@ import {
 	createTestDb,
 	makeTask,
 	makeTaskDocument,
+	type Task,
 	taskSchema,
 } from "./test-helpers";
+
+type TaskCollectionInternals = CollectionWithInternals<typeof taskSchema>;
 
 describe("Collection", () => {
 	describe("add", () => {
@@ -545,7 +550,7 @@ describe("Collection", () => {
 	describe("CollectionInternals.emitMutations", () => {
 		test("emits mutation event when mutations are non-empty", () => {
 			let eventstampCounter = 0;
-			const collection = createCollection(
+			const collection: TaskCollectionInternals = createCollection(
 				"tasks",
 				taskSchema,
 				(task) => task.id,
@@ -556,13 +561,19 @@ describe("Collection", () => {
 			const events: any[] = [];
 			collection.on("mutation", (e) => events.push(e));
 
-			collection[CollectionInternals.emitMutations]({
+			const mutations: CollectionMutationEvent<Task> = {
 				added: [
 					{ id: "1", item: { id: "1", title: "Test", completed: false } },
 				],
 				updated: [],
 				removed: [],
-			});
+			};
+
+			(
+				collection[CollectionInternals.emitMutations] as unknown as (
+					payload: CollectionMutationEvent<Task>,
+				) => void
+			)(mutations);
 
 			expect(events).toHaveLength(1);
 			expect(events[0].added).toHaveLength(1);
@@ -570,7 +581,7 @@ describe("Collection", () => {
 
 		test("does not emit when all mutation arrays are empty", () => {
 			let eventstampCounter = 0;
-			const collection = createCollection(
+			const collection: TaskCollectionInternals = createCollection(
 				"tasks",
 				taskSchema,
 				(task) => task.id,
@@ -581,11 +592,17 @@ describe("Collection", () => {
 			const events: any[] = [];
 			collection.on("mutation", (e) => events.push(e));
 
-			collection[CollectionInternals.emitMutations]({
+			const mutations: CollectionMutationEvent<Task> = {
 				added: [],
 				updated: [],
 				removed: [],
-			});
+			};
+
+			(
+				collection[CollectionInternals.emitMutations] as unknown as (
+					payload: CollectionMutationEvent<Task>,
+				) => void
+			)(mutations);
 
 			expect(events).toHaveLength(0);
 		});
@@ -594,7 +611,7 @@ describe("Collection", () => {
 	describe("CollectionInternals.replaceData", () => {
 		test("replaces the internal data map", () => {
 			let eventstampCounter = 0;
-			const collection = createCollection(
+			const collection: TaskCollectionInternals = createCollection(
 				"tasks",
 				taskSchema,
 				(task) => task.id,
@@ -604,7 +621,7 @@ describe("Collection", () => {
 
 			collection.add({ id: "1", title: "Keep?", completed: false });
 
-			const newData = new Map();
+			const newData: Map<string, ResourceObject<Task>> = new Map();
 			newData.set(
 				"2",
 				makeResource(
@@ -614,7 +631,11 @@ describe("Collection", () => {
 				),
 			);
 
-			collection[CollectionInternals.replaceData](newData);
+			(
+				collection[CollectionInternals.replaceData] as unknown as (
+					payload: Map<string, ResourceObject<Task>>,
+				) => void
+			)(newData);
 
 			expect(collection.get("1")).toBeNull();
 			expect(collection.get("2")?.title).toBe("Replacement");

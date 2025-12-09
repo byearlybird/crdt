@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { MIN_EVENTSTAMP } from "../clock/eventstamp";
-import type { AnyObject, StarlingDocument } from "../document/document";
+import type { StarlingDocument } from "../document/document";
 import { makeResource } from "../document/resource";
 import { createMap, createMapFromDocument } from "./resource-map";
+
+type NameAttrs = { name: string };
+type NameAgeAttrs = { name: string; age: number };
+type TodoAttrs = { text: string; completed: boolean };
 
 describe("ResourceMap", () => {
 	describe("constructor", () => {
@@ -246,7 +250,7 @@ describe("ResourceMap", () => {
 
 	describe("fromSnapshot", () => {
 		test("creates ResourceMap from collection", () => {
-			const collection: StarlingDocument<AnyObject> = {
+			const collection: StarlingDocument<NameAttrs> = {
 				version: "1.0",
 				type: "items",
 				latest: "2025-01-01T00:00:00.000Z|0001|abcd",
@@ -267,7 +271,7 @@ describe("ResourceMap", () => {
 			const deletedDoc = makeResource("id1", { name: "Alice" }, MIN_EVENTSTAMP);
 			deletedDoc.meta.deletedAt = "2025-01-01T00:00:01.000Z|0001|abcd";
 
-			const collection: StarlingDocument<AnyObject> = {
+			const collection: StarlingDocument<NameAttrs> = {
 				version: "1.0",
 				type: "items",
 				latest: "2025-01-01T00:00:01.000Z|0001|abcd",
@@ -322,7 +326,7 @@ describe("ResourceMap", () => {
 			// Merge replica1 into replica2
 			const collection1 = replica1.toDocument();
 			for (const encodedDoc of Object.values(collection1.resources)) {
-				replica2.set(encodedDoc.id, encodedDoc.attributes as any);
+				replica2.set(encodedDoc.id, encodedDoc.attributes);
 			}
 
 			// Age should be 31 (most recent update)
@@ -367,7 +371,7 @@ describe("ResourceMap", () => {
 
 	describe("clock forwarding", () => {
 		test("clock forwards when loading newer eventstamp", () => {
-			const collection: StarlingDocument<AnyObject> = {
+			const collection: StarlingDocument<NameAttrs> = {
 				version: "1.0",
 				type: "items",
 				latest: "2025-01-01T00:00:10.000Z|0001|abcd",
@@ -389,7 +393,7 @@ describe("ResourceMap", () => {
 			const crdt = createMap<{ name: string }>("items", new Map());
 			crdt.set("id1", { name: "Alice" });
 
-			const remoteCollection: StarlingDocument<AnyObject> = {
+			const remoteCollection: StarlingDocument<NameAttrs> = {
 				version: "1.0",
 				type: "items",
 				latest: MIN_EVENTSTAMP,
@@ -426,11 +430,13 @@ describe("ResourceMap", () => {
 
 			// Create a remote document with a newer eventstamp for one field
 			const laterEventstamp = "2025-01-01T00:00:05.000Z|0001|efgh";
-			const remoteCollection: StarlingDocument<AnyObject> = {
+			const remoteCollection: StarlingDocument<NameAgeAttrs> = {
 				version: "1.0",
 				type: "items",
 				latest: laterEventstamp,
-				resources: { id1: makeResource("id1", { age: 31 }, laterEventstamp) },
+				resources: {
+					id1: makeResource("id1", { name: "Alice", age: 31 }, laterEventstamp),
+				},
 			};
 
 			const result = crdt.merge(remoteCollection);
@@ -452,7 +458,7 @@ describe("ResourceMap", () => {
 			const deletionEventstamp = "2025-01-01T00:00:05.000Z|0001|efgh";
 			deletedDoc.meta.deletedAt = deletionEventstamp;
 
-			const remoteCollection: StarlingDocument<AnyObject> = {
+			const remoteCollection: StarlingDocument<NameAttrs> = {
 				version: "1.0",
 				type: "items",
 				latest: deletionEventstamp,
@@ -479,7 +485,7 @@ describe("ResourceMap", () => {
 				MIN_EVENTSTAMP,
 			);
 			const futureEventstamp = "2025-01-01T00:00:10.000Z|0001|abcd";
-			const remoteCollection: StarlingDocument<AnyObject> = {
+			const remoteCollection: StarlingDocument<NameAttrs> = {
 				version: "1.0",
 				type: "items",
 				latest: futureEventstamp,
@@ -503,7 +509,7 @@ describe("ResourceMap", () => {
 			const crdt = createMap<{ name: string; age: number }>("items", new Map());
 			crdt.set("id1", { name: "Alice", age: 30 });
 
-			const remoteCollection: StarlingDocument<AnyObject> = {
+			const remoteCollection: StarlingDocument<NameAgeAttrs> = {
 				version: "1.0",
 				type: "items",
 				latest: MIN_EVENTSTAMP,
@@ -532,7 +538,7 @@ describe("ResourceMap", () => {
 			const localDoc = makeResource("id1", { name: "Alice" }, localEventstamp);
 			const crdt = createMap("items", new Map([["id1", localDoc]]));
 			const olderEventstamp = "2025-01-01T00:00:05.000Z|0001|efgh";
-			const remoteCollection: StarlingDocument<AnyObject> = {
+			const remoteCollection: StarlingDocument<NameAttrs> = {
 				version: "1.0",
 				type: "items",
 				latest: olderEventstamp,
@@ -549,17 +555,11 @@ describe("ResourceMap", () => {
 
 		test("merge combines documents from multiple replicas", () => {
 			// Simulate two replicas that have diverged
-			const replica1 = createMap<{ text: string; completed: boolean }>(
-				"todos",
-				new Map(),
-			);
+			const replica1 = createMap<TodoAttrs>("todos", new Map());
 			replica1.set("todo1", { text: "Task 1", completed: false });
 			replica1.set("todo2", { text: "Task 2", completed: false });
 
-			const replica2 = createMap<{ text: string; completed: boolean }>(
-				"todos",
-				new Map(),
-			);
+			const replica2 = createMap<TodoAttrs>("todos", new Map());
 			replica2.set("todo3", { text: "Task 3", completed: false });
 			replica2.set("todo1", { completed: true }); // Update existing
 
