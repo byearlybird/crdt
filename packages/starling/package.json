@@ -1,6 +1,6 @@
 {
 	"name": "@byearlybird/starling",
-	"version": "0.11.0",
+	"version": "0.12.0",
 	"description": "Local-first data sync for JavaScript apps. Typed collections, transactions, and automatic conflict resolution.",
 	"type": "module",
 	"license": "MIT",
