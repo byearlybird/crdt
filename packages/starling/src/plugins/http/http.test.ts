@@ -89,7 +89,6 @@ async function createTestHttpDb(
 		},
 	})
 		.use(
-			// @ts-expect-error - httpPlugin returns generic type
 			httpPlugin({
 				baseUrl: "https://api.example.com",
 				pollingInterval: 60000, // Long interval to prevent polling during tests
@@ -738,7 +737,6 @@ describe("httpPlugin", () => {
 				},
 			})
 				.use(
-					// @ts-expect-error - httpPlugin returns generic type
 					httpPlugin({
 						baseUrl: "https://api.example.com",
 						pollingInterval: 60000,

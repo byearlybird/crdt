@@ -4,32 +4,32 @@ import type { DatabaseSnapshot, SchemasMap } from "../../database/types";
 /**
  * Context provided to the onRequest hook
  */
-export type RequestContext<Schemas extends SchemasMap = SchemasMap> = {
+export type RequestContext = {
 	operation: "GET" | "PATCH";
 	url: string;
-	snapshot?: DatabaseSnapshot<Schemas>; // Present for PATCH operations
+	snapshot?: DatabaseSnapshot<SchemasMap>; // Present for PATCH operations
 };
 
 /**
  * Result returned by the onRequest hook
  */
-export type RequestHookResult<Schemas extends SchemasMap = SchemasMap> =
+export type RequestHookResult =
 	| { skip: true }
-	| { headers?: Record<string, string>; snapshot?: DatabaseSnapshot<Schemas> }
+	| { headers?: Record<string, string>; snapshot?: DatabaseSnapshot<SchemasMap> }
 	| undefined;
 
 /**
  * Result returned by the onResponse hook
  */
-export type ResponseHookResult<Schemas extends SchemasMap = SchemasMap> =
-	| { snapshot: DatabaseSnapshot<Schemas> }
+export type ResponseHookResult =
+	| { snapshot: DatabaseSnapshot<SchemasMap> }
 	| { skip: true }
 	| undefined; // Use original snapshot
 
 /**
  * Configuration for the HTTP plugin
  */
-export type HttpPluginConfig<Schemas extends SchemasMap> = {
+export type HttpPluginConfig = {
 	/**
 	 * Base URL for the HTTP server (e.g., "https://api.example.com")
 	 */
@@ -53,7 +53,7 @@ export type HttpPluginConfig<Schemas extends SchemasMap> = {
 	 * Return { headers } to add custom headers
 	 * Return { snapshot } to transform the snapshot (PATCH only)
 	 */
-	onRequest?: (context: RequestContext<Schemas>) => RequestHookResult<Schemas>;
+	onRequest?: (context: RequestContext) => RequestHookResult;
 
 	/**
 	 * Hook called after each successful HTTP response
@@ -61,8 +61,8 @@ export type HttpPluginConfig<Schemas extends SchemasMap> = {
 	 * Return { snapshot } to transform the snapshot before merging
 	 */
 	onResponse?: (context: {
-		snapshot: DatabaseSnapshot<Schemas>;
-	}) => ResponseHookResult<Schemas>;
+		snapshot: DatabaseSnapshot<SchemasMap>;
+	}) => ResponseHookResult;
 
 	/**
 	 * Retry configuration for failed requests
@@ -139,9 +139,7 @@ export type HttpPluginConfig<Schemas extends SchemasMap> = {
  *   .init();
  * ```
  */
-export function httpPlugin<Schemas extends SchemasMap>(
-	config: HttpPluginConfig<Schemas>,
-): DatabasePlugin<Schemas> {
+export function httpPlugin(config: HttpPluginConfig): DatabasePlugin<any> {
 	const {
 		baseUrl,
 		pollingInterval = 5000,
@@ -160,7 +158,7 @@ export function httpPlugin<Schemas extends SchemasMap>(
 
 	return {
 		handlers: {
-			async init(db: Database<Schemas>) {
+			async init(db: Database<any>) {
 				// Initial fetch (single attempt, no retry)
 				try {
 					await fetchDatabase(db, baseUrl, onRequest, onResponse, false);
@@ -215,7 +213,7 @@ export function httpPlugin<Schemas extends SchemasMap>(
 				});
 			},
 
-			async dispose(_db: Database<Schemas>) {
+			async dispose(_db: Database<any>) {
 				// Clear polling timer
 				if (pollingTimer) {
 					clearInterval(pollingTimer);
@@ -241,16 +239,14 @@ export function httpPlugin<Schemas extends SchemasMap>(
 /**
  * Fetch database snapshot from the server (GET request)
  */
-async function fetchDatabase<Schemas extends SchemasMap>(
-	db: Database<Schemas>,
+async function fetchDatabase(
+	db: Database<any>,
 	baseUrl: string,
-	onRequest:
-		| ((context: RequestContext<Schemas>) => RequestHookResult<Schemas>)
-		| undefined,
+	onRequest: ((context: RequestContext) => RequestHookResult) | undefined,
 	onResponse:
 		| ((context: {
-				snapshot: DatabaseSnapshot<Schemas>;
-		  }) => ResponseHookResult<Schemas>)
+				snapshot: DatabaseSnapshot<SchemasMap>;
+		  }) => ResponseHookResult)
 		| undefined,
 	enableRetry: boolean,
 	maxAttempts = 3,
@@ -290,7 +286,7 @@ async function fetchDatabase<Schemas extends SchemasMap>(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const snapshot = (await response.json()) as DatabaseSnapshot<Schemas>;
+		const snapshot = (await response.json()) as DatabaseSnapshot<SchemasMap>;
 
 		// Call onResponse hook
 		const responseResult = onResponse?.({ snapshot });
@@ -320,16 +316,14 @@ async function fetchDatabase<Schemas extends SchemasMap>(
 /**
  * Push database snapshot to the server (PATCH request)
  */
-async function pushDatabase<Schemas extends SchemasMap>(
-	db: Database<Schemas>,
+async function pushDatabase(
+	db: Database<any>,
 	baseUrl: string,
-	onRequest:
-		| ((context: RequestContext<Schemas>) => RequestHookResult<Schemas>)
-		| undefined,
+	onRequest: ((context: RequestContext) => RequestHookResult) | undefined,
 	onResponse:
 		| ((context: {
-				snapshot: DatabaseSnapshot<Schemas>;
-		  }) => ResponseHookResult<Schemas>)
+				snapshot: DatabaseSnapshot<SchemasMap>;
+		  }) => ResponseHookResult)
 		| undefined,
 	maxAttempts = 3,
 	initialDelay = 1000,
@@ -379,7 +373,7 @@ async function pushDatabase<Schemas extends SchemasMap>(
 		}
 
 		const responseSnapshot =
-			(await response.json()) as DatabaseSnapshot<Schemas>;
+			(await response.json()) as DatabaseSnapshot<SchemasMap>;
 
 		// Call onResponse hook
 		const responseResult = onResponse?.({ snapshot: responseSnapshot });
