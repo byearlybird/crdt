@@ -59,8 +59,8 @@ db.begin((tx) => {
   tx.tasks.update("1", { completed: false });
 });
 
-// Merge remote data (conflict resolution is automatic)
-db.tasks.merge(remoteDocument);
+// Sync with remote database (conflict resolution is automatic)
+db.mergeSnapshot(remoteSnapshot);
 ```
 
 ### Additional Features

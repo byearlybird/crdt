@@ -199,6 +199,45 @@ The `mergeDocuments(into, from)` function handles document-level merging with au
 
 This design separates merge logic from higher-level store implementations, enabling independent testing and reuse of document operations.
 
+### Database Snapshot Format
+
+Starling uses database-level snapshots for persistence and sync operations. The `DatabaseSnapshot` type represents the complete state of a database:
+
+```typescript
+export type DatabaseSnapshot<Schemas> = {
+  version: string;  // Snapshot format version (e.g., "1.0")
+  name: string;     // Database name
+  latest: string;   // Highest eventstamp across all collections
+  collections: {
+    [K in keyof Schemas]: StarlingDocument<InferOutput<Schemas[K]>>;
+  };
+};
+```
+
+**Design notes:**
+
+- **`version`**: Snapshot format version for future compatibility checks
+- **`name`**: Database name, used in HTTP plugin endpoints (`/database/:name`)
+- **`latest`**: The maximum eventstamp across all collections, enabling global clock synchronization
+- **`collections`**: Object mapping collection names to their StarlingDocuments
+
+**Database-level operations:**
+
+```typescript
+// Export entire database
+const snapshot = db.toSnapshot();
+
+// Import/merge entire database (field-level LWW across all collections)
+db.mergeSnapshot(remoteSnapshot);
+```
+
+**Benefits of database-level sync:**
+
+- **Single unit of sync**: No coordination between collections needed
+- **Atomic operations**: Save/load entire database in one operation
+- **Simpler plugins**: IDB uses single snapshot store, HTTP uses single endpoint
+- **Easy backup/restore**: One JSON blob contains everything
+
 ## Design Scope
 
 Starling focuses on the 80/20 of sync for personal and small-team apps:
@@ -250,13 +289,13 @@ Starling ships as a single consolidated package with subpath exports.
 
 **Database layer exports:**
 
-- Database: `createDatabase`, types `Database`, `DbConfig`
+- Database: `createDatabase`, types `Database`, `DbConfig`, `DatabaseSnapshot`
 - Collections: `Collection`, `CollectionHandle`, `CollectionConfig`
 - Transactions and events: `TransactionContext`, `DatabaseMutationEvent`
 - Schema utilities: `StandardSchemaV1`
 - Re-exported core types: `StarlingDocument`, `AnyObject`
 
-The main export provides typed collections with CRUD operations, transactions, and mutation events built on top of core primitives.
+The main export provides typed collections with CRUD operations, transactions, mutation events, and database-level snapshot sync built on top of core primitives.
 
 ### `@byearlybird/starling/core` (core primitives)
 
@@ -271,11 +310,11 @@ These primitives implement state-based replication, document merging, resource m
 
 ### `@byearlybird/starling/plugin-idb` (IndexedDB plugin)
 
-Provides `idbPlugin()` for IndexedDB persistence with cross-tab sync via BroadcastChannel API.
+Provides `idbPlugin()` for IndexedDB persistence with cross-tab sync via BroadcastChannel API. Uses a single snapshot store for the entire database.
 
 ### `@byearlybird/starling/plugin-http` (HTTP plugin)
 
-Provides `httpPlugin()` for HTTP-based sync with polling, debouncing, and retry logic.
+Provides `httpPlugin()` for HTTP-based sync with polling, debouncing, and retry logic. Uses endpoint `/database/:name` for fetching and pushing database snapshots.
 
 ## Testing Strategy
 

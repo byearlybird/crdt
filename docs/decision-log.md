@@ -75,3 +75,67 @@ LWW is insufficient for:
 For these cases, we recommend libraries like [Automerge](https://automerge.org/), [Yjs](https://docs.yjs.dev/), or [Diamond Types](https://github.com/josephg/diamond-types).
 
 ---
+
+## Decision 003 — Database-Level Snapshot Sync
+
+**Context**
+
+Two approaches were considered for sync and persistence:
+1. Per-collection sync (each collection exported/merged independently)
+2. Database-level sync (entire database exported/merged as a unit)
+
+**Decision**
+
+Use database-level snapshots for all sync and persistence operations. The `DatabaseSnapshot` type contains all collections and provides methods `db.toSnapshot()` and `db.mergeSnapshot()`.
+
+**Rationale**
+
+Database-level sync provides the simplest possible implementation:
+
+- **Single unit of operation**: Save, load, and sync the entire database atomically
+- **No coordination needed**: Collections don't need to sync independently or track separate states
+- **Simpler plugins**: IDB uses one snapshot store instead of per-collection stores; HTTP uses one endpoint (`/database/:name`) instead of per-collection endpoints
+- **~50% less plugin code**: Eliminates iteration, collection-level merge logic, and endpoint management
+- **Trivial backup/restore**: One JSON blob contains complete database state
+- **Easier to reason about**: "The database" is the sync boundary, not individual collections
+
+**Implementation:**
+
+```typescript
+// Single export operation
+const snapshot = db.toSnapshot();
+await storage.save(snapshot);
+
+// Single import/merge operation
+const snapshot = await storage.load();
+db.mergeSnapshot(snapshot);
+```
+
+**Trade-offs**
+
+This design makes specific compromises:
+
+1. **No partial sync**: Can't sync individual collections independently. For apps with large datasets split across collections, this means syncing everything or nothing.
+
+2. **Larger payloads**: Full database snapshot is transferred even if only one collection changed. (Future optimization: delta compression could be added while keeping the snapshot-based model.)
+
+3. **No collection-level access control**: Can't have different sync policies per collection (e.g., "sync tasks but not drafts").
+
+**Alternatives Considered**
+
+- **Per-collection sync** — Allows partial sync and collection-specific policies, but adds significant complexity:
+  - Plugins must iterate collections and track state separately
+  - Need coordination logic to handle collection dependencies
+  - More complex HTTP API (`/database/:name/:collection`)
+  - Additional per-collection metadata and merge logic
+
+**When to Reconsider**
+
+Database-level sync may become limiting if:
+- Apps need to sync subsets of collections (e.g., "public" vs "private" data)
+- Dataset size makes full-database sync impractical (multi-GB databases)
+- Different collections require different sync strategies (e.g., immediate vs batched)
+
+For these cases, per-collection sync could be reintroduced alongside database-level sync as an opt-in feature.
+
+---
