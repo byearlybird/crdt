@@ -1,5 +1,5 @@
-import type { DatabaseSnapshot } from "../../database/types";
 import type { Database, DatabasePlugin } from "../../database/db";
+import type { DatabaseSnapshot } from "../../database/types";
 
 export type IdbPluginConfig = {
 	/**

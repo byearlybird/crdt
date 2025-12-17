@@ -1,10 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-	computeResourceLatest,
-	deleteResource,
-	makeResource,
-	mergeResources,
-} from "./resource";
+import { deleteResource, makeResource, mergeResources } from "./resource";
 
 test("makeResource creates EncodedDocument with null deletedAt", () => {
 	const result = makeResource(
@@ -328,4 +323,3 @@ test("mergeResources handles schema changes in nested fields", () => {
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
 });
-

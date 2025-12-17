@@ -150,7 +150,8 @@ export function createDatabase<Schemas extends SchemasMap>(
 			for (const collectionName of Object.keys(
 				collections,
 			) as (keyof Schemas)[]) {
-				collectionDocs[collectionName] = collections[collectionName].toDocument();
+				collectionDocs[collectionName] =
+					collections[collectionName].toDocument();
 			}
 
 			// Find the maximum eventstamp across all collections

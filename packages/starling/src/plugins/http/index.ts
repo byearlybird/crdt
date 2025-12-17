@@ -53,9 +53,7 @@ export type HttpPluginConfig<Schemas extends SchemasMap> = {
 	 * Return { headers } to add custom headers
 	 * Return { snapshot } to transform the snapshot (PATCH only)
 	 */
-	onRequest?: (
-		context: RequestContext<Schemas>,
-	) => RequestHookResult<Schemas>;
+	onRequest?: (context: RequestContext<Schemas>) => RequestHookResult<Schemas>;
 
 	/**
 	 * Hook called after each successful HTTP response
@@ -246,9 +244,13 @@ export function httpPlugin<Schemas extends SchemasMap>(
 async function fetchDatabase<Schemas extends SchemasMap>(
 	db: Database<Schemas>,
 	baseUrl: string,
-	onRequest: ((context: RequestContext<Schemas>) => RequestHookResult<Schemas>) | undefined,
+	onRequest:
+		| ((context: RequestContext<Schemas>) => RequestHookResult<Schemas>)
+		| undefined,
 	onResponse:
-		| ((context: { snapshot: DatabaseSnapshot<Schemas> }) => ResponseHookResult<Schemas>)
+		| ((context: {
+				snapshot: DatabaseSnapshot<Schemas>;
+		  }) => ResponseHookResult<Schemas>)
 		| undefined,
 	enableRetry: boolean,
 	maxAttempts = 3,
@@ -321,9 +323,13 @@ async function fetchDatabase<Schemas extends SchemasMap>(
 async function pushDatabase<Schemas extends SchemasMap>(
 	db: Database<Schemas>,
 	baseUrl: string,
-	onRequest: ((context: RequestContext<Schemas>) => RequestHookResult<Schemas>) | undefined,
+	onRequest:
+		| ((context: RequestContext<Schemas>) => RequestHookResult<Schemas>)
+		| undefined,
 	onResponse:
-		| ((context: { snapshot: DatabaseSnapshot<Schemas> }) => ResponseHookResult<Schemas>)
+		| ((context: {
+				snapshot: DatabaseSnapshot<Schemas>;
+		  }) => ResponseHookResult<Schemas>)
 		| undefined,
 	maxAttempts = 3,
 	initialDelay = 1000,
