@@ -1,4 +1,4 @@
-import { createClock, type StarlingDocument } from "../core";
+import { createClock, MIN_EVENTSTAMP, type StarlingDocument } from "../core";
 import {
 	type Collection,
 	type CollectionWithInternals,
@@ -9,7 +9,7 @@ import { createEmitter } from "./emitter";
 import { executeQuery, type QueryContext, type QueryHandle } from "./query";
 import type { StandardSchemaV1 } from "./standard-schema";
 import { executeTransaction, type TransactionContext } from "./transaction";
-import type { AnyObjectSchema, SchemasMap } from "./types";
+import type { AnyObjectSchema, DatabaseSnapshot, SchemasMap } from "./types";
 
 export type Collections<Schemas extends SchemasMap> = {
 	[K in keyof Schemas]: Collection<Schemas[K]>;
@@ -59,11 +59,8 @@ export type Database<Schemas extends SchemasMap> = Collections<Schemas> & {
 	version: number;
 	begin<R>(callback: (tx: TransactionContext<Schemas>) => R): R;
 	query<R>(callback: (ctx: QueryContext<Schemas>) => R): QueryHandle<R>;
-	toDocuments(): {
-		[K in keyof Schemas]: StarlingDocument<
-			StandardSchemaV1.InferOutput<Schemas[K]>
-		>;
-	};
+	toSnapshot(): DatabaseSnapshot<Schemas>;
+	mergeSnapshot(snapshot: DatabaseSnapshot<Schemas>): void;
 	on(
 		event: "mutation",
 		handler: (payload: DatabaseMutationEvent<Schemas>) => unknown,
@@ -143,18 +140,50 @@ export function createDatabase<Schemas extends SchemasMap>(
 		query<R>(callback: (ctx: QueryContext<Schemas>) => R): QueryHandle<R> {
 			return executeQuery(db, callback);
 		},
-		toDocuments() {
-			const documents = {} as {
-				[K in keyof Schemas]: JsonDocument<
+		toSnapshot(): DatabaseSnapshot<Schemas> {
+			const collectionDocs = {} as {
+				[K in keyof Schemas]: StarlingDocument<
 					StandardSchemaV1.InferOutput<Schemas[K]>
 				>;
 			};
 
-			for (const dbName of Object.keys(collections) as (keyof Schemas)[]) {
-				documents[dbName] = collections[dbName].toDocument();
+			for (const collectionName of Object.keys(
+				collections,
+			) as (keyof Schemas)[]) {
+				collectionDocs[collectionName] = collections[collectionName].toDocument();
 			}
 
-			return documents;
+			// Find the maximum eventstamp across all collections
+			let latest = MIN_EVENTSTAMP;
+			for (const doc of Object.values(collectionDocs)) {
+				if (doc.latest > latest) {
+					latest = doc.latest as string;
+				}
+			}
+
+			return {
+				version: "1.0",
+				name,
+				latest,
+				collections: collectionDocs,
+			};
+		},
+		mergeSnapshot(snapshot: DatabaseSnapshot<Schemas>): void {
+			// Validate version compatibility
+			if (snapshot.version !== "1.0") {
+				throw new Error(`Unsupported snapshot version: ${snapshot.version}`);
+			}
+
+			// Merge each collection
+			for (const collectionName of Object.keys(
+				snapshot.collections,
+			) as (keyof Schemas)[]) {
+				const collection = collections[collectionName];
+				const document = snapshot.collections[collectionName];
+				if (collection && document) {
+					collection.merge(document);
+				}
+			}
 		},
 		on(event, handler) {
 			return dbEmitter.on(event, handler);

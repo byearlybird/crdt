@@ -1,38 +1,35 @@
-import type { AnyObject, StarlingDocument } from "../../core";
 import type { Database, DatabasePlugin } from "../../database/db";
-import type { StandardSchemaV1 } from "../../database/standard-schema";
-import type { SchemasMap } from "../../database/types";
+import type { DatabaseSnapshot, SchemasMap } from "../../database/types";
 
 /**
  * Context provided to the onRequest hook
  */
-export type RequestContext<T extends AnyObject = AnyObject> = {
-	collection: string;
+export type RequestContext<Schemas extends SchemasMap = SchemasMap> = {
 	operation: "GET" | "PATCH";
 	url: string;
-	document?: StarlingDocument<T>; // Present for PATCH operations
+	snapshot?: DatabaseSnapshot<Schemas>; // Present for PATCH operations
 };
 
 /**
  * Result returned by the onRequest hook
  */
-export type RequestHookResult<T extends AnyObject = AnyObject> =
+export type RequestHookResult<Schemas extends SchemasMap = SchemasMap> =
 	| { skip: true }
-	| { headers?: Record<string, string>; document?: StarlingDocument<T> }
+	| { headers?: Record<string, string>; snapshot?: DatabaseSnapshot<Schemas> }
 	| undefined;
 
 /**
  * Result returned by the onResponse hook
  */
-export type ResponseHookResult<T extends AnyObject = AnyObject> =
-	| { document: StarlingDocument<T> }
+export type ResponseHookResult<Schemas extends SchemasMap = SchemasMap> =
+	| { snapshot: DatabaseSnapshot<Schemas> }
 	| { skip: true }
-	| undefined; // Use original document
+	| undefined; // Use original snapshot
 
 /**
  * Configuration for the HTTP plugin
  */
-export type HttpPluginConfig<_Schemas extends SchemasMap> = {
+export type HttpPluginConfig<Schemas extends SchemasMap> = {
 	/**
 	 * Base URL for the HTTP server (e.g., "https://api.example.com")
 	 */
@@ -54,21 +51,20 @@ export type HttpPluginConfig<_Schemas extends SchemasMap> = {
 	 * Hook called before each HTTP request
 	 * Return { skip: true } to abort the request
 	 * Return { headers } to add custom headers
-	 * Return { document } to transform the document (PATCH only)
+	 * Return { snapshot } to transform the snapshot (PATCH only)
 	 */
-	onRequest?: <T extends AnyObject>(
-		context: RequestContext<T>,
-	) => RequestHookResult<T>;
+	onRequest?: (
+		context: RequestContext<Schemas>,
+	) => RequestHookResult<Schemas>;
 
 	/**
 	 * Hook called after each successful HTTP response
 	 * Return { skip: true } to skip merging the response
-	 * Return { document } to transform the document before merging
+	 * Return { snapshot } to transform the snapshot before merging
 	 */
-	onResponse?: <T extends AnyObject>(context: {
-		collection: string;
-		document: StarlingDocument<T>;
-	}) => ResponseHookResult<T>;
+	onResponse?: (context: {
+		snapshot: DatabaseSnapshot<Schemas>;
+	}) => ResponseHookResult<Schemas>;
 
 	/**
 	 * Retry configuration for failed requests
@@ -98,10 +94,11 @@ export type HttpPluginConfig<_Schemas extends SchemasMap> = {
  * Create an HTTP sync plugin for Starling databases.
  *
  * The plugin:
- * - Fetches all collections from the server on init (single attempt)
+ * - Fetches database snapshot from the server on init (single attempt)
  * - Polls the server at regular intervals to fetch updates (with retry)
  * - Debounces local mutations and pushes them to the server (with retry)
  * - Supports request/response hooks for authentication, encryption, etc.
+ * - Uses endpoint: GET/PATCH /database/:name
  *
  * @param config - HTTP plugin configuration
  * @returns A DatabasePlugin instance
@@ -133,12 +130,12 @@ export type HttpPluginConfig<_Schemas extends SchemasMap> = {
  * })
  *   .use(httpPlugin({
  *     baseUrl: "https://api.example.com",
- *     onRequest: ({ document }) => ({
+ *     onRequest: ({ snapshot }) => ({
  *       headers: { Authorization: `Bearer ${token}` },
- *       document: document ? encrypt(document) : undefined
+ *       snapshot: snapshot ? encrypt(snapshot) : undefined
  *     }),
- *     onResponse: ({ document }) => ({
- *       document: decrypt(document)
+ *     onResponse: ({ snapshot }) => ({
+ *       snapshot: decrypt(snapshot)
  *     })
  *   }))
  *   .init();
@@ -161,76 +158,51 @@ export function httpPlugin<Schemas extends SchemasMap>(
 	// Plugin state
 	let pollingTimer: ReturnType<typeof setInterval> | null = null;
 	let unsubscribe: (() => void) | null = null;
-	const debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	return {
 		handlers: {
 			async init(db: Database<Schemas>) {
-				const collectionNames = db.collectionKeys();
-
-				// Initial fetch for all collections (single attempt, no retry)
-				for (const collectionName of collectionNames) {
-					try {
-						await fetchCollection(
-							db,
-							collectionName,
-							baseUrl,
-							onRequest,
-							onResponse,
-							false, // No retry on init
-						);
-					} catch (error) {
-						// Log error but continue with other collections
-						console.error(
-							`Failed to fetch collection "${String(collectionName)}" during init:`,
-							error,
-						);
-					}
+				// Initial fetch (single attempt, no retry)
+				try {
+					await fetchDatabase(db, baseUrl, onRequest, onResponse, false);
+				} catch (error) {
+					// Log error but continue
+					console.error("Failed to fetch database during init:", error);
 				}
 
 				// Set up polling
 				pollingTimer = setInterval(async () => {
-					for (const collectionName of collectionNames) {
-						try {
-							await fetchCollection(
-								db,
-								collectionName,
-								baseUrl,
-								onRequest,
-								onResponse,
-								true, // Enable retry for polling
-								maxAttempts,
-								initialDelay,
-								maxDelay,
-							);
-						} catch (error) {
-							// Log error but continue polling
-							console.error(
-								`Failed to poll collection "${String(collectionName)}":`,
-								error,
-							);
-						}
+					try {
+						await fetchDatabase(
+							db,
+							baseUrl,
+							onRequest,
+							onResponse,
+							true, // Enable retry for polling
+							maxAttempts,
+							initialDelay,
+							maxDelay,
+						);
+					} catch (error) {
+						// Log error but continue polling
+						console.error("Failed to poll database:", error);
 					}
 				}, pollingInterval);
 
 				// Subscribe to mutations for debounced push
-				unsubscribe = db.on("mutation", (event) => {
-					const collectionName = event.collection;
-					const key = String(collectionName);
-
+				unsubscribe = db.on("mutation", () => {
 					// Clear existing timer if any
-					const existingTimer = debounceTimers.get(key);
-					if (existingTimer) {
-						clearTimeout(existingTimer);
+					if (debounceTimer) {
+						clearTimeout(debounceTimer);
 					}
 
 					// Schedule new push
-					const timer = setTimeout(async () => {
-						debounceTimers.delete(key);
+					debounceTimer = setTimeout(async () => {
+						debounceTimer = null;
 						try {
-							await pushCollection(
+							await pushDatabase(
 								db,
-								collectionName,
 								baseUrl,
 								onRequest,
 								onResponse,
@@ -239,14 +211,9 @@ export function httpPlugin<Schemas extends SchemasMap>(
 								maxDelay,
 							);
 						} catch (error) {
-							console.error(
-								`Failed to push collection "${String(collectionName)}":`,
-								error,
-							);
+							console.error("Failed to push database:", error);
 						}
 					}, debounceDelay);
-
-					debounceTimers.set(key, timer);
 				});
 			},
 
@@ -257,11 +224,11 @@ export function httpPlugin<Schemas extends SchemasMap>(
 					pollingTimer = null;
 				}
 
-				// Clear all debounce timers
-				for (const timer of debounceTimers.values()) {
-					clearTimeout(timer);
+				// Clear debounce timer
+				if (debounceTimer) {
+					clearTimeout(debounceTimer);
+					debounceTimer = null;
 				}
-				debounceTimers.clear();
 
 				// Unsubscribe from mutations
 				if (unsubscribe) {
@@ -274,33 +241,24 @@ export function httpPlugin<Schemas extends SchemasMap>(
 }
 
 /**
- * Fetch a collection from the server (GET request)
+ * Fetch database snapshot from the server (GET request)
  */
-async function fetchCollection<Schemas extends SchemasMap>(
+async function fetchDatabase<Schemas extends SchemasMap>(
 	db: Database<Schemas>,
-	collectionName: keyof Schemas,
 	baseUrl: string,
-	onRequest:
-		| (<T extends AnyObject>(
-				context: RequestContext<T>,
-		  ) => RequestHookResult<T>)
-		| undefined,
+	onRequest: ((context: RequestContext<Schemas>) => RequestHookResult<Schemas>) | undefined,
 	onResponse:
-		| (<T extends AnyObject>(context: {
-				collection: string;
-				document: StarlingDocument<T>;
-		  }) => ResponseHookResult<T>)
+		| ((context: { snapshot: DatabaseSnapshot<Schemas> }) => ResponseHookResult<Schemas>)
 		| undefined,
 	enableRetry: boolean,
 	maxAttempts = 3,
 	initialDelay = 1000,
 	maxDelay = 30000,
 ): Promise<void> {
-	const url = `${baseUrl}/${db.name}/${String(collectionName)}`;
+	const url = `${baseUrl}/database/${db.name}`;
 
 	// Call onRequest hook
 	const requestResult = onRequest?.({
-		collection: String(collectionName),
 		operation: "GET",
 		url,
 	});
@@ -330,29 +288,24 @@ async function fetchCollection<Schemas extends SchemasMap>(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const document = (await response.json()) as StarlingDocument<
-			StandardSchemaV1.InferOutput<Schemas[typeof collectionName]>
-		>;
+		const snapshot = (await response.json()) as DatabaseSnapshot<Schemas>;
 
 		// Call onResponse hook
-		const responseResult = onResponse?.({
-			collection: String(collectionName),
-			document,
-		});
+		const responseResult = onResponse?.({ snapshot });
 
 		// Check if merge should be skipped
 		if (responseResult && "skip" in responseResult && responseResult.skip) {
 			return;
 		}
 
-		// Use transformed document if provided, otherwise use original
-		const finalDocument =
-			responseResult && "document" in responseResult
-				? responseResult.document
-				: document;
+		// Use transformed snapshot if provided, otherwise use original
+		const finalSnapshot =
+			responseResult && "snapshot" in responseResult
+				? responseResult.snapshot
+				: snapshot;
 
-		// Merge into collection
-		db[collectionName].merge(finalDocument);
+		// Merge into database
+		db.mergeSnapshot(finalSnapshot);
 	};
 
 	if (enableRetry) {
@@ -363,38 +316,29 @@ async function fetchCollection<Schemas extends SchemasMap>(
 }
 
 /**
- * Push a collection to the server (PATCH request)
+ * Push database snapshot to the server (PATCH request)
  */
-async function pushCollection<Schemas extends SchemasMap>(
+async function pushDatabase<Schemas extends SchemasMap>(
 	db: Database<Schemas>,
-	collectionName: keyof Schemas,
 	baseUrl: string,
-	onRequest:
-		| (<T extends AnyObject>(
-				context: RequestContext<T>,
-		  ) => RequestHookResult<T>)
-		| undefined,
+	onRequest: ((context: RequestContext<Schemas>) => RequestHookResult<Schemas>) | undefined,
 	onResponse:
-		| (<T extends AnyObject>(context: {
-				collection: string;
-				document: StarlingDocument<T>;
-		  }) => ResponseHookResult<T>)
+		| ((context: { snapshot: DatabaseSnapshot<Schemas> }) => ResponseHookResult<Schemas>)
 		| undefined,
 	maxAttempts = 3,
 	initialDelay = 1000,
 	maxDelay = 30000,
 ): Promise<void> {
-	const url = `${baseUrl}/${db.name}/${String(collectionName)}`;
+	const url = `${baseUrl}/database/${db.name}`;
 
-	// Get current document
-	const document = db[collectionName].toDocument();
+	// Get current snapshot
+	const snapshot = db.toSnapshot();
 
 	// Call onRequest hook
 	const requestResult = onRequest?.({
-		collection: String(collectionName),
 		operation: "PATCH",
 		url,
-		document,
+		snapshot,
 	});
 
 	// Check if request should be skipped
@@ -402,16 +346,16 @@ async function pushCollection<Schemas extends SchemasMap>(
 		return;
 	}
 
-	// Extract headers and potentially transformed document
+	// Extract headers and potentially transformed snapshot
 	const headers =
 		requestResult && "headers" in requestResult
 			? requestResult.headers
 			: undefined;
 
-	const requestDocument =
-		requestResult && "document" in requestResult
-			? requestResult.document
-			: document;
+	const requestSnapshot =
+		requestResult && "snapshot" in requestResult
+			? requestResult.snapshot
+			: snapshot;
 
 	// Execute fetch with retry
 	const executeRequest = async (): Promise<void> => {
@@ -421,36 +365,32 @@ async function pushCollection<Schemas extends SchemasMap>(
 				"Content-Type": "application/json",
 				...headers,
 			},
-			body: JSON.stringify(requestDocument),
+			body: JSON.stringify(requestSnapshot),
 		});
 
 		if (!response.ok) {
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const responseDocument = (await response.json()) as StarlingDocument<
-			StandardSchemaV1.InferOutput<Schemas[typeof collectionName]>
-		>;
+		const responseSnapshot =
+			(await response.json()) as DatabaseSnapshot<Schemas>;
 
 		// Call onResponse hook
-		const responseResult = onResponse?.({
-			collection: String(collectionName),
-			document: responseDocument,
-		});
+		const responseResult = onResponse?.({ snapshot: responseSnapshot });
 
 		// Check if merge should be skipped
 		if (responseResult && "skip" in responseResult && responseResult.skip) {
 			return;
 		}
 
-		// Use transformed document if provided, otherwise use original
-		const finalDocument =
-			responseResult && "document" in responseResult
-				? responseResult.document
-				: responseDocument;
+		// Use transformed snapshot if provided, otherwise use original
+		const finalSnapshot =
+			responseResult && "snapshot" in responseResult
+				? responseResult.snapshot
+				: responseSnapshot;
 
 		// Merge server response (trust LWW merge)
-		db[collectionName].merge(finalDocument);
+		db.mergeSnapshot(finalSnapshot);
 	};
 
 	await withRetry(executeRequest, maxAttempts, initialDelay, maxDelay);

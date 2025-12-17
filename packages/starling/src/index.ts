@@ -24,6 +24,7 @@ export type {
 	DatabasePlugin,
 	DbConfig,
 } from "./database/db";
+export type { DatabaseSnapshot } from "./database/types";
 // Database features
 export { createDatabase } from "./database/db";
 export type {

@@ -50,8 +50,6 @@ export type Collection<T extends AnyObjectSchema> = {
 	add(item: StandardSchemaV1.InferInput<T>): InferData<T>;
 	update(id: string, updates: Partial<StandardSchemaV1.InferInput<T>>): void;
 	remove(id: string): void;
-	merge(document: StarlingDocument<InferData<T>>): void;
-	toDocument(): StarlingDocument<InferData<T>>;
 	on(
 		event: "mutation",
 		handler: (payload: CollectionMutationEvent<InferData<T>>) => void,
@@ -61,6 +59,8 @@ export type Collection<T extends AnyObjectSchema> = {
 /** Internal type that includes Symbol-keyed methods for transaction support */
 export type CollectionWithInternals<T extends AnyObjectSchema> =
 	Collection<T> & {
+		merge(document: StarlingDocument<InferData<T>>): void;
+		toDocument(): StarlingDocument<InferData<T>>;
 		[CollectionInternals.data]: () => Map<string, ResourceObject<InferData<T>>>;
 		[CollectionInternals.getPendingMutations]: () => CollectionMutationEvent<
 			InferData<T>
