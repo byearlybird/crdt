@@ -7,9 +7,13 @@ import {
 } from "./collection";
 import { createEmitter } from "./emitter";
 import { executeQuery, type QueryContext, type QueryHandle } from "./query";
-import type { StandardSchemaV1 } from "./standard-schema";
 import { executeTransaction, type TransactionContext } from "./transaction";
-import type { AnyObjectSchema, DatabaseSnapshot, SchemasMap } from "./types";
+import type {
+	AnyObjectSchema,
+	DatabaseSnapshot,
+	InferOutput,
+	SchemasMap,
+} from "./types";
 
 export type Collections<Schemas extends SchemasMap> = {
 	[K in keyof Schemas]: Collection<Schemas[K]>;
@@ -23,22 +27,19 @@ type CollectionInstances<Schemas extends SchemasMap> = {
 	[K in keyof Schemas]: CollectionWithInternals<Schemas[K]>;
 };
 
-export type MutationEnvelope<Schemas extends SchemasMap> = {
+export type CollectionMutation<Schemas extends SchemasMap> = {
 	[K in keyof Schemas]: {
 		collection: K;
-	} & MutationBatch<StandardSchemaV1.InferOutput<Schemas[K]>>;
+	} & MutationBatch<InferOutput<Schemas[K]>>;
 }[keyof Schemas];
 
-export type DatabaseMutationEvent<Schemas extends SchemasMap> =
-	MutationEnvelope<Schemas>;
-
 export type DatabaseEvents<Schemas extends SchemasMap> = {
-	mutation: DatabaseMutationEvent<Schemas>;
+	mutation: CollectionMutation<Schemas>;
 };
 
 export type CollectionConfig<T extends AnyObjectSchema> = {
 	schema: T;
-	getId: (item: StandardSchemaV1.InferOutput<T>) => string;
+	getId: (item: InferOutput<T>) => string;
 };
 
 export type DatabasePlugin<Schemas extends SchemasMap> = {
@@ -63,7 +64,7 @@ export type Database<Schemas extends SchemasMap> = Collections<Schemas> & {
 	mergeSnapshot(snapshot: DatabaseSnapshot<Schemas>): void;
 	on(
 		event: "mutation",
-		handler: (payload: DatabaseMutationEvent<Schemas>) => unknown,
+		handler: (payload: CollectionMutation<Schemas>) => unknown,
 	): () => void;
 	use(plugin: DatabasePlugin<Schemas>): Database<Schemas>;
 	init(): Promise<Database<Schemas>>;
@@ -123,7 +124,7 @@ export function createDatabase<Schemas extends SchemasMap>(
 					added: mutations.added,
 					updated: mutations.updated,
 					removed: mutations.removed,
-				} as DatabaseMutationEvent<Schemas>);
+				} as CollectionMutation<Schemas>);
 			}
 		});
 	}
@@ -143,7 +144,7 @@ export function createDatabase<Schemas extends SchemasMap>(
 		toSnapshot(): DatabaseSnapshot<Schemas> {
 			const collectionDocs = {} as {
 				[K in keyof Schemas]: StarlingDocument<
-					StandardSchemaV1.InferOutput<Schemas[K]>
+					InferOutput<Schemas[K]>
 				>;
 			};
 
