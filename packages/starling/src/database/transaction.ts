@@ -91,12 +91,19 @@ export function executeTransaction<
 	if (!shouldRollback) {
 		// Commit only the collections that were cloned
 		for (const name of collectionNames) {
-			const original = collections[name] as CollectionWithInternals<AnyObjectSchema>;
-			const cloned = clonedCollections[name] as CollectionWithInternals<AnyObjectSchema>;
+			const original = collections[
+				name
+			] as CollectionWithInternals<AnyObjectSchema>;
+			const cloned = clonedCollections[
+				name
+			] as CollectionWithInternals<AnyObjectSchema>;
 
-			const pendingMutations = cloned[CollectionInternals.getPendingMutations]!();
-			original[CollectionInternals.replaceData]!(cloned[CollectionInternals.data]!());
-			original[CollectionInternals.emitMutations]!(pendingMutations);
+			const pendingMutations =
+				cloned[CollectionInternals.getPendingMutations]?.();
+			original[CollectionInternals.replaceData]?.(
+				cloned[CollectionInternals.data]?.(),
+			);
+			original[CollectionInternals.emitMutations]?.(pendingMutations);
 		}
 	}
 

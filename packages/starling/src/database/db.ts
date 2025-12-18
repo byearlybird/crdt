@@ -167,9 +167,7 @@ export function createDatabase<Schemas extends SchemasMap>(
 		},
 		toSnapshot(): DatabaseSnapshot<Schemas> {
 			const collectionDocs = {} as {
-				[K in keyof Schemas]: StarlingDocument<
-					InferOutput<Schemas[K]>
-				>;
+				[K in keyof Schemas]: StarlingDocument<InferOutput<Schemas[K]>>;
 			};
 
 			for (const collectionName of Object.keys(

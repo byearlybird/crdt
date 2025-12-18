@@ -15,7 +15,10 @@ export type RequestContext = {
  */
 export type RequestHookResult =
 	| { skip: true }
-	| { headers?: Record<string, string>; snapshot?: DatabaseSnapshot<SchemasMap> }
+	| {
+			headers?: Record<string, string>;
+			snapshot?: DatabaseSnapshot<SchemasMap>;
+	  }
 	| undefined;
 
 /**

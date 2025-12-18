@@ -1,5 +1,5 @@
 import type { Collection, CollectionWithInternals } from "./collection";
-import type { AnyObjectSchema, SchemasMap } from "./types";
+import type { SchemasMap } from "./types";
 
 /**
  * Query context providing read-only access to specified collections.
@@ -42,9 +42,7 @@ export function executeQuery<
 	const queryContext = {} as QueryContext<Schemas, Keys>;
 
 	for (const name of collectionNames) {
-		queryContext[name] = collections[name] as Collection<
-			Schemas[typeof name]
-		>;
+		queryContext[name] = collections[name] as Collection<Schemas[typeof name]>;
 	}
 
 	return callback(queryContext);

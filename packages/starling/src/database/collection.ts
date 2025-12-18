@@ -53,7 +53,10 @@ export type CollectionWithInternals<T extends AnyObjectSchema> =
 	Collection<T> & {
 		merge(document: StarlingDocument<InferOutput<T>>): void;
 		toDocument(): StarlingDocument<InferOutput<T>>;
-		[CollectionInternals.data]: () => Map<string, ResourceObject<InferOutput<T>>>;
+		[CollectionInternals.data]: () => Map<
+			string,
+			ResourceObject<InferOutput<T>>
+		>;
 		[CollectionInternals.getPendingMutations]: () => MutationBatch<
 			InferOutput<T>
 		>;
@@ -291,7 +294,6 @@ export function createCollection<T extends AnyObjectSchema>(
 		toDocument() {
 			return mapToDocument(name, data, getEventstamp());
 		},
-
 
 		// Symbol-keyed internal methods for transaction support
 		[CollectionInternals.data]() {
