@@ -8,16 +8,16 @@ This document covers the design and internals of Starling, including the state-b
 
 | Path | Description |
 | --- | --- |
-| `packages/starling` | Consolidated package containing core primitives, database layer, and plugins |
+| `packages/starling` | Consolidated package containing core primitives, store layer, and plugins |
 | `packages/starling/src/core` | Core CRDT primitives (`StarlingDocument`, `ResourceObject`, `createClock`) for state-based replication |
-| `packages/starling/src/database` | Database utilities with typed collections, transactions, and mutation events |
+| `packages/starling/src/store` | Database utilities with typed collections, transactions, and mutation events |
 | `packages/starling/src/plugins` | Plugin implementations (IDB, HTTP) for persistence and sync |
 
 **Key points:**
 
 - Follows a Functional Core, Imperative Shell design—core primitives stay predictable while adapters handle IO, frameworks, and persistence.
 - Core logic lives under `src/core/` and provides minimal CRDT primitives for document merging and resource management.
-- Higher-level database features (collections, transactions, mutation events) live in `src/database/`.
+- Higher-level database features (collections, transactions, mutation events) live in `src/store/`.
 - Plugins for persistence and sync live in `src/plugins/`.
 - The package is bundled as a TypeScript module via `tsdown` with four entry points (main, core, plugin-idb, plugin-http).
 - Tests live alongside implementation: `packages/starling/src/**/*.test.ts`.
@@ -201,10 +201,10 @@ This design separates merge logic from higher-level store implementations, enabl
 
 ### Database Snapshot Format
 
-Starling uses database-level snapshots for persistence and sync operations. The `DatabaseSnapshot` type represents the complete state of a database:
+Starling uses store-level snapshots for persistence and sync operations. The `StoreSnapshot` type represents the complete state of a database:
 
 ```typescript
-export type DatabaseSnapshot<Schemas> = {
+export type StoreSnapshot<Schemas> = {
   version: string;  // Snapshot format version (e.g., "1.0")
   name: string;     // Database name
   latest: string;   // Highest eventstamp across all collections
@@ -231,7 +231,7 @@ const snapshot = db.toSnapshot();
 db.mergeSnapshot(remoteSnapshot);
 ```
 
-**Benefits of database-level sync:**
+**Benefits of store-level sync:**
 
 - **Single unit of sync**: No coordination between collections needed
 - **Atomic operations**: Save/load entire database in one operation
@@ -279,15 +279,15 @@ Starling ships as a single consolidated package with subpath exports.
 
 ### `@byearlybird/starling` (main export)
 
-**Database layer exports:**
+**Store layer exports:**
 
-- Database: `createDatabase`, types `Database`, `DbConfig`, `DatabaseSnapshot`
+- Store: `createDatabase`, types `Database`, `DbConfig`, `StoreSnapshot`
 - Collections: `Collection`, `CollectionHandle`, `CollectionConfig`
 - Transactions and events: `TransactionContext`, `DatabaseMutationEvent`
 - Schema utilities: `StandardSchemaV1`
 - Re-exported core types: `StarlingDocument`, `AnyObject`
 
-The main export provides typed collections with CRUD operations, transactions, mutation events, and database-level snapshot sync built on top of core primitives.
+The main export provides typed collections with CRUD operations, transactions, mutation events, and store-level snapshot sync built on top of core primitives.
 
 ### `@byearlybird/starling/core` (core primitives)
 

@@ -11,7 +11,7 @@ import { executeQuery, type QueryContext } from "./query";
 import { executeTransaction, type TransactionContext } from "./transaction";
 import type {
 	AnyObjectSchema,
-	DatabaseSnapshot,
+	StoreSnapshot,
 	InferOutput,
 	SchemasMap,
 } from "./types";
@@ -34,7 +34,7 @@ export type CollectionMutation<Schemas extends SchemasMap> = {
 	} & MutationBatch<InferOutput<Schemas[K]>>;
 }[keyof Schemas];
 
-export type DatabaseEvents<Schemas extends SchemasMap> = {
+export type StoreEvents<Schemas extends SchemasMap> = {
 	mutation: CollectionMutation<Schemas>;
 };
 
@@ -43,20 +43,20 @@ export type CollectionConfig<T extends AnyObjectSchema> = {
 	getId: (item: InferOutput<T>) => string;
 };
 
-export type DatabasePlugin<Schemas extends SchemasMap> = {
+export type StorePlugin<Schemas extends SchemasMap> = {
 	handlers: {
-		init?: (db: Database<Schemas>) => Promise<unknown> | unknown;
-		dispose?: (db: Database<Schemas>) => Promise<unknown> | unknown;
+		init?: (store: Store<Schemas>) => Promise<unknown> | unknown;
+		dispose?: (store: Store<Schemas>) => Promise<unknown> | unknown;
 	};
 };
 
-export type DbConfig<Schemas extends SchemasMap> = {
+export type StoreConfig<Schemas extends SchemasMap> = {
 	name: string;
 	schema: CollectionConfigMap<Schemas>;
 	version?: number;
 };
 
-export type Database<Schemas extends SchemasMap> = Collections<Schemas> & {
+export type Store<Schemas extends SchemasMap> = Collections<Schemas> & {
 	name: string;
 	version: number;
 	begin<Keys extends ReadonlyArray<keyof Schemas>, R>(
@@ -67,29 +67,29 @@ export type Database<Schemas extends SchemasMap> = Collections<Schemas> & {
 		collections: Keys,
 		callback: (q: QueryContext<Schemas, Keys>) => R,
 	): R;
-	toSnapshot(): DatabaseSnapshot<Schemas>;
-	mergeSnapshot(snapshot: DatabaseSnapshot<Schemas>): void;
+	toSnapshot(): StoreSnapshot<Schemas>;
+	mergeSnapshot(snapshot: StoreSnapshot<Schemas>): void;
 	on(
 		event: "mutation",
 		handler: (payload: CollectionMutation<Schemas>) => unknown,
 	): () => void;
-	use(plugin: DatabasePlugin<Schemas>): Database<Schemas>;
-	init(): Promise<Database<Schemas>>;
+	use(plugin: StorePlugin<Schemas>): Store<Schemas>;
+	init(): Promise<Store<Schemas>>;
 	dispose(): Promise<void>;
 	collectionKeys(): (keyof Schemas)[];
 };
 
 /**
- * Create a typed database instance with collection access.
- * @param config - Database configuration
- * @param config.name - Database name used for persistence and routing
+ * Create a typed store instance with collection access.
+ * @param config - Store configuration
+ * @param config.name - Store name used for persistence and routing
  * @param config.schema - Collection schema definitions
- * @param config.version - Optional database version, defaults to 1
- * @returns A database instance with typed collection properties
+ * @param config.version - Optional store version, defaults to 1
+ * @returns A store instance with typed collection properties
  *
  * @example
  * ```typescript
- * const db = await createDatabase({
+ * const store = await createStore({
  *   name: "my-app",
  *   schema: {
  *     tasks: { schema: taskSchema, getId: (task) => task.id },
@@ -98,12 +98,12 @@ export type Database<Schemas extends SchemasMap> = Collections<Schemas> & {
  *   .use(idbPlugin())
  *   .init();
  *
- * const task = db.tasks.add({ title: 'Learn Starling' });
+ * const task = store.tasks.add({ title: 'Learn Starling' });
  * ```
  */
-export function createDatabase<Schemas extends SchemasMap>(
-	config: DbConfig<Schemas>,
-): Database<Schemas> {
+export function createStore<Schemas extends SchemasMap>(
+	config: StoreConfig<Schemas>,
+): Store<Schemas> {
 	const { name, schema, version = 1 } = config;
 	const clock = createClock();
 	const getEventstamp = () => clock.now();
@@ -112,10 +112,10 @@ export function createDatabase<Schemas extends SchemasMap>(
 	// Cast to public Collection type (hides Symbol-keyed internals)
 	const publicCollections = collections as unknown as Collections<Schemas>;
 
-	// Database-level emitter
-	const dbEmitter = createEmitter<DatabaseEvents<Schemas>>();
+	// Store-level emitter
+	const storeEmitter = createEmitter<StoreEvents<Schemas>>();
 
-	// Subscribe to all collection events and re-emit at database level
+	// Subscribe to all collection events and re-emit at store level
 	for (const collectionName of Object.keys(collections) as (keyof Schemas)[]) {
 		const collection = collections[collectionName];
 
@@ -131,7 +131,7 @@ export function createDatabase<Schemas extends SchemasMap>(
 				mutations.updated.length > 0 ||
 				mutations.removed.length > 0
 			) {
-				dbEmitter.emit("mutation", {
+				storeEmitter.emit("mutation", {
 					collection: collectionName,
 					added: mutations.added,
 					updated: mutations.updated,
@@ -141,9 +141,9 @@ export function createDatabase<Schemas extends SchemasMap>(
 		});
 	}
 
-	const plugins: DatabasePlugin<Schemas>[] = [];
+	const plugins: StorePlugin<Schemas>[] = [];
 
-	const db: Database<Schemas> = {
+	const store: Store<Schemas> = {
 		...publicCollections,
 		name,
 		version,
@@ -165,7 +165,7 @@ export function createDatabase<Schemas extends SchemasMap>(
 		): R {
 			return executeQuery(collections, collectionNames, callback);
 		},
-		toSnapshot(): DatabaseSnapshot<Schemas> {
+		toSnapshot(): StoreSnapshot<Schemas> {
 			const collectionDocs = {} as {
 				[K in keyof Schemas]: StarlingDocument<InferOutput<Schemas[K]>>;
 			};
@@ -192,7 +192,7 @@ export function createDatabase<Schemas extends SchemasMap>(
 				collections: collectionDocs,
 			};
 		},
-		mergeSnapshot(snapshot: DatabaseSnapshot<Schemas>): void {
+		mergeSnapshot(snapshot: StoreSnapshot<Schemas>): void {
 			// Validate version compatibility
 			if (snapshot.version !== "1.0") {
 				throw new Error(`Unsupported snapshot version: ${snapshot.version}`);
@@ -210,27 +210,27 @@ export function createDatabase<Schemas extends SchemasMap>(
 			}
 		},
 		on(event, handler) {
-			return dbEmitter.on(event, handler);
+			return storeEmitter.on(event, handler);
 		},
-		use(plugin: DatabasePlugin<Schemas>) {
+		use(plugin: StorePlugin<Schemas>) {
 			plugins.push(plugin);
-			return db;
+			return store;
 		},
 		async init() {
 			// Execute all plugin init handlers sequentially
 			for (const plugin of plugins) {
 				if (plugin.handlers.init) {
-					await plugin.handlers.init(db);
+					await plugin.handlers.init(store);
 				}
 			}
-			return db;
+			return store;
 		},
 		async dispose() {
 			// Execute all plugin dispose handlers sequentially (in reverse order)
 			for (let i = plugins.length - 1; i >= 0; i--) {
 				const plugin = plugins[i];
 				if (plugin?.handlers.dispose) {
-					await plugin.handlers.dispose(db);
+					await plugin.handlers.dispose(store);
 				}
 			}
 		},
@@ -239,7 +239,7 @@ export function createDatabase<Schemas extends SchemasMap>(
 		},
 	};
 
-	return db;
+	return store;
 }
 
 function makeCollections<Schemas extends SchemasMap>(

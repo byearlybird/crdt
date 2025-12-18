@@ -1,5 +1,5 @@
-import type { Database, DatabasePlugin } from "../../database/db";
-import type { DatabaseSnapshot, SchemasMap } from "../../database/types";
+import type { Store, StorePlugin } from "../../store/store";
+import type { StoreSnapshot, SchemasMap } from "../../store/types";
 
 /**
  * Context provided to the onRequest hook
@@ -7,7 +7,7 @@ import type { DatabaseSnapshot, SchemasMap } from "../../database/types";
 export type RequestContext = {
 	operation: "GET" | "PATCH";
 	url: string;
-	snapshot?: DatabaseSnapshot<SchemasMap>; // Present for PATCH operations
+	snapshot?: StoreSnapshot<SchemasMap>; // Present for PATCH operations
 };
 
 /**
@@ -17,7 +17,7 @@ export type RequestHookResult =
 	| { skip: true }
 	| {
 			headers?: Record<string, string>;
-			snapshot?: DatabaseSnapshot<SchemasMap>;
+			snapshot?: StoreSnapshot<SchemasMap>;
 	  }
 	| undefined;
 
@@ -25,7 +25,7 @@ export type RequestHookResult =
  * Result returned by the onResponse hook
  */
 export type ResponseHookResult =
-	| { snapshot: DatabaseSnapshot<SchemasMap> }
+	| { snapshot: StoreSnapshot<SchemasMap> }
 	| { skip: true }
 	| undefined; // Use original snapshot
 
@@ -64,7 +64,7 @@ export type HttpPluginConfig = {
 	 * Return { snapshot } to transform the snapshot before merging
 	 */
 	onResponse?: (context: {
-		snapshot: DatabaseSnapshot<SchemasMap>;
+		snapshot: StoreSnapshot<SchemasMap>;
 	}) => ResponseHookResult;
 
 	/**
@@ -92,21 +92,21 @@ export type HttpPluginConfig = {
 };
 
 /**
- * Create an HTTP sync plugin for Starling databases.
+ * Create an HTTP sync plugin for Starling stores.
  *
  * The plugin:
- * - Fetches database snapshot from the server on init (single attempt)
+ * - Fetches store snapshot from the server on init (single attempt)
  * - Polls the server at regular intervals to fetch updates (with retry)
  * - Debounces local mutations and pushes them to the server (with retry)
  * - Supports request/response hooks for authentication, encryption, etc.
  * - Uses endpoint: GET/PATCH /database/:name
  *
  * @param config - HTTP plugin configuration
- * @returns A DatabasePlugin instance
+ * @returns A StorePlugin instance
  *
  * @example
  * ```typescript
- * const db = await createDatabase({
+ * const store = await createStore({
  *   name: "my-app",
  *   schema: {
  *     tasks: { schema: taskSchema, getId: (task) => task.id },
@@ -123,7 +123,7 @@ export type HttpPluginConfig = {
  *
  * @example With encryption
  * ```typescript
- * const db = await createDatabase({
+ * const store = await createStore({
  *   name: "my-app",
  *   schema: {
  *     tasks: { schema: taskSchema, getId: (task) => task.id },
@@ -142,7 +142,7 @@ export type HttpPluginConfig = {
  *   .init();
  * ```
  */
-export function httpPlugin(config: HttpPluginConfig): DatabasePlugin<any> {
+export function httpPlugin(config: HttpPluginConfig): StorePlugin<any> {
 	const {
 		baseUrl,
 		pollingInterval = 5000,
@@ -161,10 +161,10 @@ export function httpPlugin(config: HttpPluginConfig): DatabasePlugin<any> {
 
 	return {
 		handlers: {
-			async init(db: Database<any>) {
+			async init(store: Store<any>) {
 				// Initial fetch (single attempt, no retry)
 				try {
-					await fetchDatabase(db, baseUrl, onRequest, onResponse, false);
+					await fetchStore(store, baseUrl, onRequest, onResponse, false);
 				} catch (error) {
 					// Log error but continue
 					console.error("Failed to fetch database during init:", error);
@@ -173,8 +173,8 @@ export function httpPlugin(config: HttpPluginConfig): DatabasePlugin<any> {
 				// Set up polling
 				pollingTimer = setInterval(async () => {
 					try {
-						await fetchDatabase(
-							db,
+						await fetchStore(
+							store,
 							baseUrl,
 							onRequest,
 							onResponse,
@@ -185,12 +185,12 @@ export function httpPlugin(config: HttpPluginConfig): DatabasePlugin<any> {
 						);
 					} catch (error) {
 						// Log error but continue polling
-						console.error("Failed to poll database:", error);
+						console.error("Failed to poll store:", error);
 					}
 				}, pollingInterval);
 
 				// Subscribe to mutations for debounced push
-				unsubscribe = db.on("mutation", () => {
+				unsubscribe = store.on("mutation", () => {
 					// Clear existing timer if any
 					if (debounceTimer) {
 						clearTimeout(debounceTimer);
@@ -200,8 +200,8 @@ export function httpPlugin(config: HttpPluginConfig): DatabasePlugin<any> {
 					debounceTimer = setTimeout(async () => {
 						debounceTimer = null;
 						try {
-							await pushDatabase(
-								db,
+							await pushStore(
+								store,
 								baseUrl,
 								onRequest,
 								onResponse,
@@ -210,13 +210,13 @@ export function httpPlugin(config: HttpPluginConfig): DatabasePlugin<any> {
 								maxDelay,
 							);
 						} catch (error) {
-							console.error("Failed to push database:", error);
+							console.error("Failed to push store:", error);
 						}
 					}, debounceDelay);
 				});
 			},
 
-			async dispose(_db: Database<any>) {
+			async dispose(_store: Store<any>) {
 				// Clear polling timer
 				if (pollingTimer) {
 					clearInterval(pollingTimer);
@@ -240,15 +240,15 @@ export function httpPlugin(config: HttpPluginConfig): DatabasePlugin<any> {
 }
 
 /**
- * Fetch database snapshot from the server (GET request)
+ * Fetch store snapshot from the server (GET request)
  */
-async function fetchDatabase(
-	db: Database<any>,
+async function fetchStore(
+	store: Store<any>,
 	baseUrl: string,
 	onRequest: ((context: RequestContext) => RequestHookResult) | undefined,
 	onResponse:
 		| ((context: {
-				snapshot: DatabaseSnapshot<SchemasMap>;
+				snapshot: StoreSnapshot<SchemasMap>;
 		  }) => ResponseHookResult)
 		| undefined,
 	enableRetry: boolean,
@@ -256,7 +256,7 @@ async function fetchDatabase(
 	initialDelay = 1000,
 	maxDelay = 30000,
 ): Promise<void> {
-	const url = `${baseUrl}/database/${db.name}`;
+	const url = `${baseUrl}/database/${store.name}`;
 
 	// Call onRequest hook
 	const requestResult = onRequest?.({
@@ -289,7 +289,7 @@ async function fetchDatabase(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const snapshot = (await response.json()) as DatabaseSnapshot<SchemasMap>;
+		const snapshot = (await response.json()) as StoreSnapshot<SchemasMap>;
 
 		// Call onResponse hook
 		const responseResult = onResponse?.({ snapshot });
@@ -305,8 +305,8 @@ async function fetchDatabase(
 				? responseResult.snapshot
 				: snapshot;
 
-		// Merge into database
-		db.mergeSnapshot(finalSnapshot);
+		// Merge into store
+		store.mergeSnapshot(finalSnapshot);
 	};
 
 	if (enableRetry) {
@@ -317,25 +317,25 @@ async function fetchDatabase(
 }
 
 /**
- * Push database snapshot to the server (PATCH request)
+ * Push store snapshot to the server (PATCH request)
  */
-async function pushDatabase(
-	db: Database<any>,
+async function pushStore(
+	store: Store<any>,
 	baseUrl: string,
 	onRequest: ((context: RequestContext) => RequestHookResult) | undefined,
 	onResponse:
 		| ((context: {
-				snapshot: DatabaseSnapshot<SchemasMap>;
+				snapshot: StoreSnapshot<SchemasMap>;
 		  }) => ResponseHookResult)
 		| undefined,
 	maxAttempts = 3,
 	initialDelay = 1000,
 	maxDelay = 30000,
 ): Promise<void> {
-	const url = `${baseUrl}/database/${db.name}`;
+	const url = `${baseUrl}/database/${store.name}`;
 
 	// Get current snapshot
-	const snapshot = db.toSnapshot();
+	const snapshot = store.toSnapshot();
 
 	// Call onRequest hook
 	const requestResult = onRequest?.({
@@ -376,7 +376,7 @@ async function pushDatabase(
 		}
 
 		const responseSnapshot =
-			(await response.json()) as DatabaseSnapshot<SchemasMap>;
+			(await response.json()) as StoreSnapshot<SchemasMap>;
 
 		// Call onResponse hook
 		const responseResult = onResponse?.({ snapshot: responseSnapshot });
@@ -393,7 +393,7 @@ async function pushDatabase(
 				: responseSnapshot;
 
 		// Merge server response (trust LWW merge)
-		db.mergeSnapshot(finalSnapshot);
+		store.mergeSnapshot(finalSnapshot);
 	};
 
 	await withRetry(executeRequest, maxAttempts, initialDelay, maxDelay);

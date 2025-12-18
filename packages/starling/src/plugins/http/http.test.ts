@@ -8,14 +8,14 @@ import {
 	test,
 } from "bun:test";
 import { makeDocument, makeResource } from "../../core";
-import { createDatabase } from "../../database/db";
+import { createStore } from "../../store/store";
 import {
 	makeTask,
 	type Task,
 	taskSchema,
 	userSchema,
-} from "../../database/test-helpers";
-import type { DatabaseSnapshot } from "../../database/types";
+} from "../../store/test-helpers";
+import type { StoreSnapshot } from "../../store/types";
 import { httpPlugin, type RequestContext } from "./index";
 
 // Mock fetch
@@ -38,12 +38,12 @@ afterEach(() => {
 	consoleErrorSpy.mockRestore();
 });
 
-// Helper to create an empty database snapshot
-function makeEmptySnapshot(dbName = "test-app"): DatabaseSnapshot<any> {
+// Helper to create an empty store snapshot
+function makeEmptySnapshot(storeName = "test-app"): StoreSnapshot<any> {
 	const tasksDoc = makeDocument("tasks", "2099-01-01T00:00:00.000Z|0001|a1b2");
 	return {
 		version: "1.0",
-		name: dbName,
+		name: storeName,
 		latest: "2099-01-01T00:00:00.000Z|0001|a1b2",
 		collections: {
 			tasks: tasksDoc,
@@ -79,7 +79,7 @@ function makeTaskSnapshot(
 async function createTestHttpDb(
 	pluginOptions: Partial<Parameters<typeof httpPlugin>[0]> = {},
 ) {
-	return await createDatabase({
+	return await createStore({
 		name: "test-app",
 		schema: {
 			tasks: {
@@ -131,7 +131,7 @@ function mockSuccessfulPatch(
 describe("httpPlugin", () => {
 	describe("initialization", () => {
 		test("fetches database snapshot on init", async () => {
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -182,7 +182,7 @@ describe("httpPlugin", () => {
 
 			mockSuccessfulGet(snapshot);
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -224,7 +224,7 @@ describe("httpPlugin", () => {
 				}),
 			);
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -254,7 +254,7 @@ describe("httpPlugin", () => {
 				return Promise.reject(new Error("Network error"));
 			});
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -288,7 +288,7 @@ describe("httpPlugin", () => {
 				Promise.reject(new Error("Network error")),
 			);
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -315,7 +315,7 @@ describe("httpPlugin", () => {
 
 	describe("polling", () => {
 		test("polls server at configured interval", async () => {
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -345,7 +345,7 @@ describe("httpPlugin", () => {
 		});
 
 		test("stops polling on dispose", async () => {
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -387,7 +387,7 @@ describe("httpPlugin", () => {
 				return Promise.reject(new Error("Network error"));
 			});
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -444,7 +444,7 @@ describe("httpPlugin", () => {
 				});
 			});
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -478,7 +478,7 @@ describe("httpPlugin", () => {
 
 	describe("push on mutation", () => {
 		test("pushes database snapshot to server after mutation", async () => {
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -518,7 +518,7 @@ describe("httpPlugin", () => {
 		});
 
 		test("debounces multiple rapid mutations", async () => {
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -553,7 +553,7 @@ describe("httpPlugin", () => {
 		});
 
 		test("pushes all collection mutations in single database snapshot", async () => {
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -594,7 +594,7 @@ describe("httpPlugin", () => {
 		});
 
 		test("clears debounce timers on dispose", async () => {
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -646,7 +646,7 @@ describe("httpPlugin", () => {
 				});
 			});
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -727,7 +727,7 @@ describe("httpPlugin", () => {
 				(_context: RequestContext) => undefined as undefined,
 			);
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -785,7 +785,7 @@ describe("httpPlugin", () => {
 				{ id: "transformed", title: "Transformed", completed: true },
 			]);
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -877,7 +877,7 @@ describe("httpPlugin", () => {
 				}),
 			);
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -919,7 +919,7 @@ describe("httpPlugin", () => {
 
 			const onResponseMock = mock(() => undefined as undefined);
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -982,7 +982,7 @@ describe("httpPlugin", () => {
 				});
 			});
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -1031,7 +1031,7 @@ describe("httpPlugin", () => {
 				return Promise.reject(new Error("Network error"));
 			});
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -1080,7 +1080,7 @@ describe("httpPlugin", () => {
 				return Promise.reject(new Error("Network error"));
 			});
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -1126,7 +1126,7 @@ describe("httpPlugin", () => {
 			);
 
 			// Should not throw, just log error
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -1157,7 +1157,7 @@ describe("httpPlugin", () => {
 				}),
 			);
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -1198,7 +1198,7 @@ describe("httpPlugin", () => {
 				});
 			});
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -1235,7 +1235,7 @@ describe("httpPlugin", () => {
 
 	describe("disposal", () => {
 		test("unsubscribes from mutation events on dispose", async () => {
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -1264,7 +1264,7 @@ describe("httpPlugin", () => {
 		});
 
 		test("can be safely disposed multiple times", async () => {
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -1289,7 +1289,7 @@ describe("httpPlugin", () => {
 
 	describe("default configuration", () => {
 		test("uses default polling interval of 5000ms", async () => {
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -1317,7 +1317,7 @@ describe("httpPlugin", () => {
 		});
 
 		test("uses default debounce delay of 1000ms", async () => {
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {
@@ -1359,7 +1359,7 @@ describe("httpPlugin", () => {
 				return Promise.reject(new Error("Network error"));
 			});
 
-			const db = await createDatabase({
+			const db = await createStore({
 				name: "test-app",
 				schema: {
 					tasks: {

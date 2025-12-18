@@ -57,7 +57,7 @@ bun run build
 cd packages/starling && bun run build
 ```
 
-The build generates four entry points: main database export, core primitives, and two plugins (IDB and HTTP).
+The build generates four entry points: main store export, core primitives, and two plugins (IDB and HTTP).
 
 ## Version Bumps
 

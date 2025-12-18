@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { createMultiCollectionDb, createTestDb } from "./test-helpers";
+import { createMultiCollectionStore, createTestStore } from "./test-helpers";
 
 describe("Transactions", () => {
 	describe("commit", () => {
 		test("commits changes on successful completion", () => {
-			const db = createTestDb();
+			const db = createTestStore();
 
 			db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
@@ -16,7 +16,7 @@ describe("Transactions", () => {
 		});
 
 		test("returns callback result", () => {
-			const db = createTestDb();
+			const db = createTestStore();
 
 			const result = db.begin(["tasks"], (tx) => {
 				const task = tx.tasks.add({ id: "1", title: "Test", completed: false });
@@ -28,7 +28,7 @@ describe("Transactions", () => {
 		});
 
 		test("commits changes across multiple collections", () => {
-			const db = createMultiCollectionDb();
+			const db = createMultiCollectionStore();
 
 			db.begin(["tasks", "users"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
@@ -42,7 +42,7 @@ describe("Transactions", () => {
 
 	describe("rollback", () => {
 		test("discards changes on explicit rollback", () => {
-			const db = createTestDb();
+			const db = createTestStore();
 
 			db.begin(["tasks"], (tx) => {
 				tx.tasks.add({
@@ -57,7 +57,7 @@ describe("Transactions", () => {
 		});
 
 		test("discards changes on exception", () => {
-			const db = createTestDb();
+			const db = createTestStore();
 
 			try {
 				db.begin(["tasks"], (tx) => {
@@ -76,7 +76,7 @@ describe("Transactions", () => {
 		});
 
 		test("rolls back all collections", () => {
-			const db = createMultiCollectionDb();
+			const db = createMultiCollectionStore();
 
 			db.begin(["tasks", "users"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
@@ -89,7 +89,7 @@ describe("Transactions", () => {
 		});
 
 		test("prevents remove operation from persisting", () => {
-			const db = createTestDb();
+			const db = createTestStore();
 			db.tasks.add({ id: "1", title: "Task to keep", completed: false });
 
 			db.begin(["tasks"], (tx) => {
@@ -103,7 +103,7 @@ describe("Transactions", () => {
 
 	describe("isolation", () => {
 		test("sees snapshot of data at transaction start", () => {
-			const db = createTestDb();
+			const db = createTestStore();
 			db.tasks.add({ id: "1", title: "Original", completed: false });
 
 			db.begin(["tasks"], (tx) => {
@@ -120,7 +120,7 @@ describe("Transactions", () => {
 		});
 
 		test("supports chained operations on same resource", () => {
-			const db = createTestDb();
+			const db = createTestStore();
 
 			db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "New Task", completed: false });
@@ -138,7 +138,7 @@ describe("Transactions", () => {
 		});
 
 		test("supports queries within transaction", () => {
-			const db = createTestDb();
+			const db = createTestStore();
 			db.tasks.add({ id: "1", title: "Task 1", completed: false });
 			db.tasks.add({ id: "2", title: "Task 2", completed: true });
 

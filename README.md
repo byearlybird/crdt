@@ -8,7 +8,7 @@ Starling keeps replicas in sync using field-level Last-Write-Wins powered by hyb
 
 Starling is distributed as a single package with subpath exports:
 
-- `@byearlybird/starling` — Database with typed collections, transactions, and plugins (main export)
+- `@byearlybird/starling` — Store with typed collections, transactions, and plugins (main export)
 - `@byearlybird/starling/core` — Low-level CRDT primitives for custom sync implementations
 - `@byearlybird/starling/plugin-idb` — IndexedDB persistence plugin
 - `@byearlybird/starling/plugin-http` — HTTP sync plugin
@@ -31,7 +31,7 @@ bun add @byearlybird/starling zod
 
 ```ts
 import { z } from "zod";
-import { createDatabase } from "@byearlybird/starling";
+import { createStore } from "@byearlybird/starling";
 
 // Define your schema
 const taskSchema = z.object({
@@ -41,7 +41,7 @@ const taskSchema = z.object({
 });
 
 // Create a database with typed collections
-const db = createDatabase({
+const store = createStore({
   name: "my-app",
   schema: {
     tasks: { schema: taskSchema, getId: (task) => task.id },
@@ -49,23 +49,23 @@ const db = createDatabase({
 });
 
 // CRUD operations
-db.tasks.add({ id: "1", title: "Learn Starling", completed: false });
-db.tasks.update("1", { completed: true });
-const task = db.tasks.get("1");
+store.tasks.add({ id: "1", title: "Learn Starling", completed: false });
+store.tasks.update("1", { completed: true });
+const task = store.tasks.get("1");
 
 // Transactions with explicit dependencies and snapshot isolation
-db.begin(["tasks"], (tx) => {
+store.begin(["tasks"], (tx) => {
   tx.tasks.add({ id: "2", title: "Build an app", completed: false });
   tx.tasks.update("1", { completed: false });
 });
 
 // Queries with explicit dependencies (read-only)
-const completedTasks = db.query(["tasks"], (q) =>
+const completedTasks = store.query(["tasks"], (q) =>
   q.tasks.find((task) => task.completed)
 );
 
 // Sync with remote database (conflict resolution is automatic)
-db.mergeSnapshot(remoteSnapshot);
+store.mergeSnapshot(remoteSnapshot);
 ```
 
 ### Additional Features
@@ -73,13 +73,13 @@ db.mergeSnapshot(remoteSnapshot);
 **Explicit Dependencies** - Transactions and queries require declaring which collections you'll access:
 ```ts
 // Transaction - only clones specified collections for efficiency
-db.begin(["tasks", "users"], (tx) => {
+store.begin(["tasks", "users"], (tx) => {
   const task = tx.tasks.add({ ... });
   tx.users.update(task.assignedTo, { lastActivity: Date.now() });
 });
 
 // Query - read-only access to specified collections
-const stats = db.query(["tasks", "users"], (q) => ({
+const stats = store.query(["tasks", "users"], (q) => ({
   totalTasks: q.tasks.getAll().length,
   totalUsers: q.users.getAll().length,
 }));
@@ -87,7 +87,7 @@ const stats = db.query(["tasks", "users"], (q) => ({
 
 **Mutation Events** - React to data changes:
 ```ts
-db.on("mutation", (event) => {
+store.on("mutation", (event) => {
   console.log(`${event.collection}: ${event.added.length} added, ${event.updated.length} updated`);
 });
 ```
@@ -97,7 +97,7 @@ db.on("mutation", (event) => {
 import { idbPlugin } from "@byearlybird/starling/plugin-idb";
 import { httpPlugin } from "@byearlybird/starling/plugin-http";
 
-const db = await createDatabase({ name: "my-app", schema })
+const store = await createStore({ name: "my-app", schema })
   .use(idbPlugin())
   .use(httpPlugin({ baseUrl: "https://api.example.com" }))
   .init();
