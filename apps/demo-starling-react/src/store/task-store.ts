@@ -1,5 +1,5 @@
 import type { AnyObject, JsonDocument } from "@byearlybird/starling";
-import { createDatabase } from "@byearlybird/starling";
+import { createStore } from "@byearlybird/starling";
 import { httpPlugin } from "@byearlybird/starling/plugin-http";
 import { idbPlugin } from "@byearlybird/starling/plugin-idb";
 import { z } from "zod";
@@ -81,7 +81,7 @@ const decryptDocument = <T extends AnyObject>(
 	} as JsonDocument<T>;
 };
 
-const database = createDatabase({
+const store = createStore({
 	name: "react-tasks",
 	schema: {
 		tasks: {
@@ -92,7 +92,7 @@ const database = createDatabase({
 }).use(idbPlugin());
 
 if (syncBaseUrl) {
-	database.use(
+	store.use(
 		httpPlugin({
 			baseUrl: syncBaseUrl,
 			onRequest: <T extends AnyObject>({
@@ -111,6 +111,6 @@ if (syncBaseUrl) {
 	);
 }
 
-export const db = await database.init();
+export const db = await store.init();
 
-export type TaskDatabase = typeof db;
+export type TaskStore = typeof db;

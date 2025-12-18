@@ -14,10 +14,10 @@ export type InferInput<T extends AnyObjectSchema> =
 	StandardSchemaV1.InferInput<T>;
 
 /**
- * Serialized database snapshot containing all collections.
+ * Serialized store snapshot containing all collections.
  * Used for persistence and sync operations.
  */
-export type DatabaseSnapshot<Schemas extends SchemasMap> = {
+export type StoreSnapshot<Schemas extends SchemasMap> = {
 	version: string;
 	name: string;
 	latest: string;

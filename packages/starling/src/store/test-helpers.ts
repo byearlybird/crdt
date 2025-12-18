@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { makeDocument, makeResource } from "../core";
-import { createDatabase } from "./db";
+import { createStore } from "./store";
 
 // Shared schemas
 export const taskSchema = z.object({
@@ -18,10 +18,10 @@ export const userSchema = z.object({
 export type Task = z.infer<typeof taskSchema>;
 export type User = z.infer<typeof userSchema>;
 
-// Database factories
-export function createTestDb() {
-	return createDatabase({
-		name: "test-db",
+// Store factories
+export function createTestStore() {
+	return createStore({
+		name: "test-store",
 		schema: {
 			tasks: {
 				schema: taskSchema,
@@ -31,9 +31,9 @@ export function createTestDb() {
 	});
 }
 
-export function createMultiCollectionDb() {
-	return createDatabase({
-		name: "multi-collection-db",
+export function createMultiCollectionStore() {
+	return createStore({
+		name: "multi-collection-store",
 		schema: {
 			tasks: {
 				schema: taskSchema,
@@ -71,7 +71,7 @@ export function makeTaskDocument(
 
 // Subscription helper for testing collection mutations
 export function subscribeToCollection(
-	db: ReturnType<typeof createTestDb | typeof createMultiCollectionDb>,
+	store: ReturnType<typeof createTestStore | typeof createMultiCollectionStore>,
 	collectionName: string,
 	handler: (mutations: {
 		added: unknown[];
@@ -79,7 +79,7 @@ export function subscribeToCollection(
 		removed: unknown[];
 	}) => void,
 ): () => void {
-	return db.on("mutation", (e) => {
+	return store.on("mutation", (e) => {
 		if (e.collection === collectionName) {
 			handler({ added: e.added, updated: e.updated, removed: e.removed });
 		}

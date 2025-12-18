@@ -1,5 +1,5 @@
-import type { Database, DatabasePlugin } from "../../database/db";
-import type { DatabaseSnapshot } from "../../database/types";
+import type { Store, StorePlugin } from "../../store/store";
+import type { StoreSnapshot } from "../../store/types";
 
 export type IdbPluginConfig = {
 	/**
@@ -15,11 +15,11 @@ export type IdbPluginConfig = {
 };
 
 /**
- * Create an IndexedDB persistence plugin for Starling databases.
+ * Create an IndexedDB persistence plugin for Starling stores.
  *
  * The plugin:
  * - Loads existing snapshot from IndexedDB on init
- * - Persists database snapshot to IndexedDB on every mutation
+ * - Persists store snapshot to IndexedDB on every mutation
  * - Enables instant cross-tab sync via BroadcastChannel API
  * - Gracefully closes the database connection on dispose
  *
@@ -28,11 +28,11 @@ export type IdbPluginConfig = {
  * are instantly notified and reload the data from IndexedDB.
  *
  * @param config - IndexedDB configuration
- * @returns A DatabasePlugin instance
+ * @returns A StorePlugin instance
  *
  * @example
  * ```typescript
- * const db = await createDatabase({
+ * const store = await createStore({
  *   name: "my-app",
  *   schema: {
  *     tasks: { schema: taskSchema, getId: (task) => task.id },
@@ -44,7 +44,7 @@ export type IdbPluginConfig = {
  *
  * @example Disable BroadcastChannel
  * ```typescript
- * const db = await createDatabase({
+ * const store = await createStore({
  *   name: "my-app",
  *   schema: {
  *     tasks: { schema: taskSchema, getId: (task) => task.id },
@@ -54,7 +54,7 @@ export type IdbPluginConfig = {
  *   .init();
  * ```
  */
-export function idbPlugin(config: IdbPluginConfig = {}): DatabasePlugin<any> {
+export function idbPlugin(config: IdbPluginConfig = {}): StorePlugin<any> {
 	const { version = 1, useBroadcastChannel = true } = config;
 	let dbInstance: IDBDatabase | null = null;
 	let unsubscribe: (() => void) | null = null;
@@ -63,22 +63,22 @@ export function idbPlugin(config: IdbPluginConfig = {}): DatabasePlugin<any> {
 
 	return {
 		handlers: {
-			async init(db: Database<any>) {
+			async init(store: Store<any>) {
 				// Open IndexedDB connection with single store
-				dbInstance = await openDatabase(db.name, version);
+				dbInstance = await openDatabase(store.name, version);
 
 				// Load existing snapshot from IndexedDB
 				const savedSnapshot = await loadSnapshot(dbInstance);
 
-				// Merge loaded snapshot into database
+				// Merge loaded snapshot into store
 				if (savedSnapshot) {
-					db.mergeSnapshot(savedSnapshot);
+					store.mergeSnapshot(savedSnapshot);
 				}
 
 				// Subscribe to mutations and persist on change
-				unsubscribe = db.on("mutation", async () => {
+				unsubscribe = store.on("mutation", async () => {
 					if (dbInstance) {
-						const snapshot = db.toSnapshot();
+						const snapshot = store.toSnapshot();
 						await saveSnapshot(dbInstance, snapshot);
 
 						// Broadcast changes to other tabs via BroadcastChannel
@@ -94,7 +94,7 @@ export function idbPlugin(config: IdbPluginConfig = {}): DatabasePlugin<any> {
 
 				// Set up BroadcastChannel for instant cross-tab sync
 				if (useBroadcastChannel && typeof BroadcastChannel !== "undefined") {
-					broadcastChannel = new BroadcastChannel(`starling:${db.name}`);
+					broadcastChannel = new BroadcastChannel(`starling:${store.name}`);
 
 					// Listen for changes from other tabs
 					broadcastChannel.onmessage = async (event) => {
@@ -107,14 +107,14 @@ export function idbPlugin(config: IdbPluginConfig = {}): DatabasePlugin<any> {
 							// Another tab made changes - reload and merge
 							const savedSnapshot = await loadSnapshot(dbInstance);
 							if (savedSnapshot) {
-								db.mergeSnapshot(savedSnapshot);
+								store.mergeSnapshot(savedSnapshot);
 							}
 						}
 					};
 				}
 			},
 
-			async dispose(db: Database<any>) {
+			async dispose(store: Store<any>) {
 				// Close BroadcastChannel
 				if (broadcastChannel) {
 					broadcastChannel.close();
@@ -129,7 +129,7 @@ export function idbPlugin(config: IdbPluginConfig = {}): DatabasePlugin<any> {
 
 				// Save final state
 				if (dbInstance) {
-					const snapshot = db.toSnapshot();
+					const snapshot = store.toSnapshot();
 					await saveSnapshot(dbInstance, snapshot);
 
 					// Close the database connection
@@ -168,20 +168,20 @@ function openDatabase(dbName: string, version: number): Promise<IDBDatabase> {
 }
 
 /**
- * Load database snapshot from IndexedDB
+ * Load store snapshot from IndexedDB
  */
 async function loadSnapshot(
 	db: IDBDatabase,
-): Promise<DatabaseSnapshot<any> | null> {
-	return getFromStore<DatabaseSnapshot<any>>(db, "snapshot", "current");
+): Promise<StoreSnapshot<any> | null> {
+	return getFromStore<StoreSnapshot<any>>(db, "snapshot", "current");
 }
 
 /**
- * Save database snapshot to IndexedDB
+ * Save store snapshot to IndexedDB
  */
 async function saveSnapshot(
 	db: IDBDatabase,
-	snapshot: DatabaseSnapshot<any>,
+	snapshot: StoreSnapshot<any>,
 ): Promise<void> {
 	await putToStore(db, "snapshot", "current", snapshot);
 }

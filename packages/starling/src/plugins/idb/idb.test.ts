@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import "fake-indexeddb/auto";
-import { createDatabase } from "../../database/db";
-import { makeTask, taskSchema } from "../../database/test-helpers";
+import { createStore } from "../../store/store";
+import { makeTask, taskSchema } from "../../store/test-helpers";
 import { idbPlugin } from "./index";
 
 // Mock BroadcastChannel for testing cross-tab sync
@@ -60,7 +60,7 @@ function _makeFailingIDBRequest(errorMessage: string): IDBRequest {
 describe("idbPlugin", () => {
 	test("loads and persists documents", async () => {
 		// Create database with plugin
-		const db1 = await createDatabase({
+		const db1 = await createStore({
 			name: "test-db",
 			schema: {
 				tasks: {
@@ -83,7 +83,7 @@ describe("idbPlugin", () => {
 		await db1.dispose();
 
 		// Create a new database instance and load (same db name to load persisted data)
-		const db2 = await createDatabase({
+		const db2 = await createStore({
 			name: "test-db",
 			schema: {
 				tasks: {
@@ -104,7 +104,7 @@ describe("idbPlugin", () => {
 	});
 
 	test("creates object stores on upgrade", async () => {
-		const db = await createDatabase({
+		const db = await createStore({
 			name: "upgrade-test",
 			schema: {
 				tasks: {
@@ -123,7 +123,7 @@ describe("idbPlugin", () => {
 	});
 
 	test("handles empty database gracefully", async () => {
-		const db = await createDatabase({
+		const db = await createStore({
 			name: "empty-db",
 			schema: {
 				tasks: {
@@ -142,7 +142,7 @@ describe("idbPlugin", () => {
 	});
 
 	test("uses custom version", async () => {
-		const db = await createDatabase({
+		const db = await createStore({
 			name: "version-test",
 			schema: {
 				tasks: {
@@ -161,7 +161,7 @@ describe("idbPlugin", () => {
 	});
 
 	test("persists on mutations", async () => {
-		const db = await createDatabase({
+		const db = await createStore({
 			name: "mutation-test",
 			schema: {
 				tasks: {
@@ -182,7 +182,7 @@ describe("idbPlugin", () => {
 		// Dispose and reload to verify persistence (same db name)
 		await db.dispose();
 
-		const db2 = await createDatabase({
+		const db2 = await createStore({
 			name: "mutation-test",
 			schema: {
 				tasks: {
@@ -202,7 +202,7 @@ describe("idbPlugin", () => {
 	});
 
 	test("closes database on dispose", async () => {
-		const db = await createDatabase({
+		const db = await createStore({
 			name: "dispose-test",
 			schema: {
 				tasks: {
@@ -225,7 +225,7 @@ describe("idbPlugin", () => {
 			email: taskSchema.shape.title,
 		});
 
-		const db = await createDatabase({
+		const db = await createStore({
 			name: "multi-collection-test",
 			schema: {
 				tasks: {
@@ -256,7 +256,7 @@ describe("idbPlugin", () => {
 		await db.dispose();
 
 		// Reload and verify both collections persisted (same db name)
-		const db2 = await createDatabase({
+		const db2 = await createStore({
 			name: "multi-collection-test",
 			schema: {
 				tasks: {
@@ -280,7 +280,7 @@ describe("idbPlugin", () => {
 
 	test("syncs changes across tabs via BroadcastChannel", async () => {
 		// Create two database instances (simulating two tabs)
-		const db1 = await createDatabase({
+		const db1 = await createStore({
 			name: "broadcast-test",
 			schema: {
 				tasks: {
@@ -292,7 +292,7 @@ describe("idbPlugin", () => {
 			.use(idbPlugin())
 			.init();
 
-		const db2 = await createDatabase({
+		const db2 = await createStore({
 			name: "broadcast-test",
 			schema: {
 				tasks: {
@@ -320,7 +320,7 @@ describe("idbPlugin", () => {
 	});
 
 	test("ignores own broadcasts", async () => {
-		const db = await createDatabase({
+		const db = await createStore({
 			name: "self-broadcast-test",
 			schema: {
 				tasks: {
@@ -345,7 +345,7 @@ describe("idbPlugin", () => {
 	});
 
 	test("ignores broadcasts with matching instanceId", async () => {
-		const db = await createDatabase({
+		const db = await createStore({
 			name: "instance-id-test",
 			schema: {
 				tasks: {
@@ -398,7 +398,7 @@ describe("idbPlugin", () => {
 	});
 
 	test("can disable BroadcastChannel", async () => {
-		const db = await createDatabase({
+		const db = await createStore({
 			name: "no-broadcast-test",
 			schema: {
 				tasks: {

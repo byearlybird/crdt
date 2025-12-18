@@ -1,16 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { createDatabase } from "./db";
+import { createStore } from "./store";
 import {
-	createMultiCollectionDb,
-	createTestDb,
+	createMultiCollectionStore,
+	createTestStore,
 	subscribeToCollection,
 } from "./test-helpers";
 
 describe("Database", () => {
 	describe("initialization", () => {
 		test("creates database with typed collections", () => {
-			const db = createTestDb();
+			const db = createTestStore();
 
 			expect(db.tasks).toBeDefined();
 			expect(typeof db.tasks.add).toBe("function");
@@ -21,7 +21,7 @@ describe("Database", () => {
 		});
 
 		test("creates multiple collections", () => {
-			const db = createMultiCollectionDb();
+			const db = createMultiCollectionStore();
 
 			expect(db.tasks).toBeDefined();
 			expect(db.users).toBeDefined();
@@ -29,7 +29,7 @@ describe("Database", () => {
 		});
 
 		test("supports custom getId functions", () => {
-			const db = createDatabase({
+			const db = createStore({
 				name: "kv-db",
 				schema: {
 					kv: {
@@ -49,7 +49,7 @@ describe("Database", () => {
 
 	describe("API surface", () => {
 		test("provides transaction method", () => {
-			const db = createTestDb();
+			const db = createTestStore();
 
 			const result = db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Test", completed: false });
@@ -61,7 +61,7 @@ describe("Database", () => {
 		});
 
 		test("provides event subscription", () => {
-			const db = createTestDb();
+			const db = createTestStore();
 			const events: any[] = [];
 
 			db.on("mutation", (e) => events.push(e));
@@ -73,7 +73,7 @@ describe("Database", () => {
 
 	describe("events", () => {
 		test("emits events with collection name", () => {
-			const db = createTestDb();
+			const db = createTestStore();
 			const dbEvents: any[] = [];
 			db.on("mutation", (e) => dbEvents.push(e));
 
@@ -85,7 +85,7 @@ describe("Database", () => {
 		});
 
 		test("emits events from multiple collections", () => {
-			const db = createMultiCollectionDb();
+			const db = createMultiCollectionStore();
 			const dbEvents: any[] = [];
 			db.on("mutation", (e) => dbEvents.push(e));
 
@@ -104,7 +104,7 @@ describe("Database", () => {
 		});
 
 		test("keeps database subscriptions active after transactions", () => {
-			const db = createTestDb();
+			const db = createTestStore();
 			const events: any[] = [];
 			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
@@ -122,7 +122,7 @@ describe("Database", () => {
 
 	describe("toSnapshot", () => {
 		test("returns snapshot for all collections", () => {
-			const db = createMultiCollectionDb();
+			const db = createMultiCollectionStore();
 			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
 			db.tasks.add({ id: "task-2", title: "Walk dog", completed: true });
 			db.users.add({ id: "user-1", name: "Alice", email: "alice@example.com" });
@@ -143,7 +143,7 @@ describe("Database", () => {
 		});
 
 		test("returns empty snapshot for empty collections", () => {
-			const db = createMultiCollectionDb();
+			const db = createMultiCollectionStore();
 
 			const snapshot = db.toSnapshot();
 
@@ -162,7 +162,7 @@ describe("Database", () => {
 		});
 
 		test("includes soft-deleted items in snapshot", () => {
-			const db = createTestDb();
+			const db = createTestStore();
 			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
 			db.tasks.remove("task-1");
 
@@ -178,7 +178,7 @@ describe("Database", () => {
 		});
 
 		test("includes correct latest eventstamps", () => {
-			const db = createMultiCollectionDb();
+			const db = createMultiCollectionStore();
 			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
 			db.users.add({ id: "user-1", name: "Alice", email: "alice@example.com" });
 
@@ -206,7 +206,7 @@ describe("Database", () => {
 		test("init handlers execute in registration order", async () => {
 			const calls: string[] = [];
 
-			const db = createDatabase({
+			const db = createStore({
 				name: "plugins-db",
 				schema: {
 					tasks: {
@@ -230,7 +230,7 @@ describe("Database", () => {
 		test("dispose handlers execute in reverse order", async () => {
 			const calls: string[] = [];
 
-			const db = createDatabase({
+			const db = createStore({
 				name: "plugins-db",
 				schema: {
 					tasks: {
@@ -252,7 +252,7 @@ describe("Database", () => {
 		});
 
 		test("plugins can perform database operations", async () => {
-			const db = createDatabase({
+			const db = createStore({
 				name: "plugins-db",
 				schema: {
 					tasks: {
@@ -283,7 +283,7 @@ describe("Database", () => {
 		test("async handlers work correctly", async () => {
 			const calls: string[] = [];
 
-			const db = createDatabase({
+			const db = createStore({
 				name: "plugins-db",
 				schema: {
 					tasks: {
@@ -316,7 +316,7 @@ describe("Database", () => {
 		test("plugins can subscribe to mutation events", async () => {
 			const pluginEvents: any[] = [];
 
-			const db = createDatabase({
+			const db = createStore({
 				name: "plugins-db",
 				schema: {
 					tasks: {
@@ -344,7 +344,7 @@ describe("Database", () => {
 		});
 
 		test("works without plugins", async () => {
-			const db = createTestDb();
+			const db = createTestStore();
 			await db.init();
 			await db.dispose();
 			db.tasks.add({ id: "1", title: "Test", completed: false });
