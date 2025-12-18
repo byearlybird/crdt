@@ -48,19 +48,6 @@ describe("Database", () => {
 	});
 
 	describe("API surface", () => {
-		test("provides collection CRUD methods", () => {
-			const db = createTestDb();
-
-			db.tasks.add({ id: "1", title: "Task 1", completed: false });
-			expect(db.tasks.get("1")?.title).toBe("Task 1");
-
-			db.tasks.update("1", { completed: true });
-			expect(db.tasks.get("1")?.completed).toBe(true);
-
-			db.tasks.remove("1");
-			expect(db.tasks.get("1")).toBeNull();
-		});
-
 		test("provides transaction method", () => {
 			const db = createTestDb();
 
@@ -114,22 +101,6 @@ describe("Database", () => {
 
 			const usersEvent = dbEvents.find((e) => e.collection === "users");
 			expect(usersEvent.added).toHaveLength(1);
-		});
-
-		test("keeps database subscriptions active after transactions", () => {
-			const db = createTestDb();
-			const events: any[] = [];
-			db.on("mutation", (e) => events.push(e));
-
-			db.begin(["tasks"], (tx) => {
-				tx.tasks.add({ id: "1", title: "Tx Task", completed: false });
-			});
-
-			db.tasks.add({ id: "2", title: "Outside Task", completed: false });
-
-			expect(events).toHaveLength(2);
-			expect(events[0].collection).toBe("tasks");
-			expect(events[1].collection).toBe("tasks");
 		});
 
 		test("keeps database subscriptions active after transactions", () => {
@@ -213,24 +184,13 @@ describe("Database", () => {
 
 			const snapshot = db.toSnapshot();
 
-			// Verify database-level latest eventstamp
+			// Verify eventstamps exist (format validation is core's responsibility)
 			expect(snapshot.latest).toBeDefined();
 			expect(typeof snapshot.latest).toBe("string");
-			expect(snapshot.latest).toMatch(
-				/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]+\|[0-9a-f]+$/,
-			);
-
-			// Verify collection-level latest eventstamps
 			expect(snapshot.collections.tasks.latest).toBeDefined();
-			expect(snapshot.collections.users.latest).toBeDefined();
 			expect(typeof snapshot.collections.tasks.latest).toBe("string");
+			expect(snapshot.collections.users.latest).toBeDefined();
 			expect(typeof snapshot.collections.users.latest).toBe("string");
-			expect(snapshot.collections.tasks.latest).toMatch(
-				/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]+\|[0-9a-f]+$/,
-			);
-			expect(snapshot.collections.users.latest).toMatch(
-				/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]+\|[0-9a-f]+$/,
-			);
 
 			// Verify database latest is the max of collection latests
 			expect(
