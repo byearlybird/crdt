@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createDatabase } from "./db";
-import { createMultiCollectionDb, createTestDb } from "./test-helpers";
+import {
+	createMultiCollectionDb,
+	createTestDb,
+	subscribeToCollection,
+} from "./test-helpers";
 
 describe("Database", () => {
 	describe("initialization", () => {
@@ -128,10 +132,10 @@ describe("Database", () => {
 			expect(events[1].collection).toBe("tasks");
 		});
 
-		test("keeps collection subscriptions active after transactions", () => {
+		test("keeps database subscriptions active after transactions", () => {
 			const db = createTestDb();
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
 			db.begin((tx) => {
 				tx.tasks.add({ id: "1", title: "Tx Task", completed: false });

@@ -1,12 +1,12 @@
 import { createClock, MIN_EVENTSTAMP, type StarlingDocument } from "../core";
 import {
 	type Collection,
+	CollectionInternals,
 	type CollectionWithInternals,
 	createCollection,
 	type MutationBatch,
 } from "./collection";
 import { createEmitter } from "./emitter";
-import { executeQuery, type QueryContext, type QueryHandle } from "./query";
 import { executeTransaction, type TransactionContext } from "./transaction";
 import type {
 	AnyObjectSchema,
@@ -59,7 +59,6 @@ export type Database<Schemas extends SchemasMap> = Collections<Schemas> & {
 	name: string;
 	version: number;
 	begin<R>(callback: (tx: TransactionContext<Schemas>) => R): R;
-	query<R>(callback: (ctx: QueryContext<Schemas>) => R): QueryHandle<R>;
 	toSnapshot(): DatabaseSnapshot<Schemas>;
 	mergeSnapshot(snapshot: DatabaseSnapshot<Schemas>): void;
 	on(
@@ -112,7 +111,12 @@ export function createDatabase<Schemas extends SchemasMap>(
 	for (const collectionName of Object.keys(collections) as (keyof Schemas)[]) {
 		const collection = collections[collectionName];
 
-		collection.on("mutation", (mutations) => {
+		// Type assertion needed for Symbol-keyed method access
+		const onMutation = (
+			collection as unknown as CollectionWithInternals<AnyObjectSchema>
+		)[CollectionInternals.onMutation]!;
+
+		onMutation((mutations) => {
 			// Only emit if there were actual changes
 			if (
 				mutations.added.length > 0 ||
@@ -137,9 +141,6 @@ export function createDatabase<Schemas extends SchemasMap>(
 		version,
 		begin<R>(callback: (tx: TransactionContext<Schemas>) => R): R {
 			return executeTransaction(schema, collections, getEventstamp, callback);
-		},
-		query<R>(callback: (ctx: QueryContext<Schemas>) => R): QueryHandle<R> {
-			return executeQuery(db, callback);
 		},
 		toSnapshot(): DatabaseSnapshot<Schemas> {
 			const collectionDocs = {} as {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DuplicateIdError, IdNotFoundError } from "./collection";
-import { createTestDb, makeTask } from "./test-helpers";
+import { createTestDb, makeTask, subscribeToCollection } from "./test-helpers";
 
 describe("Collection", () => {
 	describe("add", () => {
@@ -198,7 +198,7 @@ describe("Collection", () => {
 		test("emits add event", () => {
 			const db = createTestDb();
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
 			db.tasks.add({ id: "1", title: "Buy milk", completed: false });
 
@@ -217,7 +217,7 @@ describe("Collection", () => {
 			db.tasks.add({ id: "1", title: "Buy milk", completed: false });
 
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
 			db.tasks.update("1", { completed: true });
 
@@ -237,7 +237,7 @@ describe("Collection", () => {
 			db.tasks.add({ id: "1", title: "Buy milk", completed: false });
 
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
 			db.tasks.remove("1");
 
@@ -254,7 +254,15 @@ describe("Collection", () => {
 		test("supports unsubscribe", () => {
 			const db = createTestDb();
 			const events: any[] = [];
-			const unsubscribe = db.tasks.on("mutation", (e) => events.push(e));
+			const unsubscribe = db.on("mutation", (e) => {
+				if (e.collection === "tasks") {
+					events.push({
+						added: e.added,
+						updated: e.updated,
+						removed: e.removed,
+					});
+				}
+			});
 
 			db.tasks.add({ id: "1", title: "Task 1", completed: false });
 			expect(events).toHaveLength(1);
@@ -268,7 +276,7 @@ describe("Collection", () => {
 		test("batches events in transactions", () => {
 			const db = createTestDb();
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
 			db.begin((tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
@@ -286,7 +294,7 @@ describe("Collection", () => {
 			db.tasks.add({ id: "2", title: "Task 2", completed: false });
 
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
 			db.begin((tx) => {
 				tx.tasks.add({ id: "3", title: "Task 3", completed: false });
@@ -303,7 +311,7 @@ describe("Collection", () => {
 		test("emits no events on transaction rollback", () => {
 			const db = createTestDb();
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
 			db.begin((tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
@@ -316,7 +324,7 @@ describe("Collection", () => {
 		test("emits no events on transaction exception", () => {
 			const db = createTestDb();
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
 			try {
 				db.begin((tx) => {

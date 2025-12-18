@@ -20,6 +20,7 @@ export const CollectionInternals = {
 	emitMutations: Symbol("emitMutations"),
 	replaceData: Symbol("replaceData"),
 	data: Symbol("data"),
+	onMutation: Symbol("onMutation"),
 } as const;
 
 export type MutationBatch<T> = {
@@ -45,10 +46,6 @@ export type Collection<T extends AnyObjectSchema> = {
 	add(item: InferInput<T>): InferOutput<T>;
 	update(id: string, updates: Partial<InferInput<T>>): void;
 	remove(id: string): void;
-	on(
-		event: "mutation",
-		handler: (payload: MutationBatch<InferOutput<T>>) => void,
-	): () => void;
 };
 
 /** Internal type that includes Symbol-keyed methods for transaction support */
@@ -66,6 +63,9 @@ export type CollectionWithInternals<T extends AnyObjectSchema> =
 		[CollectionInternals.replaceData]: (
 			data: Map<string, ResourceObject<InferOutput<T>>>,
 		) => void;
+		[CollectionInternals.onMutation]: (
+			handler: (batch: MutationBatch<InferOutput<T>>) => void,
+		) => () => void;
 	};
 
 export function createCollection<T extends AnyObjectSchema>(
@@ -292,9 +292,6 @@ export function createCollection<T extends AnyObjectSchema>(
 			return mapToDocument(name, data, getEventstamp());
 		},
 
-		on(event, handler) {
-			return emitter.on(event, handler);
-		},
 
 		// Symbol-keyed internal methods for transaction support
 		[CollectionInternals.data]() {
@@ -328,6 +325,12 @@ export function createCollection<T extends AnyObjectSchema>(
 			for (const [id, resource] of newData.entries()) {
 				data.set(id, resource);
 			}
+		},
+
+		[CollectionInternals.onMutation](
+			handler: (batch: MutationBatch<InferOutput<T>>) => void,
+		) {
+			return emitter.on("mutation", handler);
 		},
 	};
 }

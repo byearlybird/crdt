@@ -9,7 +9,7 @@ This document covers the design and internals of Starling, including the state-b
 | Path | Description |
 | --- | --- |
 | `packages/starling` | Consolidated package containing core primitives, database layer, and plugins |
-| `packages/starling/src/core` | Core CRDT primitives (`StarlingDocument`, `ResourceObject`, `createMap`, `createClock`) for state-based replication |
+| `packages/starling/src/core` | Core CRDT primitives (`StarlingDocument`, `ResourceObject`, `createClock`) for state-based replication |
 | `packages/starling/src/database` | Database utilities with typed collections, transactions, and mutation events |
 | `packages/starling/src/plugins` | Plugin implementations (IDB, HTTP) for persistence and sync |
 
@@ -259,16 +259,8 @@ Each module handles a distinct responsibility in the state-based replication mod
 | [`clock/eventstamp.ts`](../packages/starling/src/core/clock/eventstamp.ts) | Encoder/decoder for sortable `YYYY-MM-DDTHH:mm:ss.SSSZ\|counter\|nonce` strings, comparison helpers, and utilities used by resources to apply Last-Write-Wins semantics |
 | [`document/resource.ts`](../packages/starling/src/core/document/resource.ts) | Defines resource objects (`id`, `attributes`, `meta`), handles soft deletion, and merges field-level values with eventstamp comparisons |
 | [`document/document.ts`](../packages/starling/src/core/document/document.ts) | Coordinates `StarlingDocument` creation and `mergeDocuments`, tracks added/updated/deleted resources, and keeps document metadata (latest eventstamp) synchronized |
-| [`resource-map/resource-map.ts`](../packages/starling/src/core/resource-map/resource-map.ts) | CRDT data structure providing a map-like interface for managing resources with field-level LWW semantics, document export/import, and soft deletion |
 
 ### Data Flow
-
-**ResourceMap mutations:**
-```
-map.set(id, value) → Generate eventstamp → Merge with existing resource
-                            ↓
-                    Update internal state
-```
 
 **Document merging:**
 ```
@@ -304,7 +296,6 @@ The main export provides typed collections with CRUD operations, transactions, m
 - Clocks: `createClock`, `createClockFromEventstamp`, `MIN_EVENTSTAMP`, `isValidEventstamp`
 - Documents: `makeDocument`, `mergeDocuments`, types `StarlingDocument`, `AnyObject`, `DocumentChanges`, `MergeDocumentsResult`
 - Resources: `makeResource`, `mergeResources`, `deleteResource`, type `ResourceObject`
-- Resource maps: `createMap`, `createMapFromDocument`
 
 These primitives implement state-based replication, document merging, resource management, and hybrid logical clocks.
 
@@ -318,7 +309,7 @@ Provides `httpPlugin()` for HTTP-based sync with polling, debouncing, and retry 
 
 ## Testing Strategy
 
-- **Unit tests**: Cover core modules (`clock`, `eventstamp`, `document`, `resource`, `resource-map`)
+- **Unit tests**: Cover core modules (`clock`, `eventstamp`, `document`, `resource`)
 - **Merge tests**: Verify field-level LWW behavior and document merging
 - **Sync tests**: Verify merge behavior and state replication
 - **Property-based tests**: Validate eventstamp monotonicity and merge commutativity

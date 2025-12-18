@@ -68,3 +68,20 @@ export function makeTaskDocument(
 	}
 	return doc;
 }
+
+// Subscription helper for testing collection mutations
+export function subscribeToCollection(
+	db: ReturnType<typeof createTestDb | typeof createMultiCollectionDb>,
+	collectionName: string,
+	handler: (mutations: {
+		added: unknown[];
+		updated: unknown[];
+		removed: unknown[];
+	}) => void,
+): () => void {
+	return db.on("mutation", (e) => {
+		if (e.collection === collectionName) {
+			handler({ added: e.added, updated: e.updated, removed: e.removed });
+		}
+	});
+}

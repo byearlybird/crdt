@@ -288,9 +288,6 @@ test("mergeResources returns newest eventstamp when adding new fields", () => {
 });
 
 test("mergeResources handles schema changes (object replaced with primitive)", () => {
-	type TestAttrs = {
-		settings: { theme: string; notifications: boolean } | null;
-	};
 	const doc1: ResourceObject<TestAttrs> = makeResource(
 		"doc-1",
 		{ settings: { theme: "dark", notifications: true } },

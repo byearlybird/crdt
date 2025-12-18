@@ -7,10 +7,10 @@ import {
 import type { CollectionConfigMap } from "./db";
 import type { AnyObjectSchema, SchemasMap } from "./types";
 
-/** Transaction-safe collection handle that excludes event subscription and serialization */
+/** Transaction-safe collection handle that excludes serialization */
 export type TransactionCollectionHandle<T extends AnyObjectSchema> = Omit<
 	Collection<T>,
-	"on" | "toDocument"
+	"toDocument"
 >;
 
 type TransactionCollectionHandles<Schemas extends SchemasMap> = {
@@ -23,7 +23,7 @@ export type TransactionContext<Schemas extends SchemasMap> =
 	};
 
 /**
- * Execute a transaction with snapshot isolation and copy-on-write optimization.
+ * Execute a transaction with snapshot isolation.
  *
  * @param configs - Collection configurations for creating new instances
  * @param collections - Active collection instances (mutable reference)
@@ -32,10 +32,9 @@ export type TransactionContext<Schemas extends SchemasMap> =
  * @returns The return value from the callback
  *
  * @remarks
- * - Collections are cloned lazily on first access (read or write)
- * - Provides snapshot isolation: tx sees consistent data from first access
+ * - All collections are cloned upfront (eager cloning)
+ * - Provides snapshot isolation: tx sees consistent data from transaction start
  * - Explicit rollback via tx.rollback() or implicit on exception
- * - Only modified collections are committed back
  */
 export function executeTransaction<Schemas extends SchemasMap, R>(
 	configs: CollectionConfigMap<Schemas>,
@@ -43,38 +42,22 @@ export function executeTransaction<Schemas extends SchemasMap, R>(
 	getEventstamp: () => string,
 	callback: (tx: TransactionContext<Schemas>) => R,
 ): R {
-	// Track which collections have been cloned (copy-on-write optimization)
-	const clonedCollections = new Map<
-		keyof Schemas,
-		CollectionWithInternals<AnyObjectSchema>
-	>();
-
-	// Create lazy transaction handles
-	const txHandles = {} as TransactionCollectionHandles<Schemas>;
+	// Clone ALL collections upfront (eager)
+	const clonedCollections = {} as {
+		[K in keyof Schemas]: CollectionWithInternals<Schemas[K]>;
+	};
 
 	for (const name of Object.keys(collections) as (keyof Schemas)[]) {
-		const originalCollection = collections[name];
+		const original = collections[name];
 		const config = configs[name];
 
-		// Clone function (called lazily on first access - read or write)
-		const getClonedCollection = () => {
-			if (!clonedCollections.has(name)) {
-				const cloned = createCollection(
-					name as string,
-					config.schema,
-					config.getId,
-					getEventstamp,
-					originalCollection[CollectionInternals.data](),
-					{ autoFlush: false }, // Don't auto-flush during transactions
-				);
-				clonedCollections.set(name, cloned);
-			}
-			return clonedCollections.get(name)!;
-		};
-
-		txHandles[name] = createLazyTransactionHandle(
-			originalCollection,
-			getClonedCollection,
+		clonedCollections[name] = createCollection(
+			name as string,
+			config.schema,
+			config.getId,
+			getEventstamp,
+			original[CollectionInternals.data](),
+			{ autoFlush: false },
 		);
 	}
 
@@ -82,92 +65,26 @@ export function executeTransaction<Schemas extends SchemasMap, R>(
 	let shouldRollback = false;
 
 	const tx = {
-		...txHandles,
+		...clonedCollections,
 		rollback() {
 			shouldRollback = true;
 		},
 	} as TransactionContext<Schemas>;
 
 	// Execute callback
-	let result: R;
-	result = callback(tx);
+	const result = callback(tx);
 
-	// Commit only the collections that were actually modified
+	// Commit only if not rolled back
 	if (!shouldRollback) {
-		for (const [name, clonedCollection] of clonedCollections.entries()) {
-			const originalCollection = collections[name];
+		for (const name of Object.keys(clonedCollections) as (keyof Schemas)[]) {
+			const original = collections[name] as CollectionWithInternals<AnyObjectSchema>;
+			const cloned = clonedCollections[name] as CollectionWithInternals<AnyObjectSchema>;
 
-			// Get pending mutations from the cloned collection
-			const pendingMutations =
-				clonedCollection[CollectionInternals.getPendingMutations]();
-
-			// Replace the data inside the original collection
-			originalCollection[CollectionInternals.replaceData](
-				clonedCollection[CollectionInternals.data](),
-			);
-
-			// Emit the batched mutation event on the original collection
-			originalCollection[CollectionInternals.emitMutations](pendingMutations);
+			const pendingMutations = cloned[CollectionInternals.getPendingMutations]!();
+			original[CollectionInternals.replaceData]!(cloned[CollectionInternals.data]!());
+			original[CollectionInternals.emitMutations]!(pendingMutations);
 		}
 	}
 
 	return result;
-}
-
-/**
- * Create a transaction handle that lazily clones on first access (copy-on-write).
- *
- * @param originalCollection - The base collection (not modified)
- * @param getClonedCollection - Lazy cloner (invoked on first access)
- * @returns A collection handle with snapshot isolation
- *
- * @remarks
- * First read or write triggers cloning, providing snapshot isolation.
- * All subsequent operations use the cloned collection.
- * Excluded methods:
- * - on(): events are only emitted after the transaction commits
- * - toDocument(): serialization should happen outside transactions
- */
-function createLazyTransactionHandle<T extends AnyObjectSchema>(
-	_originalCollection: CollectionWithInternals<T>,
-	getClonedCollection: () => CollectionWithInternals<T>,
-): TransactionCollectionHandle<T> {
-	let cloned: CollectionWithInternals<T> | null = null;
-
-	const ensureCloned = () => {
-		if (!cloned) {
-			cloned = getClonedCollection();
-		}
-		return cloned;
-	};
-
-	return {
-		get(id, opts) {
-			return ensureCloned().get(id, opts);
-		},
-
-		getAll(opts) {
-			return ensureCloned().getAll(opts);
-		},
-
-		find(filter, opts) {
-			return ensureCloned().find(filter, opts);
-		},
-
-		add(item) {
-			return ensureCloned().add(item);
-		},
-
-		update(id, updates) {
-			ensureCloned().update(id, updates);
-		},
-
-		remove(id) {
-			ensureCloned().remove(id);
-		},
-
-		merge(document) {
-			ensureCloned().merge(document);
-		},
-	};
 }

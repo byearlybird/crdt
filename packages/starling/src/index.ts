@@ -26,11 +26,6 @@ export type {
 } from "./database/db";
 // Database features
 export { createDatabase } from "./database/db";
-export type {
-	QueryCollectionHandle,
-	QueryContext,
-	QueryHandle,
-} from "./database/query";
 export type { StandardSchemaV1 } from "./database/standard-schema";
 export type {
 	TransactionCollectionHandle,

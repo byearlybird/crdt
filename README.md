@@ -65,13 +65,6 @@ db.mergeSnapshot(remoteSnapshot);
 
 ### Additional Features
 
-**Queries** - Read-only snapshots with filtering and mapping:
-```ts
-const completedTasks = db.query((q) =>
-  q.tasks.find((task) => task.completed)
-);
-```
-
 **Mutation Events** - React to data changes:
 ```ts
 db.on("mutation", (event) => {
@@ -134,26 +127,9 @@ If you need collaborative text editing, mergeable arrays, or more sophisticated 
 
 For custom sync implementations, you can import low-level primitives from the `/core` subpath:
 
-```ts
-import { createMap } from "@byearlybird/starling/core";
-
-// Mergeable map with field-level Last-Write-Wins
-const todos = createMap<{ text: string; completed: boolean }>("todos");
-
-todos.set("todo-1", { text: "Learn Starling", completed: false });
-todos.set("todo-1", { completed: true }); // Partial update
-
-// Export for persistence or sync
-const doc = todos.toDocument();
-
-// Merge remote state
-const result = todos.merge(remoteDoc);
-```
-
-The core API includes:
-- `createMap` / `createMapFromDocument` – mergeable map with automatic conflict resolution
 - `createClock` / `createClockFromEventstamp` – clock utilities for eventstamps
 - `makeDocument` / `mergeDocuments` – document creation and merging
+- `makeResource` / `mergeResources` / `deleteResource` – resource object operations
 
 ## Project Status
 
