@@ -102,7 +102,7 @@ describe("Database", () => {
 			const dbEvents: any[] = [];
 			db.on("mutation", (e) => dbEvents.push(e));
 
-			db.begin(["tasks"], (tx) => {
+			db.begin(["tasks", "users"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.users.add({ id: "u1", name: "Alice", email: "alice@example.com" });
 			});

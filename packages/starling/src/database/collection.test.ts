@@ -278,7 +278,7 @@ describe("Collection", () => {
 			const events: any[] = [];
 			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
-			db.begin(["notes", "tasks"], (tx) => {
+			db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.tasks.add({ id: "2", title: "Task 2", completed: false });
 				tx.tasks.add({ id: "3", title: "Task 3", completed: false });
@@ -296,7 +296,7 @@ describe("Collection", () => {
 			const events: any[] = [];
 			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
-			db.begin(["notes", "tasks"], (tx) => {
+			db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "3", title: "Task 3", completed: false });
 				tx.tasks.update("1", { completed: true });
 				tx.tasks.remove("2");
@@ -313,7 +313,7 @@ describe("Collection", () => {
 			const events: any[] = [];
 			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
-			db.begin(["notes", "tasks"], (tx) => {
+			db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.rollback();
 			});
