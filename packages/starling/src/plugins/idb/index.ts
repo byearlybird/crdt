@@ -1,5 +1,5 @@
-import type { StarlingDocument } from "../../core";
 import type { Database, DatabasePlugin } from "../../database/db";
+import type { DatabaseSnapshot } from "../../database/types";
 
 export type IdbPluginConfig = {
 	/**
@@ -18,8 +18,8 @@ export type IdbPluginConfig = {
  * Create an IndexedDB persistence plugin for Starling databases.
  *
  * The plugin:
- * - Loads existing documents from IndexedDB on init
- * - Persists all documents to IndexedDB on every mutation
+ * - Loads existing snapshot from IndexedDB on init
+ * - Persists database snapshot to IndexedDB on every mutation
  * - Enables instant cross-tab sync via BroadcastChannel API
  * - Gracefully closes the database connection on dispose
  *
@@ -64,28 +64,22 @@ export function idbPlugin(config: IdbPluginConfig = {}): DatabasePlugin<any> {
 	return {
 		handlers: {
 			async init(db: Database<any>) {
-				const collectionNames = db.collectionKeys() as string[];
+				// Open IndexedDB connection with single store
+				dbInstance = await openDatabase(db.name, version);
 
-				// Open IndexedDB connection
-				dbInstance = await openDatabase(db.name, version, collectionNames);
+				// Load existing snapshot from IndexedDB
+				const savedSnapshot = await loadSnapshot(dbInstance);
 
-				// Load existing documents from IndexedDB
-				const savedDocs = await loadDocuments(dbInstance, collectionNames);
-
-				// Merge loaded documents into each collection
-				for (const collectionName of Object.keys(savedDocs)) {
-					const doc = savedDocs[collectionName];
-					const collection = db[collectionName];
-					if (doc && collection) {
-						collection.merge(doc);
-					}
+				// Merge loaded snapshot into database
+				if (savedSnapshot) {
+					db.mergeSnapshot(savedSnapshot);
 				}
 
 				// Subscribe to mutations and persist on change
 				unsubscribe = db.on("mutation", async () => {
 					if (dbInstance) {
-						const docs = db.toDocuments();
-						await saveDocuments(dbInstance, docs);
+						const snapshot = db.toSnapshot();
+						await saveSnapshot(dbInstance, snapshot);
 
 						// Broadcast changes to other tabs via BroadcastChannel
 						if (broadcastChannel) {
@@ -111,17 +105,9 @@ export function idbPlugin(config: IdbPluginConfig = {}): DatabasePlugin<any> {
 
 						if (event.data.type === "mutation" && dbInstance) {
 							// Another tab made changes - reload and merge
-							const savedDocs = await loadDocuments(
-								dbInstance,
-								collectionNames,
-							);
-
-							for (const collectionName of Object.keys(savedDocs)) {
-								const doc = savedDocs[collectionName];
-								const collection = db[collectionName];
-								if (doc && collection) {
-									collection.merge(doc);
-								}
+							const savedSnapshot = await loadSnapshot(dbInstance);
+							if (savedSnapshot) {
+								db.mergeSnapshot(savedSnapshot);
 							}
 						}
 					};
@@ -143,8 +129,8 @@ export function idbPlugin(config: IdbPluginConfig = {}): DatabasePlugin<any> {
 
 				// Save final state
 				if (dbInstance) {
-					const docs = db.toDocuments();
-					await saveDocuments(dbInstance, docs);
+					const snapshot = db.toSnapshot();
+					await saveSnapshot(dbInstance, snapshot);
 
 					// Close the database connection
 					dbInstance.close();
@@ -156,13 +142,9 @@ export function idbPlugin(config: IdbPluginConfig = {}): DatabasePlugin<any> {
 }
 
 /**
- * Open an IndexedDB database and create object stores for each collection
+ * Open an IndexedDB database with a single snapshot store
  */
-function openDatabase(
-	dbName: string,
-	version: number,
-	collectionNames: string[],
-): Promise<IDBDatabase> {
+function openDatabase(dbName: string, version: number): Promise<IDBDatabase> {
 	return new Promise((resolve, reject) => {
 		const request = indexedDB.open(dbName, version);
 
@@ -177,59 +159,31 @@ function openDatabase(
 		request.onupgradeneeded = (event) => {
 			const db = (event.target as IDBOpenDBRequest).result;
 
-			// Create object stores for each collection if they don't exist
-			for (const collectionName of collectionNames) {
-				if (!db.objectStoreNames.contains(collectionName)) {
-					db.createObjectStore(collectionName);
-				}
+			// Create single snapshot store if it doesn't exist
+			if (!db.objectStoreNames.contains("snapshot")) {
+				db.createObjectStore("snapshot");
 			}
 		};
 	});
 }
 
 /**
- * Load documents from IndexedDB for all collections
+ * Load database snapshot from IndexedDB
  */
-async function loadDocuments(
+async function loadSnapshot(
 	db: IDBDatabase,
-	collectionNames: string[],
-): Promise<Record<string, StarlingDocument<any>>> {
-	const documents: Record<string, StarlingDocument<any>> = {};
-
-	for (const collectionName of collectionNames) {
-		if (db.objectStoreNames.contains(collectionName)) {
-			const doc = await getFromStore<StarlingDocument<any>>(
-				db,
-				collectionName,
-				"document",
-			);
-			if (doc) {
-				documents[collectionName] = doc;
-			}
-		}
-	}
-
-	return documents;
+): Promise<DatabaseSnapshot<any> | null> {
+	return getFromStore<DatabaseSnapshot<any>>(db, "snapshot", "current");
 }
 
 /**
- * Save documents to IndexedDB for all collections
+ * Save database snapshot to IndexedDB
  */
-async function saveDocuments(
+async function saveSnapshot(
 	db: IDBDatabase,
-	documents: Record<string, StarlingDocument<any>>,
+	snapshot: DatabaseSnapshot<any>,
 ): Promise<void> {
-	const promises: Promise<void>[] = [];
-
-	for (const collectionName of Object.keys(documents)) {
-		if (db.objectStoreNames.contains(collectionName)) {
-			promises.push(
-				putToStore(db, collectionName, "document", documents[collectionName]),
-			);
-		}
-	}
-
-	await Promise.all(promises);
+	await putToStore(db, "snapshot", "current", snapshot);
 }
 
 /**

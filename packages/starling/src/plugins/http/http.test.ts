@@ -7,12 +7,7 @@ import {
 	spyOn,
 	test,
 } from "bun:test";
-import {
-	type AnyObject,
-	makeDocument,
-	makeResource,
-	type StarlingDocument,
-} from "../../core";
+import { makeDocument, makeResource } from "../../core";
 import { createDatabase } from "../../database/db";
 import {
 	makeTask,
@@ -20,6 +15,7 @@ import {
 	taskSchema,
 	userSchema,
 } from "../../database/test-helpers";
+import type { DatabaseSnapshot } from "../../database/types";
 import { httpPlugin, type RequestContext } from "./index";
 
 // Mock fetch
@@ -30,7 +26,7 @@ beforeEach(() => {
 	mockFetch = mock(() =>
 		Promise.resolve({
 			ok: true,
-			json: () => Promise.resolve(makeEmptyDocument()),
+			json: () => Promise.resolve(makeEmptySnapshot()),
 		}),
 	);
 	globalThis.fetch = mockFetch as unknown as typeof fetch;
@@ -42,24 +38,41 @@ afterEach(() => {
 	consoleErrorSpy.mockRestore();
 });
 
-// Helper to create an empty document
-function makeEmptyDocument() {
-	return makeDocument("tasks", "2099-01-01T00:00:00.000Z|0001|a1b2");
+// Helper to create an empty database snapshot
+function makeEmptySnapshot(dbName = "test-app"): DatabaseSnapshot<any> {
+	const tasksDoc = makeDocument("tasks", "2099-01-01T00:00:00.000Z|0001|a1b2");
+	return {
+		version: "1.0",
+		name: dbName,
+		latest: "2099-01-01T00:00:00.000Z|0001|a1b2",
+		collections: {
+			tasks: tasksDoc,
+		},
+	};
 }
 
-// Helper to create a document with tasks
-function makeTaskDocument(
+// Helper to create a database snapshot with tasks
+function makeTaskSnapshot(
 	tasks: Array<{ id: string; title: string; completed: boolean }>,
 	eventstamp = "2099-01-01T00:00:00.000Z|0001|a1b2",
-) {
-	const doc = makeDocument<{ id: string; title: string; completed: boolean }>(
-		"tasks",
-		eventstamp,
-	);
+	dbName = "test-app",
+): DatabaseSnapshot<any> {
+	const tasksDoc = makeDocument<{
+		id: string;
+		title: string;
+		completed: boolean;
+	}>("tasks", eventstamp);
 	for (const task of tasks) {
-		doc.resources[task.id] = makeResource(task.id, task, eventstamp);
+		tasksDoc.resources[task.id] = makeResource(task.id, task, eventstamp);
 	}
-	return doc;
+	return {
+		version: "1.0",
+		name: dbName,
+		latest: eventstamp,
+		collections: {
+			tasks: tasksDoc,
+		},
+	};
 }
 
 // Helper to create a test database with http plugin
@@ -87,37 +100,37 @@ async function createTestHttpDb(
 
 // Helper to mock successful GET responses
 function mockSuccessfulGet(
-	document: StarlingDocument<AnyObject> = makeEmptyDocument(),
+	snapshot: DatabaseSnapshot<any> = makeEmptySnapshot(),
 ) {
 	mockFetch.mockImplementation(() =>
 		Promise.resolve({
 			ok: true,
-			json: () => Promise.resolve(document),
+			json: () => Promise.resolve(snapshot),
 		}),
 	);
 }
 
 // Helper to mock successful PATCH responses
 function mockSuccessfulPatch(
-	document: StarlingDocument<AnyObject> = makeEmptyDocument(),
+	snapshot: DatabaseSnapshot<any> = makeEmptySnapshot(),
 ) {
 	mockFetch.mockImplementation((_url, options) => {
 		if (options?.method === "PATCH") {
 			return Promise.resolve({
 				ok: true,
-				json: () => Promise.resolve(document),
+				json: () => Promise.resolve(snapshot),
 			});
 		}
 		return Promise.resolve({
 			ok: true,
-			json: () => Promise.resolve(makeEmptyDocument()),
+			json: () => Promise.resolve(makeEmptySnapshot()),
 		});
 	});
 }
 
 describe("httpPlugin", () => {
 	describe("initialization", () => {
-		test("fetches all collections on init", async () => {
+		test("fetches database snapshot on init", async () => {
 			const db = await createDatabase({
 				name: "test-app",
 				schema: {
@@ -135,10 +148,10 @@ describe("httpPlugin", () => {
 				)
 				.init();
 
-			// Should have made a GET request for tasks collection
+			// Should have made a single GET request for database snapshot
 			expect(mockFetch).toHaveBeenCalledTimes(1);
 			expect(mockFetch.mock.calls[0]?.[0]).toBe(
-				"https://api.example.com/test-app/tasks",
+				"https://api.example.com/database/test-app",
 			);
 			expect(mockFetch.mock.calls[0]?.[1]).toMatchObject({
 				method: "GET",
@@ -147,7 +160,28 @@ describe("httpPlugin", () => {
 			await db.dispose();
 		});
 
-		test("fetches multiple collections on init", async () => {
+		test("fetches all collections in single snapshot", async () => {
+			// Create a snapshot with both collections
+			const tasksDoc = makeDocument(
+				"tasks",
+				"2099-01-01T00:00:00.000Z|0001|a1b2",
+			);
+			const usersDoc = makeDocument(
+				"users",
+				"2099-01-01T00:00:00.000Z|0001|a1b2",
+			);
+			const snapshot: DatabaseSnapshot<any> = {
+				version: "1.0",
+				name: "test-app",
+				latest: "2099-01-01T00:00:00.000Z|0001|a1b2",
+				collections: {
+					tasks: tasksDoc,
+					users: usersDoc,
+				},
+			};
+
+			mockSuccessfulGet(snapshot);
+
 			const db = await createDatabase({
 				name: "test-app",
 				schema: {
@@ -169,21 +203,24 @@ describe("httpPlugin", () => {
 				)
 				.init();
 
-			// Should have made GET requests for both collections
-			expect(mockFetch).toHaveBeenCalledTimes(2);
+			// Should have made only 1 GET request for database snapshot
+			expect(mockFetch).toHaveBeenCalledTimes(1);
+			expect(mockFetch.mock.calls[0]?.[0]).toBe(
+				"https://api.example.com/database/test-app",
+			);
 
 			await db.dispose();
 		});
 
-		test("merges fetched documents into store", async () => {
-			const serverDoc = makeTaskDocument([
+		test("merges fetched snapshot into store", async () => {
+			const snapshot = makeTaskSnapshot([
 				{ id: "server-1", title: "Server Task", completed: false },
 			]);
 
 			mockFetch.mockImplementation(() =>
 				Promise.resolve({
 					ok: true,
-					json: () => Promise.resolve(serverDoc),
+					json: () => Promise.resolve(snapshot),
 				}),
 			);
 
@@ -212,17 +249,9 @@ describe("httpPlugin", () => {
 			await db.dispose();
 		});
 
-		test("continues with other collections when one fetch fails", async () => {
-			let callCount = 0;
+		test("handles fetch failure gracefully on init", async () => {
 			mockFetch.mockImplementation(() => {
-				callCount++;
-				if (callCount === 1) {
-					return Promise.reject(new Error("Network error"));
-				}
-				return Promise.resolve({
-					ok: true,
-					json: () => Promise.resolve(makeEmptyDocument()),
-				});
+				return Promise.reject(new Error("Network error"));
 			});
 
 			const db = await createDatabase({
@@ -246,9 +275,9 @@ describe("httpPlugin", () => {
 				)
 				.init();
 
-			// Should have attempted both collections
-			expect(mockFetch).toHaveBeenCalledTimes(2);
-			// Should have logged error for first collection
+			// Should have attempted fetch once
+			expect(mockFetch).toHaveBeenCalledTimes(1);
+			// Should have logged error
 			expect(consoleErrorSpy).toHaveBeenCalled();
 
 			await db.dispose();
@@ -351,7 +380,7 @@ describe("httpPlugin", () => {
 					initDone = true;
 					return Promise.resolve({
 						ok: true,
-						json: () => Promise.resolve(makeEmptyDocument()),
+						json: () => Promise.resolve(makeEmptySnapshot()),
 					});
 				}
 				// All subsequent calls (polling) fail
@@ -388,7 +417,7 @@ describe("httpPlugin", () => {
 			// Should have logged polling error
 			expect(consoleErrorSpy).toHaveBeenCalled();
 			const errorCall = consoleErrorSpy.mock.calls.find((call: unknown[]) =>
-				String(call[0]).includes("Failed to poll collection"),
+				String(call[0]).includes("Failed to poll database"),
 			);
 			expect(errorCall).toBeDefined();
 
@@ -403,7 +432,7 @@ describe("httpPlugin", () => {
 				if (callCount === 1) {
 					return Promise.resolve({
 						ok: true,
-						json: () => Promise.resolve(makeEmptyDocument()),
+						json: () => Promise.resolve(makeEmptySnapshot()),
 					});
 				}
 				if (callCount <= 3) {
@@ -411,7 +440,7 @@ describe("httpPlugin", () => {
 				}
 				return Promise.resolve({
 					ok: true,
-					json: () => Promise.resolve(makeEmptyDocument()),
+					json: () => Promise.resolve(makeEmptySnapshot()),
 				});
 			});
 
@@ -448,7 +477,7 @@ describe("httpPlugin", () => {
 	});
 
 	describe("push on mutation", () => {
-		test("pushes changes to server after mutation", async () => {
+		test("pushes database snapshot to server after mutation", async () => {
 			const db = await createDatabase({
 				name: "test-app",
 				schema: {
@@ -476,10 +505,10 @@ describe("httpPlugin", () => {
 			// Wait for debounce
 			await new Promise((resolve) => setTimeout(resolve, 50));
 
-			// Should have pushed changes
+			// Should have pushed database snapshot
 			expect(mockFetch).toHaveBeenCalledTimes(1);
 			expect(mockFetch.mock.calls[0]?.[0]).toBe(
-				"https://api.example.com/test-app/tasks",
+				"https://api.example.com/database/test-app",
 			);
 			expect(mockFetch.mock.calls[0]?.[1]).toMatchObject({
 				method: "PATCH",
@@ -523,7 +552,7 @@ describe("httpPlugin", () => {
 			await db.dispose();
 		});
 
-		test("pushes to different collections independently", async () => {
+		test("pushes all collection mutations in single database snapshot", async () => {
 			const db = await createDatabase({
 				name: "test-app",
 				schema: {
@@ -555,8 +584,11 @@ describe("httpPlugin", () => {
 			// Wait for debounce
 			await new Promise((resolve) => setTimeout(resolve, 50));
 
-			// Should have pushed both collections
-			expect(mockFetch).toHaveBeenCalledTimes(2);
+			// Should have pushed once with full database snapshot
+			expect(mockFetch).toHaveBeenCalledTimes(1);
+			expect(mockFetch.mock.calls[0]?.[0]).toBe(
+				"https://api.example.com/database/test-app",
+			);
 
 			await db.dispose();
 		});
@@ -596,7 +628,7 @@ describe("httpPlugin", () => {
 		});
 
 		test("merges server response after push", async () => {
-			const serverResponseDoc = makeTaskDocument([
+			const serverResponseSnapshot = makeTaskSnapshot([
 				{ id: "local-1", title: "Local Task", completed: false },
 				{ id: "server-1", title: "Server Added Task", completed: true },
 			]);
@@ -605,12 +637,12 @@ describe("httpPlugin", () => {
 				if (options?.method === "PATCH") {
 					return Promise.resolve({
 						ok: true,
-						json: () => Promise.resolve(serverResponseDoc),
+						json: () => Promise.resolve(serverResponseSnapshot),
 					});
 				}
 				return Promise.resolve({
 					ok: true,
-					json: () => Promise.resolve(makeEmptyDocument()),
+					json: () => Promise.resolve(makeEmptySnapshot()),
 				});
 			});
 
@@ -716,9 +748,8 @@ describe("httpPlugin", () => {
 
 			// Check GET context
 			expect(onRequestMock.mock.calls[0]?.[0]).toMatchObject({
-				collection: "tasks",
 				operation: "GET",
-				url: "https://api.example.com/test-app/tasks",
+				url: "https://api.example.com/database/test-app",
 			});
 
 			// Trigger a PATCH
@@ -730,16 +761,15 @@ describe("httpPlugin", () => {
 				(call) => call[0]?.operation === "PATCH",
 			);
 			expect(patchCall?.[0]).toMatchObject({
-				collection: "tasks",
 				operation: "PATCH",
-				url: "https://api.example.com/test-app/tasks",
+				url: "https://api.example.com/database/test-app",
 			});
-			expect(patchCall?.[0]?.document).toBeDefined();
+			expect(patchCall?.[0]?.snapshot).toBeDefined();
 
 			await db.dispose();
 		});
 
-		test("transforms document in onRequest for PATCH", async () => {
+		test("transforms snapshot in onRequest for PATCH", async () => {
 			let capturedBody: string | undefined;
 			mockFetch.mockImplementation((_url, options) => {
 				if (options?.method === "PATCH") {
@@ -747,11 +777,11 @@ describe("httpPlugin", () => {
 				}
 				return Promise.resolve({
 					ok: true,
-					json: () => Promise.resolve(makeEmptyDocument()),
+					json: () => Promise.resolve(makeEmptySnapshot()),
 				});
 			});
 
-			const transformedDoc = makeTaskDocument([
+			const transformedSnapshot = makeTaskSnapshot([
 				{ id: "transformed", title: "Transformed", completed: true },
 			]);
 
@@ -769,12 +799,10 @@ describe("httpPlugin", () => {
 						baseUrl: "https://api.example.com",
 						pollingInterval: 60000,
 						debounceDelay: 10,
-						onRequest: <T extends AnyObject>({
-							operation,
-						}: RequestContext<T>) => {
+						onRequest: ({ operation }) => {
 							if (operation === "PATCH") {
 								return {
-									document: transformedDoc as unknown as StarlingDocument<T>,
+									snapshot: transformedSnapshot,
 								};
 							}
 							return undefined;
@@ -786,13 +814,15 @@ describe("httpPlugin", () => {
 			db.tasks.add(makeTask({ id: "1", title: "Original" }));
 			await new Promise((resolve) => setTimeout(resolve, 50));
 
-			// Should have sent the transformed document
+			// Should have sent the transformed snapshot
 			expect(capturedBody).toBeDefined();
 			if (!capturedBody) {
 				throw new Error("Expected capturedBody to be defined");
 			}
 			const parsed = JSON.parse(capturedBody);
-			expect(parsed.resources.transformed?.id).toBe("transformed");
+			expect(parsed.collections.tasks.resources.transformed?.id).toBe(
+				"transformed",
+			);
 
 			await db.dispose();
 		});
@@ -805,11 +835,11 @@ describe("httpPlugin", () => {
 		])(
 			"skips merge when onResponse returns skip: true for %s",
 			async (_description, triggerPatch) => {
-				const serverDoc = makeTaskDocument([
+				const serverSnapshot = makeTaskSnapshot([
 					{ id: "server-1", title: "Server Task", completed: false },
 				]);
 
-				mockSuccessfulGet(serverDoc);
+				mockSuccessfulGet(serverSnapshot);
 
 				const db = await createTestHttpDb({
 					debounceDelay: 10,
@@ -818,7 +848,7 @@ describe("httpPlugin", () => {
 
 				if (triggerPatch) {
 					mockFetch.mockClear();
-					mockSuccessfulPatch(serverDoc);
+					mockSuccessfulPatch(serverSnapshot);
 					db.tasks.add(makeTask({ id: "1", title: "Local Task" }));
 					await new Promise((resolve) => setTimeout(resolve, 50));
 				}
@@ -831,19 +861,19 @@ describe("httpPlugin", () => {
 			},
 		);
 
-		test("transforms document in onResponse before merge", async () => {
-			const serverDoc = makeTaskDocument([
+		test("transforms snapshot in onResponse before merge", async () => {
+			const serverSnapshot = makeTaskSnapshot([
 				{ id: "server-1", title: "Original Title", completed: false },
 			]);
 
-			const transformedDoc = makeTaskDocument([
+			const transformedSnapshot = makeTaskSnapshot([
 				{ id: "server-1", title: "Transformed Title", completed: true },
 			]);
 
 			mockFetch.mockImplementation(() =>
 				Promise.resolve({
 					ok: true,
-					json: () => Promise.resolve(serverDoc),
+					json: () => Promise.resolve(serverSnapshot),
 				}),
 			);
 
@@ -860,8 +890,8 @@ describe("httpPlugin", () => {
 					httpPlugin({
 						baseUrl: "https://api.example.com",
 						pollingInterval: 60000,
-						onResponse: <T extends AnyObject>() => ({
-							document: transformedDoc as unknown as StarlingDocument<T>,
+						onResponse: () => ({
+							snapshot: transformedSnapshot,
 						}),
 					}),
 				)
@@ -876,14 +906,14 @@ describe("httpPlugin", () => {
 		});
 
 		test("receives correct context in onResponse hook", async () => {
-			const serverDoc = makeTaskDocument([
+			const serverSnapshot = makeTaskSnapshot([
 				{ id: "server-1", title: "Server Task", completed: false },
 			]);
 
 			mockFetch.mockImplementation(() =>
 				Promise.resolve({
 					ok: true,
-					json: () => Promise.resolve(serverDoc),
+					json: () => Promise.resolve(serverSnapshot),
 				}),
 			);
 
@@ -909,7 +939,7 @@ describe("httpPlugin", () => {
 
 			expect(onResponseMock).toHaveBeenCalledTimes(1);
 			const typedCalls = onResponseMock.mock.calls as unknown as Array<
-				[{ collection: string; document: StarlingDocument<Task> }]
+				[{ snapshot: DatabaseSnapshot<any> }]
 			>;
 			const firstCall = typedCalls[0];
 			expect(firstCall).toBeDefined();
@@ -917,10 +947,8 @@ describe("httpPlugin", () => {
 				throw new Error("onResponse hook was not invoked");
 			}
 			const [responseContext] = firstCall;
-			expect(responseContext).toMatchObject({
-				collection: "tasks",
-			});
-			expect(responseContext.document).toBeDefined();
+			expect(responseContext.snapshot).toBeDefined();
+			expect(responseContext.snapshot.version).toBe("1.0");
 
 			await db.dispose();
 		});
@@ -939,7 +967,7 @@ describe("httpPlugin", () => {
 				if (options?.method === "GET") {
 					return Promise.resolve({
 						ok: true,
-						json: () => Promise.resolve(makeEmptyDocument()),
+						json: () => Promise.resolve(makeEmptySnapshot()),
 					});
 				}
 
@@ -950,7 +978,7 @@ describe("httpPlugin", () => {
 
 				return Promise.resolve({
 					ok: true,
-					json: () => Promise.resolve(makeEmptyDocument()),
+					json: () => Promise.resolve(makeEmptySnapshot()),
 				});
 			});
 
@@ -995,7 +1023,7 @@ describe("httpPlugin", () => {
 				if (options?.method === "GET") {
 					return Promise.resolve({
 						ok: true,
-						json: () => Promise.resolve(makeEmptyDocument()),
+						json: () => Promise.resolve(makeEmptySnapshot()),
 					});
 				}
 
@@ -1044,7 +1072,7 @@ describe("httpPlugin", () => {
 				if (options?.method === "GET") {
 					return Promise.resolve({
 						ok: true,
-						json: () => Promise.resolve(makeEmptyDocument()),
+						json: () => Promise.resolve(makeEmptySnapshot()),
 					});
 				}
 
@@ -1159,7 +1187,7 @@ describe("httpPlugin", () => {
 				if (options?.method === "GET") {
 					return Promise.resolve({
 						ok: true,
-						json: () => Promise.resolve(makeEmptyDocument()),
+						json: () => Promise.resolve(makeEmptySnapshot()),
 					});
 				}
 				// Return non-ok for PATCH
@@ -1324,7 +1352,7 @@ describe("httpPlugin", () => {
 				if (options?.method === "GET") {
 					return Promise.resolve({
 						ok: true,
-						json: () => Promise.resolve(makeEmptyDocument()),
+						json: () => Promise.resolve(makeEmptySnapshot()),
 					});
 				}
 				callCount++;

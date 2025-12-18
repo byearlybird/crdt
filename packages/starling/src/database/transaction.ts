@@ -7,74 +7,70 @@ import {
 import type { CollectionConfigMap } from "./db";
 import type { AnyObjectSchema, SchemasMap } from "./types";
 
-/** Transaction-safe collection handle that excludes event subscription and serialization */
+/** Transaction-safe collection handle that excludes serialization */
 export type TransactionCollectionHandle<T extends AnyObjectSchema> = Omit<
 	Collection<T>,
-	"on" | "toDocument"
+	"toDocument"
 >;
 
 type TransactionCollectionHandles<Schemas extends SchemasMap> = {
 	[K in keyof Schemas]: TransactionCollectionHandle<Schemas[K]>;
 };
 
-export type TransactionContext<Schemas extends SchemasMap> =
-	TransactionCollectionHandles<Schemas> & {
-		rollback(): void;
-	};
+/**
+ * Transaction context providing access to specified collections.
+ * Only collections declared in the collection array are accessible.
+ */
+export type TransactionContext<
+	Schemas extends SchemasMap,
+	Keys extends ReadonlyArray<keyof Schemas>,
+> = Pick<TransactionCollectionHandles<Schemas>, Keys[number]> & {
+	rollback(): void;
+};
 
 /**
- * Execute a transaction with snapshot isolation and copy-on-write optimization.
+ * Execute a transaction with snapshot isolation and explicit dependencies.
  *
  * @param configs - Collection configurations for creating new instances
  * @param collections - Active collection instances (mutable reference)
  * @param getEventstamp - Function to generate eventstamps
+ * @param collectionNames - Array of collection names to include in transaction
  * @param callback - Transaction callback with tx context
  * @returns The return value from the callback
  *
  * @remarks
- * - Collections are cloned lazily on first access (read or write)
- * - Provides snapshot isolation: tx sees consistent data from first access
+ * - Only specified collections are cloned (lazy cloning for performance)
+ * - Provides snapshot isolation: tx sees consistent data from transaction start
  * - Explicit rollback via tx.rollback() or implicit on exception
- * - Only modified collections are committed back
+ * - TypeScript enforces that only declared collections are accessible
  */
-export function executeTransaction<Schemas extends SchemasMap, R>(
+export function executeTransaction<
+	Schemas extends SchemasMap,
+	Keys extends ReadonlyArray<keyof Schemas>,
+	R,
+>(
 	configs: CollectionConfigMap<Schemas>,
 	collections: { [K in keyof Schemas]: CollectionWithInternals<Schemas[K]> },
 	getEventstamp: () => string,
-	callback: (tx: TransactionContext<Schemas>) => R,
+	collectionNames: Keys,
+	callback: (tx: TransactionContext<Schemas, Keys>) => R,
 ): R {
-	// Track which collections have been cloned (copy-on-write optimization)
-	const clonedCollections = new Map<
-		keyof Schemas,
-		CollectionWithInternals<AnyObjectSchema>
-	>();
+	// Clone ONLY specified collections (efficient)
+	const clonedCollections = {} as {
+		[K in keyof Schemas]: CollectionWithInternals<Schemas[K]>;
+	};
 
-	// Create lazy transaction handles
-	const txHandles = {} as TransactionCollectionHandles<Schemas>;
-
-	for (const name of Object.keys(collections) as (keyof Schemas)[]) {
-		const originalCollection = collections[name];
+	for (const name of collectionNames) {
+		const original = collections[name];
 		const config = configs[name];
 
-		// Clone function (called lazily on first access - read or write)
-		const getClonedCollection = () => {
-			if (!clonedCollections.has(name)) {
-				const cloned = createCollection(
-					name as string,
-					config.schema,
-					config.getId,
-					getEventstamp,
-					originalCollection[CollectionInternals.data](),
-					{ autoFlush: false }, // Don't auto-flush during transactions
-				);
-				clonedCollections.set(name, cloned);
-			}
-			return clonedCollections.get(name)!;
-		};
-
-		txHandles[name] = createLazyTransactionHandle(
-			originalCollection,
-			getClonedCollection,
+		clonedCollections[name] = createCollection(
+			name as string,
+			config.schema,
+			config.getId,
+			getEventstamp,
+			original[CollectionInternals.data](),
+			{ autoFlush: false },
 		);
 	}
 
@@ -82,92 +78,34 @@ export function executeTransaction<Schemas extends SchemasMap, R>(
 	let shouldRollback = false;
 
 	const tx = {
-		...txHandles,
+		...clonedCollections,
 		rollback() {
 			shouldRollback = true;
 		},
-	} as TransactionContext<Schemas>;
+	} as TransactionContext<Schemas, Keys>;
 
 	// Execute callback
-	let result: R;
-	result = callback(tx);
+	const result = callback(tx);
 
-	// Commit only the collections that were actually modified
+	// Commit only if not rolled back
 	if (!shouldRollback) {
-		for (const [name, clonedCollection] of clonedCollections.entries()) {
-			const originalCollection = collections[name];
+		// Commit only the collections that were cloned
+		for (const name of collectionNames) {
+			const original = collections[
+				name
+			] as CollectionWithInternals<AnyObjectSchema>;
+			const cloned = clonedCollections[
+				name
+			] as CollectionWithInternals<AnyObjectSchema>;
 
-			// Get pending mutations from the cloned collection
 			const pendingMutations =
-				clonedCollection[CollectionInternals.getPendingMutations]();
-
-			// Replace the data inside the original collection
-			originalCollection[CollectionInternals.replaceData](
-				clonedCollection[CollectionInternals.data](),
+				cloned[CollectionInternals.getPendingMutations]?.();
+			original[CollectionInternals.replaceData]?.(
+				cloned[CollectionInternals.data]?.(),
 			);
-
-			// Emit the batched mutation event on the original collection
-			originalCollection[CollectionInternals.emitMutations](pendingMutations);
+			original[CollectionInternals.emitMutations]?.(pendingMutations);
 		}
 	}
 
 	return result;
-}
-
-/**
- * Create a transaction handle that lazily clones on first access (copy-on-write).
- *
- * @param originalCollection - The base collection (not modified)
- * @param getClonedCollection - Lazy cloner (invoked on first access)
- * @returns A collection handle with snapshot isolation
- *
- * @remarks
- * First read or write triggers cloning, providing snapshot isolation.
- * All subsequent operations use the cloned collection.
- * Excluded methods:
- * - on(): events are only emitted after the transaction commits
- * - toDocument(): serialization should happen outside transactions
- */
-function createLazyTransactionHandle<T extends AnyObjectSchema>(
-	_originalCollection: CollectionWithInternals<T>,
-	getClonedCollection: () => CollectionWithInternals<T>,
-): TransactionCollectionHandle<T> {
-	let cloned: CollectionWithInternals<T> | null = null;
-
-	const ensureCloned = () => {
-		if (!cloned) {
-			cloned = getClonedCollection();
-		}
-		return cloned;
-	};
-
-	return {
-		get(id, opts) {
-			return ensureCloned().get(id, opts);
-		},
-
-		getAll(opts) {
-			return ensureCloned().getAll(opts);
-		},
-
-		find(filter, opts) {
-			return ensureCloned().find(filter, opts);
-		},
-
-		add(item) {
-			return ensureCloned().add(item);
-		},
-
-		update(id, updates) {
-			ensureCloned().update(id, updates);
-		},
-
-		remove(id) {
-			ensureCloned().remove(id);
-		},
-
-		merge(document) {
-			ensureCloned().merge(document);
-		},
-	};
 }

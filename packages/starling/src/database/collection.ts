@@ -8,8 +8,8 @@ import {
 	type StarlingDocument,
 } from "../core";
 import { createEmitter } from "./emitter";
-import { type StandardSchemaV1, standardValidate } from "./standard-schema";
-import type { AnyObjectSchema } from "./types";
+import { standardValidate } from "./standard-schema";
+import type { AnyObjectSchema, InferInput, InferOutput } from "./types";
 
 /**
  * Symbols for internal collection methods used by transactions.
@@ -20,10 +20,8 @@ export const CollectionInternals = {
 	emitMutations: Symbol("emitMutations"),
 	replaceData: Symbol("replaceData"),
 	data: Symbol("data"),
+	onMutation: Symbol("onMutation"),
 } as const;
-
-/** Shorthand for extracting the data type from a schema */
-type InferData<T extends AnyObjectSchema> = StandardSchemaV1.InferOutput<T>;
 
 export type MutationBatch<T> = {
 	added: Array<{ id: string; item: T }>;
@@ -31,63 +29,63 @@ export type MutationBatch<T> = {
 	removed: Array<{ id: string; item: T }>;
 };
 
-export type CollectionMutationEvent<T> = MutationBatch<T>;
-
 export type CollectionEvents<T> = {
-	mutation: CollectionMutationEvent<T>;
+	mutation: MutationBatch<T>;
 };
 
 export type Collection<T extends AnyObjectSchema> = {
-	get(id: string, opts?: { includeDeleted?: boolean }): InferData<T> | null;
-	getAll(opts?: { includeDeleted?: boolean }): InferData<T>[];
-	find<U = InferData<T>>(
-		filter: (item: InferData<T>) => boolean,
+	get(id: string, opts?: { includeDeleted?: boolean }): InferOutput<T> | null;
+	getAll(opts?: { includeDeleted?: boolean }): InferOutput<T>[];
+	find<U = InferOutput<T>>(
+		filter: (item: InferOutput<T>) => boolean,
 		opts?: {
-			map?: (item: InferData<T>) => U;
+			map?: (item: InferOutput<T>) => U;
 			sort?: (a: U, b: U) => number;
 		},
 	): U[];
-	add(item: StandardSchemaV1.InferInput<T>): InferData<T>;
-	update(id: string, updates: Partial<StandardSchemaV1.InferInput<T>>): void;
+	add(item: InferInput<T>): InferOutput<T>;
+	update(id: string, updates: Partial<InferInput<T>>): void;
 	remove(id: string): void;
-	merge(document: StarlingDocument<InferData<T>>): void;
-	toDocument(): StarlingDocument<InferData<T>>;
-	on(
-		event: "mutation",
-		handler: (payload: CollectionMutationEvent<InferData<T>>) => void,
-	): () => void;
 };
 
 /** Internal type that includes Symbol-keyed methods for transaction support */
 export type CollectionWithInternals<T extends AnyObjectSchema> =
 	Collection<T> & {
-		[CollectionInternals.data]: () => Map<string, ResourceObject<InferData<T>>>;
-		[CollectionInternals.getPendingMutations]: () => CollectionMutationEvent<
-			InferData<T>
+		merge(document: StarlingDocument<InferOutput<T>>): void;
+		toDocument(): StarlingDocument<InferOutput<T>>;
+		[CollectionInternals.data]: () => Map<
+			string,
+			ResourceObject<InferOutput<T>>
+		>;
+		[CollectionInternals.getPendingMutations]: () => MutationBatch<
+			InferOutput<T>
 		>;
 		[CollectionInternals.emitMutations]: (
-			mutations: CollectionMutationEvent<InferData<T>>,
+			mutations: MutationBatch<InferOutput<T>>,
 		) => void;
 		[CollectionInternals.replaceData]: (
-			data: Map<string, ResourceObject<InferData<T>>>,
+			data: Map<string, ResourceObject<InferOutput<T>>>,
 		) => void;
+		[CollectionInternals.onMutation]: (
+			handler: (batch: MutationBatch<InferOutput<T>>) => void,
+		) => () => void;
 	};
 
 export function createCollection<T extends AnyObjectSchema>(
 	name: string,
 	schema: T,
-	getId: (item: InferData<T>) => string,
+	getId: (item: InferOutput<T>) => string,
 	getEventstamp: () => string,
-	initialData?: Map<string, ResourceObject<InferData<T>>>,
+	initialData?: Map<string, ResourceObject<InferOutput<T>>>,
 	options?: { autoFlush?: boolean },
 ): CollectionWithInternals<T> {
 	const autoFlush = options?.autoFlush ?? true;
-	const data = initialData ?? new Map<string, ResourceObject<InferData<T>>>();
+	const data = initialData ?? new Map<string, ResourceObject<InferOutput<T>>>();
 
-	const emitter = createEmitter<CollectionEvents<InferData<T>>>();
+	const emitter = createEmitter<CollectionEvents<InferOutput<T>>>();
 
 	// Pending mutations buffer
-	const pendingMutations: CollectionMutationEvent<InferData<T>> = {
+	const pendingMutations: MutationBatch<InferOutput<T>> = {
 		added: [],
 		updated: [],
 		removed: [],
@@ -137,10 +135,10 @@ export function createCollection<T extends AnyObjectSchema>(
 			}
 		},
 
-		find<U = InferData<T>>(
-			filter: (item: InferData<T>) => boolean,
+		find<U = InferOutput<T>>(
+			filter: (item: InferOutput<T>) => boolean,
 			opts?: {
-				map?: (item: InferData<T>) => U;
+				map?: (item: InferOutput<T>) => U;
 				sort?: (a: U, b: U) => number;
 			},
 		): U[] {
@@ -167,7 +165,7 @@ export function createCollection<T extends AnyObjectSchema>(
 			return results;
 		},
 
-		add(item: StandardSchemaV1.InferInput<T>): InferData<T> {
+		add(item: InferInput<T>): InferOutput<T> {
 			const validated = standardValidate(schema, item);
 			const id = getId(validated);
 
@@ -189,7 +187,7 @@ export function createCollection<T extends AnyObjectSchema>(
 			return validated;
 		},
 
-		update(id: string, updates: Partial<StandardSchemaV1.InferInput<T>>): void {
+		update(id: string, updates: Partial<InferInput<T>>): void {
 			const existing = data.get(id);
 
 			if (!existing) {
@@ -243,9 +241,9 @@ export function createCollection<T extends AnyObjectSchema>(
 			}
 		},
 
-		merge(document: StarlingDocument<InferData<T>>): void {
+		merge(document: StarlingDocument<InferOutput<T>>): void {
 			// Capture before state for update/delete event tracking
-			const beforeState = new Map<string, InferData<T>>();
+			const beforeState = new Map<string, InferOutput<T>>();
 			for (const [id, resource] of data.entries()) {
 				beforeState.set(id, resource.attributes);
 			}
@@ -297,10 +295,6 @@ export function createCollection<T extends AnyObjectSchema>(
 			return mapToDocument(name, data, getEventstamp());
 		},
 
-		on(event, handler) {
-			return emitter.on(event, handler);
-		},
-
 		// Symbol-keyed internal methods for transaction support
 		[CollectionInternals.data]() {
 			return new Map(data);
@@ -315,7 +309,7 @@ export function createCollection<T extends AnyObjectSchema>(
 		},
 
 		[CollectionInternals.emitMutations](
-			mutations: CollectionMutationEvent<InferData<T>>,
+			mutations: MutationBatch<InferOutput<T>>,
 		) {
 			if (
 				mutations.added.length > 0 ||
@@ -327,12 +321,18 @@ export function createCollection<T extends AnyObjectSchema>(
 		},
 
 		[CollectionInternals.replaceData](
-			newData: Map<string, ResourceObject<InferData<T>>>,
+			newData: Map<string, ResourceObject<InferOutput<T>>>,
 		) {
 			data.clear();
 			for (const [id, resource] of newData.entries()) {
 				data.set(id, resource);
 			}
+		},
+
+		[CollectionInternals.onMutation](
+			handler: (batch: MutationBatch<InferOutput<T>>) => void,
+		) {
+			return emitter.on("mutation", handler);
 		},
 	};
 }

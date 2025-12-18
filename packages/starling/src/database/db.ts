@@ -1,15 +1,20 @@
-import { createClock, type StarlingDocument } from "../core";
+import { createClock, MIN_EVENTSTAMP, type StarlingDocument } from "../core";
 import {
 	type Collection,
+	CollectionInternals,
 	type CollectionWithInternals,
 	createCollection,
 	type MutationBatch,
 } from "./collection";
 import { createEmitter } from "./emitter";
-import { executeQuery, type QueryContext, type QueryHandle } from "./query";
-import type { StandardSchemaV1 } from "./standard-schema";
+import { executeQuery, type QueryContext } from "./query";
 import { executeTransaction, type TransactionContext } from "./transaction";
-import type { AnyObjectSchema, SchemasMap } from "./types";
+import type {
+	AnyObjectSchema,
+	DatabaseSnapshot,
+	InferOutput,
+	SchemasMap,
+} from "./types";
 
 export type Collections<Schemas extends SchemasMap> = {
 	[K in keyof Schemas]: Collection<Schemas[K]>;
@@ -23,22 +28,19 @@ type CollectionInstances<Schemas extends SchemasMap> = {
 	[K in keyof Schemas]: CollectionWithInternals<Schemas[K]>;
 };
 
-export type MutationEnvelope<Schemas extends SchemasMap> = {
+export type CollectionMutation<Schemas extends SchemasMap> = {
 	[K in keyof Schemas]: {
 		collection: K;
-	} & MutationBatch<StandardSchemaV1.InferOutput<Schemas[K]>>;
+	} & MutationBatch<InferOutput<Schemas[K]>>;
 }[keyof Schemas];
 
-export type DatabaseMutationEvent<Schemas extends SchemasMap> =
-	MutationEnvelope<Schemas>;
-
 export type DatabaseEvents<Schemas extends SchemasMap> = {
-	mutation: DatabaseMutationEvent<Schemas>;
+	mutation: CollectionMutation<Schemas>;
 };
 
 export type CollectionConfig<T extends AnyObjectSchema> = {
 	schema: T;
-	getId: (item: StandardSchemaV1.InferOutput<T>) => string;
+	getId: (item: InferOutput<T>) => string;
 };
 
 export type DatabasePlugin<Schemas extends SchemasMap> = {
@@ -57,16 +59,19 @@ export type DbConfig<Schemas extends SchemasMap> = {
 export type Database<Schemas extends SchemasMap> = Collections<Schemas> & {
 	name: string;
 	version: number;
-	begin<R>(callback: (tx: TransactionContext<Schemas>) => R): R;
-	query<R>(callback: (ctx: QueryContext<Schemas>) => R): QueryHandle<R>;
-	toDocuments(): {
-		[K in keyof Schemas]: StarlingDocument<
-			StandardSchemaV1.InferOutput<Schemas[K]>
-		>;
-	};
+	begin<Keys extends ReadonlyArray<keyof Schemas>, R>(
+		collections: Keys,
+		callback: (tx: TransactionContext<Schemas, Keys>) => R,
+	): R;
+	query<Keys extends ReadonlyArray<keyof Schemas>, R>(
+		collections: Keys,
+		callback: (q: QueryContext<Schemas, Keys>) => R,
+	): R;
+	toSnapshot(): DatabaseSnapshot<Schemas>;
+	mergeSnapshot(snapshot: DatabaseSnapshot<Schemas>): void;
 	on(
 		event: "mutation",
-		handler: (payload: DatabaseMutationEvent<Schemas>) => unknown,
+		handler: (payload: CollectionMutation<Schemas>) => unknown,
 	): () => void;
 	use(plugin: DatabasePlugin<Schemas>): Database<Schemas>;
 	init(): Promise<Database<Schemas>>;
@@ -114,7 +119,12 @@ export function createDatabase<Schemas extends SchemasMap>(
 	for (const collectionName of Object.keys(collections) as (keyof Schemas)[]) {
 		const collection = collections[collectionName];
 
-		collection.on("mutation", (mutations) => {
+		// Type assertion needed for Symbol-keyed method access
+		const onMutation = (
+			collection as unknown as CollectionWithInternals<AnyObjectSchema>
+		)[CollectionInternals.onMutation]!;
+
+		onMutation((mutations) => {
 			// Only emit if there were actual changes
 			if (
 				mutations.added.length > 0 ||
@@ -126,7 +136,7 @@ export function createDatabase<Schemas extends SchemasMap>(
 					added: mutations.added,
 					updated: mutations.updated,
 					removed: mutations.removed,
-				} as DatabaseMutationEvent<Schemas>);
+				} as CollectionMutation<Schemas>);
 			}
 		});
 	}
@@ -137,24 +147,67 @@ export function createDatabase<Schemas extends SchemasMap>(
 		...publicCollections,
 		name,
 		version,
-		begin<R>(callback: (tx: TransactionContext<Schemas>) => R): R {
-			return executeTransaction(schema, collections, getEventstamp, callback);
+		begin<Keys extends ReadonlyArray<keyof Schemas>, R>(
+			collectionNames: Keys,
+			callback: (tx: TransactionContext<Schemas, Keys>) => R,
+		): R {
+			return executeTransaction(
+				schema,
+				collections,
+				getEventstamp,
+				collectionNames,
+				callback,
+			);
 		},
-		query<R>(callback: (ctx: QueryContext<Schemas>) => R): QueryHandle<R> {
-			return executeQuery(db, callback);
+		query<Keys extends ReadonlyArray<keyof Schemas>, R>(
+			collectionNames: Keys,
+			callback: (q: QueryContext<Schemas, Keys>) => R,
+		): R {
+			return executeQuery(collections, collectionNames, callback);
 		},
-		toDocuments() {
-			const documents = {} as {
-				[K in keyof Schemas]: JsonDocument<
-					StandardSchemaV1.InferOutput<Schemas[K]>
-				>;
+		toSnapshot(): DatabaseSnapshot<Schemas> {
+			const collectionDocs = {} as {
+				[K in keyof Schemas]: StarlingDocument<InferOutput<Schemas[K]>>;
 			};
 
-			for (const dbName of Object.keys(collections) as (keyof Schemas)[]) {
-				documents[dbName] = collections[dbName].toDocument();
+			for (const collectionName of Object.keys(
+				collections,
+			) as (keyof Schemas)[]) {
+				collectionDocs[collectionName] =
+					collections[collectionName].toDocument();
 			}
 
-			return documents;
+			// Find the maximum eventstamp across all collections
+			let latest = MIN_EVENTSTAMP;
+			for (const doc of Object.values(collectionDocs)) {
+				if (doc.latest > latest) {
+					latest = doc.latest as string;
+				}
+			}
+
+			return {
+				version: "1.0",
+				name,
+				latest,
+				collections: collectionDocs,
+			};
+		},
+		mergeSnapshot(snapshot: DatabaseSnapshot<Schemas>): void {
+			// Validate version compatibility
+			if (snapshot.version !== "1.0") {
+				throw new Error(`Unsupported snapshot version: ${snapshot.version}`);
+			}
+
+			// Merge each collection
+			for (const collectionName of Object.keys(
+				snapshot.collections,
+			) as (keyof Schemas)[]) {
+				const collection = collections[collectionName];
+				const document = snapshot.collections[collectionName];
+				if (collection && document) {
+					collection.merge(document);
+				}
+			}
 		},
 		on(event, handler) {
 			return dbEmitter.on(event, handler);

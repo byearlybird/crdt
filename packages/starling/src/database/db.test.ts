@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createDatabase } from "./db";
-import { createMultiCollectionDb, createTestDb } from "./test-helpers";
+import {
+	createMultiCollectionDb,
+	createTestDb,
+	subscribeToCollection,
+} from "./test-helpers";
 
 describe("Database", () => {
 	describe("initialization", () => {
@@ -44,23 +48,10 @@ describe("Database", () => {
 	});
 
 	describe("API surface", () => {
-		test("provides collection CRUD methods", () => {
-			const db = createTestDb();
-
-			db.tasks.add({ id: "1", title: "Task 1", completed: false });
-			expect(db.tasks.get("1")?.title).toBe("Task 1");
-
-			db.tasks.update("1", { completed: true });
-			expect(db.tasks.get("1")?.completed).toBe(true);
-
-			db.tasks.remove("1");
-			expect(db.tasks.get("1")).toBeNull();
-		});
-
 		test("provides transaction method", () => {
 			const db = createTestDb();
 
-			const result = db.begin((tx) => {
+			const result = db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Test", completed: false });
 				return "success";
 			});
@@ -98,7 +89,7 @@ describe("Database", () => {
 			const dbEvents: any[] = [];
 			db.on("mutation", (e) => dbEvents.push(e));
 
-			db.begin((tx) => {
+			db.begin(["tasks", "users"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.users.add({ id: "u1", name: "Alice", email: "alice@example.com" });
 			});
@@ -115,25 +106,9 @@ describe("Database", () => {
 		test("keeps database subscriptions active after transactions", () => {
 			const db = createTestDb();
 			const events: any[] = [];
-			db.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
-			db.begin((tx) => {
-				tx.tasks.add({ id: "1", title: "Tx Task", completed: false });
-			});
-
-			db.tasks.add({ id: "2", title: "Outside Task", completed: false });
-
-			expect(events).toHaveLength(2);
-			expect(events[0].collection).toBe("tasks");
-			expect(events[1].collection).toBe("tasks");
-		});
-
-		test("keeps collection subscriptions active after transactions", () => {
-			const db = createTestDb();
-			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
-
-			db.begin((tx) => {
+			db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Tx Task", completed: false });
 			});
 
@@ -145,67 +120,85 @@ describe("Database", () => {
 		});
 	});
 
-	describe("toDocuments", () => {
-		test("returns documents for all collections", () => {
+	describe("toSnapshot", () => {
+		test("returns snapshot for all collections", () => {
 			const db = createMultiCollectionDb();
 			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
 			db.tasks.add({ id: "task-2", title: "Walk dog", completed: true });
 			db.users.add({ id: "user-1", name: "Alice", email: "alice@example.com" });
 
-			const documents = db.toDocuments();
+			const snapshot = db.toSnapshot();
 
-			expect(documents.tasks).toBeDefined();
-			expect(documents.users).toBeDefined();
-			expect(Object.keys(documents.tasks.resources)).toHaveLength(2);
-			expect(Object.keys(documents.users.resources)).toHaveLength(1);
+			// Verify snapshot structure
+			expect(snapshot.version).toBe("1.0");
+			expect(snapshot.name).toBe("multi-collection-db");
+			expect(snapshot.latest).toBeDefined();
+			expect(typeof snapshot.latest).toBe("string");
+
+			// Verify collections
+			expect(snapshot.collections.tasks).toBeDefined();
+			expect(snapshot.collections.users).toBeDefined();
+			expect(Object.keys(snapshot.collections.tasks.resources)).toHaveLength(2);
+			expect(Object.keys(snapshot.collections.users.resources)).toHaveLength(1);
 		});
 
-		test("returns empty documents for empty collections", () => {
+		test("returns empty snapshot for empty collections", () => {
 			const db = createMultiCollectionDb();
 
-			const documents = db.toDocuments();
+			const snapshot = db.toSnapshot();
 
-			expect(documents.tasks).toBeDefined();
-			expect(documents.users).toBeDefined();
-			expect(Object.keys(documents.tasks.resources)).toHaveLength(0);
-			expect(Object.keys(documents.users.resources)).toHaveLength(0);
-			expect(documents.tasks.latest).toBeDefined();
-			expect(documents.users.latest).toBeDefined();
+			// Verify snapshot structure
+			expect(snapshot.version).toBe("1.0");
+			expect(snapshot.name).toBe("multi-collection-db");
+			expect(snapshot.latest).toBeDefined();
+
+			// Verify empty collections
+			expect(snapshot.collections.tasks).toBeDefined();
+			expect(snapshot.collections.users).toBeDefined();
+			expect(Object.keys(snapshot.collections.tasks.resources)).toHaveLength(0);
+			expect(Object.keys(snapshot.collections.users.resources)).toHaveLength(0);
+			expect(snapshot.collections.tasks.latest).toBeDefined();
+			expect(snapshot.collections.users.latest).toBeDefined();
 		});
 
-		test("includes soft-deleted items in documents", () => {
+		test("includes soft-deleted items in snapshot", () => {
 			const db = createTestDb();
 			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
 			db.tasks.remove("task-1");
 
-			const documents = db.toDocuments();
+			const snapshot = db.toSnapshot();
 
-			expect(Object.keys(documents.tasks.resources)).toHaveLength(1);
+			expect(Object.keys(snapshot.collections.tasks.resources)).toHaveLength(1);
 			expect(
-				Object.values(documents.tasks.resources)[0]?.meta.deletedAt,
+				Object.values(snapshot.collections.tasks.resources)[0]?.meta.deletedAt,
 			).toBeDefined();
 			expect(
-				Object.values(documents.tasks.resources)[0]?.meta.deletedAt,
+				Object.values(snapshot.collections.tasks.resources)[0]?.meta.deletedAt,
 			).not.toBeNull();
 		});
 
-		test("includes correct latest eventstamps for each collection", () => {
+		test("includes correct latest eventstamps", () => {
 			const db = createMultiCollectionDb();
 			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
 			db.users.add({ id: "user-1", name: "Alice", email: "alice@example.com" });
 
-			const documents = db.toDocuments();
+			const snapshot = db.toSnapshot();
 
-			expect(documents.tasks.latest).toBeDefined();
-			expect(documents.users.latest).toBeDefined();
-			expect(typeof documents.tasks.latest).toBe("string");
-			expect(typeof documents.users.latest).toBe("string");
-			expect(documents.tasks.latest).toMatch(
-				/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]+\|[0-9a-f]+$/,
-			);
-			expect(documents.users.latest).toMatch(
-				/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]+\|[0-9a-f]+$/,
-			);
+			// Verify eventstamps exist (format validation is core's responsibility)
+			expect(snapshot.latest).toBeDefined();
+			expect(typeof snapshot.latest).toBe("string");
+			expect(snapshot.collections.tasks.latest).toBeDefined();
+			expect(typeof snapshot.collections.tasks.latest).toBe("string");
+			expect(snapshot.collections.users.latest).toBeDefined();
+			expect(typeof snapshot.collections.users.latest).toBe("string");
+
+			// Verify database latest is the max of collection latests
+			expect(
+				[
+					snapshot.collections.tasks.latest,
+					snapshot.collections.users.latest,
+				].includes(snapshot.latest),
+			).toBe(true);
 		});
 	});
 

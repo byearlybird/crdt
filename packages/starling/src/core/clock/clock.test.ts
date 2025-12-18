@@ -164,10 +164,13 @@ test.each([
 	["invalid counter", "2025-01-01T00:00:00.000Z|invalid|abcd"],
 	["invalid nonce", "2025-01-01T00:00:00.000Z|0001|xyz"],
 	["empty string", ""],
-])("forward() throws error for invalid eventstamp: %s", (_description, invalid) => {
-	const clock = createClock();
-	expect(() => clock.forward(invalid)).toThrow();
-});
+])(
+	"forward() throws error for invalid eventstamp: %s",
+	(_description, invalid) => {
+		const clock = createClock();
+		expect(() => clock.forward(invalid)).toThrow();
+	},
+);
 
 test("forward() accepts valid eventstamp", () => {
 	const clock = createClock();
@@ -200,9 +203,12 @@ test.each([
 	["no counter/nonce", "2025-01-01T00:00:00.000Z"],
 	["invalid counter", "2025-01-01T00:00:00.000Z|invalid|abcd"],
 	["invalid nonce", "2025-01-01T00:00:00.000Z|0001|xyz"],
-])("fromEventstamp() throws error for invalid eventstamp: %s", (_description, invalid) => {
-	expect(() => createClockFromEventstamp(invalid)).toThrow();
-});
+])(
+	"fromEventstamp() throws error for invalid eventstamp: %s",
+	(_description, invalid) => {
+		expect(() => createClockFromEventstamp(invalid)).toThrow();
+	},
+);
 
 test("fromEventstamp() preserves timestamp, counter, and nonce", () => {
 	const timestampMs = Date.now();

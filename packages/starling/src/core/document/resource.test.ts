@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import {
-	computeResourceLatest,
 	deleteResource,
 	makeResource,
 	mergeResources,
+	type ResourceObject,
 } from "./resource";
 
 test("makeResource creates EncodedDocument with null deletedAt", () => {
@@ -146,12 +146,13 @@ test("mergeResources preserves id from into document", () => {
 });
 
 test("mergeResources merges attributes using object mergeRecords", () => {
-	const doc1 = makeResource(
+	type TestAttrs = { name: string; age?: number; email?: string };
+	const doc1: ResourceObject<TestAttrs> = makeResource(
 		"doc-1",
 		{ name: "Alice", age: 30 },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
-	const doc2 = makeResource(
+	const doc2: ResourceObject<TestAttrs> = makeResource(
 		"doc-1",
 		{ name: "Alice Updated", email: "alice@example.com" },
 		"2025-01-02T00:00:00.000Z|0000|c3d4",
@@ -264,12 +265,18 @@ test("mergeResources returns newest eventstamp even with multiple nested changes
 });
 
 test("mergeResources returns newest eventstamp when adding new fields", () => {
-	const doc1 = makeResource(
+	type TestAttrs = {
+		name?: string;
+		age?: number;
+		email?: string;
+		phone?: string;
+	};
+	const doc1: ResourceObject<TestAttrs> = makeResource(
 		"doc-1",
 		{ name: "Alice", age: 30 },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
-	const doc2 = makeResource(
+	const doc2: ResourceObject<TestAttrs> = makeResource(
 		"doc-1",
 		{ email: "alice@example.com", phone: "555-1234" },
 		"2025-01-08T00:00:00.000Z|0000|m3n4", // Newer
@@ -281,12 +288,12 @@ test("mergeResources returns newest eventstamp when adding new fields", () => {
 });
 
 test("mergeResources handles schema changes (object replaced with primitive)", () => {
-	const doc1 = makeResource(
+	const doc1: ResourceObject<TestAttrs> = makeResource(
 		"doc-1",
 		{ settings: { theme: "dark", notifications: true } },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
-	const doc2 = makeResource(
+	const doc2: ResourceObject<TestAttrs> = makeResource(
 		"doc-1",
 		{ settings: null },
 		"2025-01-02T00:00:00.000Z|0000|c3d4",
@@ -306,12 +313,18 @@ test("mergeResources handles schema changes (object replaced with primitive)", (
 });
 
 test("mergeResources handles schema changes in nested fields", () => {
-	const doc1 = makeResource(
+	type TestAttrs = {
+		profile: {
+			personal: { name: string } | string;
+			settings?: { theme: string };
+		};
+	};
+	const doc1: ResourceObject<TestAttrs> = makeResource(
 		"doc-1",
 		{ profile: { personal: { name: "Alice" }, settings: { theme: "dark" } } },
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
-	const doc2 = makeResource(
+	const doc2: ResourceObject<TestAttrs> = makeResource(
 		"doc-1",
 		{ profile: { personal: "Alice Smith" } },
 		"2025-01-02T00:00:00.000Z|0000|c3d4",
@@ -328,4 +341,3 @@ test("mergeResources handles schema changes in nested fields", () => {
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
 });
-

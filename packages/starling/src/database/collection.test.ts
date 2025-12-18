@@ -1,22 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { makeResource, type ResourceObject } from "../core";
-import {
-	CollectionInternals,
-	type CollectionMutationEvent,
-	type CollectionWithInternals,
-	createCollection,
-	DuplicateIdError,
-	IdNotFoundError,
-} from "./collection";
-import {
-	createTestDb,
-	makeTask,
-	makeTaskDocument,
-	type Task,
-	taskSchema,
-} from "./test-helpers";
-
-type TaskCollectionInternals = CollectionWithInternals<typeof taskSchema>;
+import { DuplicateIdError, IdNotFoundError } from "./collection";
+import { createTestDb, makeTask, subscribeToCollection } from "./test-helpers";
 
 describe("Collection", () => {
 	describe("add", () => {
@@ -210,117 +194,11 @@ describe("Collection", () => {
 		});
 	});
 
-	describe("merge", () => {
-		test("adds new resources from document", () => {
-			const db = createTestDb();
-
-			const doc = makeTaskDocument([
-				{ id: "task-1", title: "Buy milk", completed: false },
-				{ id: "task-2", title: "Walk dog", completed: true },
-			]);
-
-			db.tasks.merge(doc);
-
-			expect(db.tasks.get("task-1")?.title).toBe("Buy milk");
-			expect(db.tasks.get("task-1")?.completed).toBe(false);
-			expect(db.tasks.get("task-2")?.title).toBe("Walk dog");
-			expect(db.tasks.get("task-2")?.completed).toBe(true);
-		});
-
-		test("merges multiple resources at once", () => {
-			const db = createTestDb();
-			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
-
-			const doc = makeTaskDocument(
-				[
-					{ id: "task-1", title: "Buy milk", completed: true },
-					{ id: "task-2", title: "Walk dog", completed: true },
-					{ id: "task-3", title: "Read book", completed: false },
-				],
-				"2099-01-01T00:05:00.000Z|0001|c3d4",
-			);
-
-			db.tasks.merge(doc);
-
-			expect(db.tasks.get("task-1")?.completed).toBe(true);
-			expect(db.tasks.get("task-2")?.title).toBe("Walk dog");
-			expect(db.tasks.get("task-3")?.title).toBe("Read book");
-		});
-
-		test("applies field-level LWW with newer eventstamps", () => {
-			const db = createTestDb();
-			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
-
-			const doc = makeTaskDocument(
-				[{ id: "task-1", title: "Buy milk", completed: true }],
-				"2099-01-01T00:05:00.000Z|0001|c3d4",
-			);
-
-			db.tasks.merge(doc);
-
-			const task = db.tasks.get("task-1");
-			expect(task?.completed).toBe(true);
-			expect(task?.title).toBe("Buy milk");
-		});
-
-		test("handles soft-deleted resources", () => {
-			const db = createTestDb();
-			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
-
-			const doc = makeTaskDocument([], "2099-01-01T00:05:00.000Z|0001|c3d4");
-			const resource = makeResource(
-				"task-1",
-				{ id: "task-1", title: "Buy milk", completed: false },
-				"2099-01-01T00:00:00.000Z|0001|a1b2",
-			);
-			resource.meta.deletedAt = "2099-01-01T00:05:00.000Z|0001|c3d4";
-			resource.meta.latest = "2099-01-01T00:05:00.000Z|0001|c3d4";
-			doc.resources[resource.id] = resource;
-
-			db.tasks.merge(doc);
-
-			expect(db.tasks.get("task-1")).toBeNull();
-			expect(db.tasks.get("task-1", { includeDeleted: true })).toBeDefined();
-		});
-
-		test("merges within transaction", () => {
-			const db = createTestDb();
-
-			db.begin((tx) => {
-				const doc = makeTaskDocument([
-					{ id: "task-1", title: "Buy milk", completed: false },
-				]);
-
-				tx.tasks.merge(doc);
-
-				const task = tx.tasks.get("task-1");
-				expect(task?.title).toBe("Buy milk");
-			});
-
-			expect(db.tasks.get("task-1")?.title).toBe("Buy milk");
-		});
-
-		test("rolls back merge on transaction rollback", () => {
-			const db = createTestDb();
-
-			db.begin((tx) => {
-				const doc = makeTaskDocument([
-					{ id: "task-1", title: "Buy milk", completed: false },
-				]);
-
-				tx.tasks.merge(doc);
-				tx.rollback();
-			});
-
-			expect(db.tasks.get("task-1")).toBeNull();
-		});
-	});
-
 	describe("events", () => {
 		test("emits add event", () => {
 			const db = createTestDb();
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
 			db.tasks.add({ id: "1", title: "Buy milk", completed: false });
 
@@ -339,7 +217,7 @@ describe("Collection", () => {
 			db.tasks.add({ id: "1", title: "Buy milk", completed: false });
 
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
 			db.tasks.update("1", { completed: true });
 
@@ -359,7 +237,7 @@ describe("Collection", () => {
 			db.tasks.add({ id: "1", title: "Buy milk", completed: false });
 
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
 			db.tasks.remove("1");
 
@@ -373,71 +251,18 @@ describe("Collection", () => {
 			});
 		});
 
-		test("emits merge add events", () => {
-			const db = createTestDb();
-			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
-
-			const doc = makeTaskDocument([
-				{ id: "task-1", title: "Buy milk", completed: false },
-			]);
-
-			db.tasks.merge(doc);
-
-			expect(events).toHaveLength(1);
-			expect(events[0].added).toHaveLength(1);
-			expect(events[0].added[0].id).toBe("task-1");
-		});
-
-		test("emits merge update events", () => {
-			const db = createTestDb();
-			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
-
-			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
-
-			const doc = makeTaskDocument(
-				[{ id: "task-1", title: "Buy milk", completed: true }],
-				"2099-01-01T00:05:00.000Z|0001|c3d4",
-			);
-
-			db.tasks.merge(doc);
-
-			expect(events).toHaveLength(1);
-			expect(events[0].updated).toHaveLength(1);
-			expect(events[0].updated[0].before.completed).toBe(false);
-			expect(events[0].updated[0].after.completed).toBe(true);
-		});
-
-		test("emits merge remove events", () => {
-			const db = createTestDb();
-			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
-
-			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
-
-			const doc = makeTaskDocument([], "2099-01-01T00:05:00.000Z|0001|c3d4");
-			const resource = makeResource(
-				"task-1",
-				{ id: "task-1", title: "Buy milk", completed: false },
-				"2099-01-01T00:00:00.000Z|0001|a1b2",
-			);
-			resource.meta.deletedAt = "2099-01-01T00:05:00.000Z|0001|c3d4";
-			resource.meta.latest = "2099-01-01T00:05:00.000Z|0001|c3d4";
-			doc.resources[resource.id] = resource;
-
-			db.tasks.merge(doc);
-
-			expect(events).toHaveLength(1);
-			expect(events[0].removed).toHaveLength(1);
-			expect(events[0].removed[0].id).toBe("task-1");
-			expect(events[0].removed[0].item.title).toBe("Buy milk");
-		});
-
 		test("supports unsubscribe", () => {
 			const db = createTestDb();
 			const events: any[] = [];
-			const unsubscribe = db.tasks.on("mutation", (e) => events.push(e));
+			const unsubscribe = db.on("mutation", (e) => {
+				if (e.collection === "tasks") {
+					events.push({
+						added: e.added,
+						updated: e.updated,
+						removed: e.removed,
+					});
+				}
+			});
 
 			db.tasks.add({ id: "1", title: "Task 1", completed: false });
 			expect(events).toHaveLength(1);
@@ -451,9 +276,9 @@ describe("Collection", () => {
 		test("batches events in transactions", () => {
 			const db = createTestDb();
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
-			db.begin((tx) => {
+			db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.tasks.add({ id: "2", title: "Task 2", completed: false });
 				tx.tasks.add({ id: "3", title: "Task 3", completed: false });
@@ -469,9 +294,9 @@ describe("Collection", () => {
 			db.tasks.add({ id: "2", title: "Task 2", completed: false });
 
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
-			db.begin((tx) => {
+			db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "3", title: "Task 3", completed: false });
 				tx.tasks.update("1", { completed: true });
 				tx.tasks.remove("2");
@@ -486,9 +311,9 @@ describe("Collection", () => {
 		test("emits no events on transaction rollback", () => {
 			const db = createTestDb();
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
-			db.begin((tx) => {
+			db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.rollback();
 			});
@@ -499,10 +324,10 @@ describe("Collection", () => {
 		test("emits no events on transaction exception", () => {
 			const db = createTestDb();
 			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
+			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
 			try {
-				db.begin((tx) => {
+				db.begin(["notes", "tasks"], (tx) => {
 					tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 					throw new Error("Oops!");
 				});
@@ -511,95 +336,6 @@ describe("Collection", () => {
 			}
 
 			expect(events).toHaveLength(0);
-		});
-
-		test("batches merge events in transactions", () => {
-			const db = createTestDb();
-			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
-
-			db.begin((tx) => {
-				const doc = makeTaskDocument([
-					{ id: "task-1", title: "Buy milk", completed: false },
-				]);
-				tx.tasks.merge(doc);
-			});
-
-			expect(events).toHaveLength(1);
-			expect(events[0].added).toHaveLength(1);
-		});
-
-		test("discards merge events on rollback", () => {
-			const db = createTestDb();
-			const events: any[] = [];
-			db.tasks.on("mutation", (e) => events.push(e));
-
-			db.begin((tx) => {
-				const doc = makeTaskDocument([
-					{ id: "task-1", title: "Buy milk", completed: false },
-				]);
-				tx.tasks.merge(doc);
-				tx.rollback();
-			});
-
-			expect(db.tasks.get("task-1")).toBeNull();
-			expect(events).toHaveLength(0);
-		});
-	});
-
-	describe("toDocument", () => {
-		test("returns JsonDocument representation of current state", () => {
-			const db = createTestDb();
-			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
-			db.tasks.add({ id: "task-2", title: "Walk dog", completed: true });
-
-			const doc = db.tasks.toDocument();
-
-			expect(doc.type).toBe("tasks");
-			expect(doc.latest).toBeDefined();
-			expect(Object.keys(doc.resources)).toHaveLength(2);
-			expect(doc.resources["task-1"]?.id).toBe("task-1");
-			expect(doc.resources["task-1"]?.attributes.title).toBe("Buy milk");
-			expect(doc.resources["task-2"]?.id).toBe("task-2");
-			expect(doc.resources["task-2"]?.attributes.title).toBe("Walk dog");
-		});
-
-		test("returns empty document for empty collection", () => {
-			const db = createTestDb();
-
-			const doc = db.tasks.toDocument();
-
-			expect(doc.latest).toBeDefined();
-			expect(Object.keys(doc.resources)).toHaveLength(0);
-		});
-
-		test("includes soft-deleted items in document", () => {
-			const db = createTestDb();
-			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
-			db.tasks.remove("task-1");
-
-			const doc = db.tasks.toDocument();
-
-			expect(Object.keys(doc.resources)).toHaveLength(1);
-			expect(doc.resources["task-1"]?.meta.deletedAt).toBeDefined();
-			expect(doc.resources["task-1"]?.meta.deletedAt).not.toBeNull();
-		});
-
-		test("includes correct latest eventstamp", () => {
-			const db = createTestDb();
-			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
-			db.tasks.add({ id: "task-2", title: "Walk dog", completed: true });
-
-			const doc = db.tasks.toDocument();
-
-			// The latest should be the maximum of all resource eventstamps
-			expect(doc.latest).toBeDefined();
-			expect(typeof doc.latest).toBe("string");
-
-			// Verify it matches the format
-			expect(doc.latest).toMatch(
-				/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]+\|[0-9a-f]+$/,
-			);
 		});
 	});
 });

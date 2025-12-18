@@ -9,7 +9,7 @@ This document covers the design and internals of Starling, including the state-b
 | Path | Description |
 | --- | --- |
 | `packages/starling` | Consolidated package containing core primitives, database layer, and plugins |
-| `packages/starling/src/core` | Core CRDT primitives (`StarlingDocument`, `ResourceObject`, `createMap`, `createClock`) for state-based replication |
+| `packages/starling/src/core` | Core CRDT primitives (`StarlingDocument`, `ResourceObject`, `createClock`) for state-based replication |
 | `packages/starling/src/database` | Database utilities with typed collections, transactions, and mutation events |
 | `packages/starling/src/plugins` | Plugin implementations (IDB, HTTP) for persistence and sync |
 
@@ -199,6 +199,45 @@ The `mergeDocuments(into, from)` function handles document-level merging with au
 
 This design separates merge logic from higher-level store implementations, enabling independent testing and reuse of document operations.
 
+### Database Snapshot Format
+
+Starling uses database-level snapshots for persistence and sync operations. The `DatabaseSnapshot` type represents the complete state of a database:
+
+```typescript
+export type DatabaseSnapshot<Schemas> = {
+  version: string;  // Snapshot format version (e.g., "1.0")
+  name: string;     // Database name
+  latest: string;   // Highest eventstamp across all collections
+  collections: {
+    [K in keyof Schemas]: StarlingDocument<InferOutput<Schemas[K]>>;
+  };
+};
+```
+
+**Design notes:**
+
+- **`version`**: Snapshot format version for future compatibility checks
+- **`name`**: Database name, used in HTTP plugin endpoints (`/database/:name`)
+- **`latest`**: The maximum eventstamp across all collections, enabling global clock synchronization
+- **`collections`**: Object mapping collection names to their StarlingDocuments
+
+**Database-level operations:**
+
+```typescript
+// Export entire database
+const snapshot = db.toSnapshot();
+
+// Import/merge entire database (field-level LWW across all collections)
+db.mergeSnapshot(remoteSnapshot);
+```
+
+**Benefits of database-level sync:**
+
+- **Single unit of sync**: No coordination between collections needed
+- **Atomic operations**: Save/load entire database in one operation
+- **Simpler plugins**: IDB uses single snapshot store, HTTP uses single endpoint
+- **Easy backup/restore**: One JSON blob contains everything
+
 ## Design Scope
 
 Starling focuses on the 80/20 of sync for personal and small-team apps:
@@ -220,16 +259,8 @@ Each module handles a distinct responsibility in the state-based replication mod
 | [`clock/eventstamp.ts`](../packages/starling/src/core/clock/eventstamp.ts) | Encoder/decoder for sortable `YYYY-MM-DDTHH:mm:ss.SSSZ\|counter\|nonce` strings, comparison helpers, and utilities used by resources to apply Last-Write-Wins semantics |
 | [`document/resource.ts`](../packages/starling/src/core/document/resource.ts) | Defines resource objects (`id`, `attributes`, `meta`), handles soft deletion, and merges field-level values with eventstamp comparisons |
 | [`document/document.ts`](../packages/starling/src/core/document/document.ts) | Coordinates `StarlingDocument` creation and `mergeDocuments`, tracks added/updated/deleted resources, and keeps document metadata (latest eventstamp) synchronized |
-| [`resource-map/resource-map.ts`](../packages/starling/src/core/resource-map/resource-map.ts) | CRDT data structure providing a map-like interface for managing resources with field-level LWW semantics, document export/import, and soft deletion |
 
 ### Data Flow
-
-**ResourceMap mutations:**
-```
-map.set(id, value) → Generate eventstamp → Merge with existing resource
-                            ↓
-                    Update internal state
-```
 
 **Document merging:**
 ```
@@ -250,13 +281,13 @@ Starling ships as a single consolidated package with subpath exports.
 
 **Database layer exports:**
 
-- Database: `createDatabase`, types `Database`, `DbConfig`
+- Database: `createDatabase`, types `Database`, `DbConfig`, `DatabaseSnapshot`
 - Collections: `Collection`, `CollectionHandle`, `CollectionConfig`
 - Transactions and events: `TransactionContext`, `DatabaseMutationEvent`
 - Schema utilities: `StandardSchemaV1`
 - Re-exported core types: `StarlingDocument`, `AnyObject`
 
-The main export provides typed collections with CRUD operations, transactions, and mutation events built on top of core primitives.
+The main export provides typed collections with CRUD operations, transactions, mutation events, and database-level snapshot sync built on top of core primitives.
 
 ### `@byearlybird/starling/core` (core primitives)
 
@@ -265,21 +296,20 @@ The main export provides typed collections with CRUD operations, transactions, a
 - Clocks: `createClock`, `createClockFromEventstamp`, `MIN_EVENTSTAMP`, `isValidEventstamp`
 - Documents: `makeDocument`, `mergeDocuments`, types `StarlingDocument`, `AnyObject`, `DocumentChanges`, `MergeDocumentsResult`
 - Resources: `makeResource`, `mergeResources`, `deleteResource`, type `ResourceObject`
-- Resource maps: `createMap`, `createMapFromDocument`
 
 These primitives implement state-based replication, document merging, resource management, and hybrid logical clocks.
 
 ### `@byearlybird/starling/plugin-idb` (IndexedDB plugin)
 
-Provides `idbPlugin()` for IndexedDB persistence with cross-tab sync via BroadcastChannel API.
+Provides `idbPlugin()` for IndexedDB persistence with cross-tab sync via BroadcastChannel API. Uses a single snapshot store for the entire database.
 
 ### `@byearlybird/starling/plugin-http` (HTTP plugin)
 
-Provides `httpPlugin()` for HTTP-based sync with polling, debouncing, and retry logic.
+Provides `httpPlugin()` for HTTP-based sync with polling, debouncing, and retry logic. Uses endpoint `/database/:name` for fetching and pushing database snapshots.
 
 ## Testing Strategy
 
-- **Unit tests**: Cover core modules (`clock`, `eventstamp`, `document`, `resource`, `resource-map`)
+- **Unit tests**: Cover core modules (`clock`, `eventstamp`, `document`, `resource`)
 - **Merge tests**: Verify field-level LWW behavior and document merging
 - **Sync tests**: Verify merge behavior and state replication
 - **Property-based tests**: Validate eventstamp monotonicity and merge commutativity

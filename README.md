@@ -53,23 +53,36 @@ db.tasks.add({ id: "1", title: "Learn Starling", completed: false });
 db.tasks.update("1", { completed: true });
 const task = db.tasks.get("1");
 
-// Transactions with snapshot isolation
-db.begin((tx) => {
+// Transactions with explicit dependencies and snapshot isolation
+db.begin(["tasks"], (tx) => {
   tx.tasks.add({ id: "2", title: "Build an app", completed: false });
   tx.tasks.update("1", { completed: false });
 });
 
-// Merge remote data (conflict resolution is automatic)
-db.tasks.merge(remoteDocument);
+// Queries with explicit dependencies (read-only)
+const completedTasks = db.query(["tasks"], (q) =>
+  q.tasks.find((task) => task.completed)
+);
+
+// Sync with remote database (conflict resolution is automatic)
+db.mergeSnapshot(remoteSnapshot);
 ```
 
 ### Additional Features
 
-**Queries** - Read-only snapshots with filtering and mapping:
+**Explicit Dependencies** - Transactions and queries require declaring which collections you'll access:
 ```ts
-const completedTasks = db.query((q) =>
-  q.tasks.find((task) => task.completed)
-);
+// Transaction - only clones specified collections for efficiency
+db.begin(["tasks", "users"], (tx) => {
+  const task = tx.tasks.add({ ... });
+  tx.users.update(task.assignedTo, { lastActivity: Date.now() });
+});
+
+// Query - read-only access to specified collections
+const stats = db.query(["tasks", "users"], (q) => ({
+  totalTasks: q.tasks.getAll().length,
+  totalUsers: q.users.getAll().length,
+}));
 ```
 
 **Mutation Events** - React to data changes:
@@ -134,26 +147,9 @@ If you need collaborative text editing, mergeable arrays, or more sophisticated 
 
 For custom sync implementations, you can import low-level primitives from the `/core` subpath:
 
-```ts
-import { createMap } from "@byearlybird/starling/core";
-
-// Mergeable map with field-level Last-Write-Wins
-const todos = createMap<{ text: string; completed: boolean }>("todos");
-
-todos.set("todo-1", { text: "Learn Starling", completed: false });
-todos.set("todo-1", { completed: true }); // Partial update
-
-// Export for persistence or sync
-const doc = todos.toDocument();
-
-// Merge remote state
-const result = todos.merge(remoteDoc);
-```
-
-The core API includes:
-- `createMap` / `createMapFromDocument` – mergeable map with automatic conflict resolution
 - `createClock` / `createClockFromEventstamp` – clock utilities for eventstamps
 - `makeDocument` / `mergeDocuments` – document creation and merging
+- `makeResource` / `mergeResources` / `deleteResource` – resource object operations
 
 ## Project Status
 
