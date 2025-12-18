@@ -26,6 +26,7 @@ export type {
 } from "./database/db";
 // Database features
 export { createDatabase } from "./database/db";
+export type { QueryContext } from "./database/query";
 export type { StandardSchemaV1 } from "./database/standard-schema";
 export type {
 	TransactionCollectionHandle,

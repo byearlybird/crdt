@@ -53,17 +53,37 @@ db.tasks.add({ id: "1", title: "Learn Starling", completed: false });
 db.tasks.update("1", { completed: true });
 const task = db.tasks.get("1");
 
-// Transactions with snapshot isolation
-db.begin((tx) => {
+// Transactions with explicit dependencies and snapshot isolation
+db.begin(["tasks"], (tx) => {
   tx.tasks.add({ id: "2", title: "Build an app", completed: false });
   tx.tasks.update("1", { completed: false });
 });
+
+// Queries with explicit dependencies (read-only)
+const completedTasks = db.query(["tasks"], (q) =>
+  q.tasks.find((task) => task.completed)
+);
 
 // Sync with remote database (conflict resolution is automatic)
 db.mergeSnapshot(remoteSnapshot);
 ```
 
 ### Additional Features
+
+**Explicit Dependencies** - Transactions and queries require declaring which collections you'll access:
+```ts
+// Transaction - only clones specified collections for efficiency
+db.begin(["tasks", "users"], (tx) => {
+  const task = tx.tasks.add({ ... });
+  tx.users.update(task.assignedTo, { lastActivity: Date.now() });
+});
+
+// Query - read-only access to specified collections
+const stats = db.query(["tasks", "users"], (q) => ({
+  totalTasks: q.tasks.getAll().length,
+  totalUsers: q.users.getAll().length,
+}));
+```
 
 **Mutation Events** - React to data changes:
 ```ts

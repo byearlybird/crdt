@@ -278,7 +278,7 @@ describe("Collection", () => {
 			const events: any[] = [];
 			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
-			db.begin((tx) => {
+			db.begin(["notes", "tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.tasks.add({ id: "2", title: "Task 2", completed: false });
 				tx.tasks.add({ id: "3", title: "Task 3", completed: false });
@@ -296,7 +296,7 @@ describe("Collection", () => {
 			const events: any[] = [];
 			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
-			db.begin((tx) => {
+			db.begin(["notes", "tasks"], (tx) => {
 				tx.tasks.add({ id: "3", title: "Task 3", completed: false });
 				tx.tasks.update("1", { completed: true });
 				tx.tasks.remove("2");
@@ -313,7 +313,7 @@ describe("Collection", () => {
 			const events: any[] = [];
 			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
-			db.begin((tx) => {
+			db.begin(["notes", "tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.rollback();
 			});
@@ -327,7 +327,7 @@ describe("Collection", () => {
 			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
 			try {
-				db.begin((tx) => {
+				db.begin(["notes", "tasks"], (tx) => {
 					tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 					throw new Error("Oops!");
 				});

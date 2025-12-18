@@ -64,7 +64,7 @@ describe("Database", () => {
 		test("provides transaction method", () => {
 			const db = createTestDb();
 
-			const result = db.begin((tx) => {
+			const result = db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Test", completed: false });
 				return "success";
 			});
@@ -102,7 +102,7 @@ describe("Database", () => {
 			const dbEvents: any[] = [];
 			db.on("mutation", (e) => dbEvents.push(e));
 
-			db.begin((tx) => {
+			db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.users.add({ id: "u1", name: "Alice", email: "alice@example.com" });
 			});
@@ -121,7 +121,7 @@ describe("Database", () => {
 			const events: any[] = [];
 			db.on("mutation", (e) => events.push(e));
 
-			db.begin((tx) => {
+			db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Tx Task", completed: false });
 			});
 
@@ -137,7 +137,7 @@ describe("Database", () => {
 			const events: any[] = [];
 			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
-			db.begin((tx) => {
+			db.begin(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Tx Task", completed: false });
 			});
 

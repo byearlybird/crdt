@@ -7,6 +7,7 @@ import {
 	type MutationBatch,
 } from "./collection";
 import { createEmitter } from "./emitter";
+import { executeQuery, type QueryContext } from "./query";
 import { executeTransaction, type TransactionContext } from "./transaction";
 import type {
 	AnyObjectSchema,
@@ -58,7 +59,14 @@ export type DbConfig<Schemas extends SchemasMap> = {
 export type Database<Schemas extends SchemasMap> = Collections<Schemas> & {
 	name: string;
 	version: number;
-	begin<R>(callback: (tx: TransactionContext<Schemas>) => R): R;
+	begin<Keys extends ReadonlyArray<keyof Schemas>, R>(
+		collections: Keys,
+		callback: (tx: TransactionContext<Schemas, Keys>) => R,
+	): R;
+	query<Keys extends ReadonlyArray<keyof Schemas>, R>(
+		collections: Keys,
+		callback: (q: QueryContext<Schemas, Keys>) => R,
+	): R;
 	toSnapshot(): DatabaseSnapshot<Schemas>;
 	mergeSnapshot(snapshot: DatabaseSnapshot<Schemas>): void;
 	on(
@@ -139,8 +147,23 @@ export function createDatabase<Schemas extends SchemasMap>(
 		...publicCollections,
 		name,
 		version,
-		begin<R>(callback: (tx: TransactionContext<Schemas>) => R): R {
-			return executeTransaction(schema, collections, getEventstamp, callback);
+		begin<Keys extends ReadonlyArray<keyof Schemas>, R>(
+			collectionNames: Keys,
+			callback: (tx: TransactionContext<Schemas, Keys>) => R,
+		): R {
+			return executeTransaction(
+				schema,
+				collections,
+				getEventstamp,
+				collectionNames,
+				callback,
+			);
+		},
+		query<Keys extends ReadonlyArray<keyof Schemas>, R>(
+			collectionNames: Keys,
+			callback: (q: QueryContext<Schemas, Keys>) => R,
+		): R {
+			return executeQuery(collections, collectionNames, callback);
 		},
 		toSnapshot(): DatabaseSnapshot<Schemas> {
 			const collectionDocs = {} as {
