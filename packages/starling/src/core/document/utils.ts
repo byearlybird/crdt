@@ -31,7 +31,7 @@ export function mapToDocument<T extends AnyObject>(
 ): { document: StarlingDocument<T>; latest: string } {
 	const resourceArray = Array.from(resources.values());
 	const eventstamps = resourceArray.map((r) =>
-		computeResourceLatest(r.meta.eventstamps),
+		computeResourceLatest(r.eventstamps),
 	);
 
 	// Include fallback eventstamp in the max calculation if provided

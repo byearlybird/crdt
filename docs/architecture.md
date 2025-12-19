@@ -151,11 +151,9 @@ Example document:
         name: "Alice",
         email: "alice@example.com"
       },
-      meta: {
-        eventstamps: {
-          name: "2025-10-26T10:00:00.000Z|0001|a7f2",
-          email: "2025-10-26T10:00:00.000Z|0001|a7f2"
-        }
+      eventstamps: {
+        name: "2025-10-26T10:00:00.000Z|0001|a7f2",
+        email: "2025-10-26T10:00:00.000Z|0001|a7f2"
       }
     }
   },
@@ -173,9 +171,7 @@ Each resource in the `resources` object follows this structure:
 export type ResourceObject<T extends AnyObject> = {
   id: string;
   attributes: T;
-  meta: {
-    eventstamps: Record<string, string>;
-  };
+  eventstamps: Record<string, string>;
 };
 ```
 
@@ -183,7 +179,7 @@ export type ResourceObject<T extends AnyObject> = {
 
 - **`id`**: Unique identifier for this resource
 - **`attributes`**: The resource's data as a nested object structure (plain values, not wrapped)
-- **`meta.eventstamps`**: Flat map of dot-separated paths to eventstamps for each attribute field
+- **`eventstamps`**: Flat map of dot-separated paths to eventstamps for each attribute field
 
 Note: The resource type is stored at the document level (`StarlingDocument.type`), not on individual resources. Deletion state is tracked separately in the document's `tombstones` map.
 
@@ -261,7 +257,7 @@ Each module handles a distinct responsibility in the state-based replication mod
 | --- | --- |
 | [`clock/clock.ts`](../packages/starling/src/core/clock/clock.ts) | Monotonic logical clock that increments a hex counter when the OS clock stalls, forwards itself when observing newer remote stamps, and exposes the shared clock used across resources and documents |
 | [`clock/eventstamp.ts`](../packages/starling/src/core/clock/eventstamp.ts) | Encoder/decoder for sortable `YYYY-MM-DDTHH:mm:ss.SSSZ\|counter\|nonce` strings, comparison helpers, and utilities used by resources to apply Last-Write-Wins semantics |
-| [`document/resource.ts`](../packages/starling/src/core/document/resource.ts) | Defines resource objects (`id`, `attributes`, `meta`), handles soft deletion, and merges field-level values with eventstamp comparisons |
+| [`document/resource.ts`](../packages/starling/src/core/document/resource.ts) | Defines resource objects (`id`, `attributes`, `eventstamps`), handles soft deletion, and merges field-level values with eventstamp comparisons |
 | [`document/document.ts`](../packages/starling/src/core/document/document.ts) | Coordinates `StarlingDocument` creation and `mergeDocuments`, tracks added/updated/deleted resources, and keeps document metadata (latest eventstamp) synchronized |
 
 ### Data Flow

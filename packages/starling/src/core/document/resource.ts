@@ -81,7 +81,7 @@ export function computeResourceLatest(
  * Resources are the primary unit of storage and synchronization in Starling.
  *
  * Each resource has a unique identifier, attributes containing the data,
- * and metadata for tracking eventstamps.
+ * and a flat map of eventstamps for tracking field-level changes.
  * The resource type is stored at the document level.
  */
 export type ResourceObject<T extends { [key: string]: unknown }> = {
@@ -89,11 +89,8 @@ export type ResourceObject<T extends { [key: string]: unknown }> = {
 	id: string;
 	/** The resource's data as a nested object structure */
 	attributes: T;
-	/** Metadata for tracking eventstamps */
-	meta: {
-		/** Flat map of dot-separated paths to eventstamps (e.g., "user.address.street": "2025-11-18...") */
-		eventstamps: Record<string, string>;
-	};
+	/** Flat map of dot-separated paths to eventstamps (e.g., "user.address.street": "2025-11-18...") */
+	eventstamps: Record<string, string>;
 };
 
 export function makeResource<T extends AnyObject>(
@@ -126,9 +123,7 @@ export function makeResource<T extends AnyObject>(
 	return {
 		id,
 		attributes: obj,
-		meta: {
-			eventstamps,
-		},
+		eventstamps,
 	};
 }
 
@@ -141,14 +136,14 @@ export function mergeResources<T extends AnyObject>(
 
 	// Collect all paths from both eventstamp maps
 	const allPaths = new Set([
-		...Object.keys(into.meta.eventstamps),
-		...Object.keys(from.meta.eventstamps),
+		...Object.keys(into.eventstamps),
+		...Object.keys(from.eventstamps),
 	]);
 
 	// Simple iteration: for each path, pick the winner based on eventstamp
 	for (const path of allPaths) {
-		const stamp1 = into.meta.eventstamps[path];
-		const stamp2 = from.meta.eventstamps[path];
+		const stamp1 = into.eventstamps[path];
+		const stamp2 = from.eventstamps[path];
 
 		if (stamp1 && stamp2) {
 			// Both have this path - compare eventstamps
@@ -189,8 +184,6 @@ export function mergeResources<T extends AnyObject>(
 	return {
 		id: into.id,
 		attributes: resultAttributes as T,
-		meta: {
-			eventstamps: resultEventstamps,
-		},
+		eventstamps: resultEventstamps,
 	};
 }
