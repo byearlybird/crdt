@@ -1,81 +1,81 @@
-import { createClock, MIN_EVENTSTAMP, type StarlingDocument } from "../core";
+import { createClock, type DocumentState, type AnyObject } from "../core";
 import {
-	type Collection,
-	CollectionInternals,
-	type CollectionWithInternals,
-	createCollection,
+	type Document,
+	DocumentInternals,
+	type DocumentWithInternals,
+	createDocument,
 	type MutationBatch,
-} from "./collection";
+} from "./document";
 import { createEmitter } from "./emitter";
 import { executeQuery, type QueryContext } from "./query";
 import { executeTransaction, type TransactionContext } from "./transaction";
 import type {
 	AnyObjectSchema,
-	StoreSnapshot,
+	StoreState,
 	InferOutput,
 	SchemasMap,
 } from "./types";
 
-export type Collections<Schemas extends SchemasMap> = {
-	[K in keyof Schemas]: Collection<Schemas[K]>;
+export type Documents<Schemas extends SchemasMap> = {
+	[K in keyof Schemas]: Document<Schemas[K]>;
 };
 
-export type CollectionConfigMap<Schemas extends SchemasMap> = {
-	[K in keyof Schemas]: CollectionConfig<Schemas[K]>;
+export type DocumentConfigMap<Schemas extends SchemasMap> = {
+	[K in keyof Schemas]: DocumentConfig<Schemas[K]>;
 };
 
-type CollectionInstances<Schemas extends SchemasMap> = {
-	[K in keyof Schemas]: CollectionWithInternals<Schemas[K]>;
+type DocumentInstances<Schemas extends SchemasMap> = {
+	[K in keyof Schemas]: DocumentWithInternals<Schemas[K]>;
 };
 
-export type CollectionMutation<Schemas extends SchemasMap> = {
+export type DocumentMutation<Schemas extends SchemasMap> = {
 	[K in keyof Schemas]: {
-		collection: K;
+		document: K;
 	} & MutationBatch<InferOutput<Schemas[K]>>;
 }[keyof Schemas];
 
 export type StoreEvents<Schemas extends SchemasMap> = {
-	mutation: CollectionMutation<Schemas>;
+	mutation: DocumentMutation<Schemas>;
 };
 
-export type CollectionConfig<T extends AnyObjectSchema> = {
+export type DocumentConfig<T extends AnyObjectSchema> = {
 	schema: T;
 	getId: (item: InferOutput<T>) => string;
 };
 
 export type StoreConfig<Schemas extends SchemasMap> = {
 	name: string;
-	schema: CollectionConfigMap<Schemas>;
+	schema: DocumentConfigMap<Schemas>;
 	version?: number;
 };
 
-export type Store<Schemas extends SchemasMap> = Collections<Schemas> & {
+export type Store<Schemas extends SchemasMap> = Documents<Schemas> & {
 	name: string;
 	version: number;
 	transact<Keys extends ReadonlyArray<keyof Schemas>, R>(
-		collections: Keys,
+		documents: Keys,
 		callback: (tx: TransactionContext<Schemas, Keys>) => R,
 	): R;
 	query<Keys extends ReadonlyArray<keyof Schemas>, R>(
-		collections: Keys,
+		documents: Keys,
 		callback: (q: QueryContext<Schemas, Keys>) => R,
 	): R;
-	toSnapshot(): StoreSnapshot<Schemas>;
-	mergeSnapshot(snapshot: StoreSnapshot<Schemas>): void;
+	toJSON(): StoreState<Schemas>;
+	mergeState(state: StoreState<Schemas>): void;
 	on(
 		event: "mutation",
-		handler: (payload: CollectionMutation<Schemas>) => unknown,
+		handler: (payload: DocumentMutation<Schemas>) => unknown,
 	): () => void;
-	collectionKeys(): (keyof Schemas)[];
+	documentKeys(): (keyof Schemas)[];
 };
 
 /**
- * Create a typed store instance with collection access.
+ * Create a typed store instance with document access.
  * @param config - Store configuration
  * @param config.name - Store name used for persistence and routing
- * @param config.schema - Collection schema definitions
+ * @param config.schema - Document schema definitions
  * @param config.version - Optional store version, defaults to 1
- * @returns A store instance with typed collection properties
+ * @returns A store instance with typed document properties
  *
  * @example
  * ```typescript
@@ -95,124 +95,126 @@ export function createStore<Schemas extends SchemasMap>(
 	const { name, schema, version = 1 } = config;
 	const clock = createClock();
 	const getEventstamp = () => clock.now();
-	const collections = makeCollections(schema, getEventstamp);
+	const documents = makeDocuments(schema, getEventstamp);
 
-	// Cast to public Collection type (hides Symbol-keyed internals)
-	const publicCollections = collections as unknown as Collections<Schemas>;
+	// Cast to public Document type (hides Symbol-keyed internals)
+	const publicDocuments = documents as unknown as Documents<Schemas>;
 
 	// Store-level emitter
 	const storeEmitter = createEmitter<StoreEvents<Schemas>>();
 
-	// Subscribe to all collection events and re-emit at store level
-	for (const collectionName of Object.keys(collections) as (keyof Schemas)[]) {
-		const collection = collections[collectionName];
+	// Subscribe to all document events and re-emit at store level
+	for (const documentName of Object.keys(documents) as (keyof Schemas)[]) {
+		const document = documents[documentName];
 
 		// Type assertion needed for Symbol-keyed method access
-		const onMutation = (
-			collection as unknown as CollectionWithInternals<AnyObjectSchema>
-		)[CollectionInternals.onMutation]!;
+		const docWithInternals = document as unknown as DocumentWithInternals<AnyObjectSchema>;
+		const onMutationMethod: ((handler: (batch: MutationBatch<AnyObject>) => void) => () => void) | undefined =
+			docWithInternals[DocumentInternals.onMutation] as any;
 
-		onMutation((mutations) => {
-			// Only emit if there were actual changes
-			if (
-				mutations.added.length > 0 ||
-				mutations.updated.length > 0 ||
-				mutations.removed.length > 0
-			) {
-				storeEmitter.emit("mutation", {
-					collection: collectionName,
-					added: mutations.added,
-					updated: mutations.updated,
-					removed: mutations.removed,
-				} as CollectionMutation<Schemas>);
-			}
-		});
+		if (onMutationMethod) {
+			onMutationMethod((mutations) => {
+				// Only emit if there were actual changes
+				if (
+					mutations.added.length > 0 ||
+					mutations.updated.length > 0 ||
+					mutations.removed.length > 0
+				) {
+					storeEmitter.emit("mutation", {
+						document: documentName,
+						added: mutations.added,
+						updated: mutations.updated,
+						removed: mutations.removed,
+					} as DocumentMutation<Schemas>);
+				}
+			});
+		}
 	}
 
 	const store: Store<Schemas> = {
-		...publicCollections,
+		...publicDocuments,
 		name,
 		version,
 		transact<Keys extends ReadonlyArray<keyof Schemas>, R>(
-			collectionNames: Keys,
+			documentNames: Keys,
 			callback: (tx: TransactionContext<Schemas, Keys>) => R,
 		): R {
 			return executeTransaction(
 				schema,
-				collections,
+				documents,
 				getEventstamp,
-				collectionNames,
+				documentNames,
 				callback,
 			);
 		},
 		query<Keys extends ReadonlyArray<keyof Schemas>, R>(
-			collectionNames: Keys,
+			documentNames: Keys,
 			callback: (q: QueryContext<Schemas, Keys>) => R,
 		): R {
-			return executeQuery(collections, collectionNames, callback);
+			return executeQuery(documents, documentNames, callback);
 		},
-		toSnapshot(): StoreSnapshot<Schemas> {
-			const collectionDocs = {} as {
-				[K in keyof Schemas]: StarlingDocument<InferOutput<Schemas[K]>>;
+		toJSON(): StoreState<Schemas> {
+			const documentStates = {} as {
+				[K in keyof Schemas]: DocumentState<InferOutput<Schemas[K]>>;
 			};
 
-			for (const collectionName of Object.keys(
-				collections,
+			for (const documentName of Object.keys(
+				documents,
 			) as (keyof Schemas)[]) {
-				collectionDocs[collectionName] =
-					collections[collectionName].toDocument();
+				documentStates[documentName] =
+					documents[documentName].toJSON();
 			}
 
-			// Use current clock value as snapshot latest
+			// Use current clock value as latest
 			const latest = clock.latest();
 
 			return {
 				version: "1.0",
 				name,
 				latest,
-				collections: collectionDocs,
+				documents: documentStates,
 			};
 		},
-		mergeSnapshot(snapshot: StoreSnapshot<Schemas>): void {
+		mergeState(state: StoreState<Schemas>): void {
 			// Validate version compatibility
-			if (snapshot.version !== "1.0") {
-				throw new Error(`Unsupported snapshot version: ${snapshot.version}`);
+			if (state.version !== "1.0") {
+				throw new Error(`Unsupported state version: ${state.version}`);
 			}
 
-			// Merge each collection
-			for (const collectionName of Object.keys(
-				snapshot.collections,
+			// Merge each document
+			for (const documentName of Object.keys(
+				state.documents,
 			) as (keyof Schemas)[]) {
-				const collection = collections[collectionName];
-				const document = snapshot.collections[collectionName];
-				if (collection && document) {
-					collection.merge(document);
+				const document = documents[documentName];
+				const documentState = state.documents[documentName];
+				if (document && documentState) {
+					document.merge(documentState);
 				}
 			}
 
-			// Forward clock based on snapshot latest
-			clock.forward(snapshot.latest);
+			// Forward clock based on state latest
+			clock.forward(state.latest);
 		},
 		on(event, handler) {
 			return storeEmitter.on(event, handler);
 		},
-		collectionKeys() {
-			return Object.keys(collections) as (keyof Schemas)[];
+		documentKeys() {
+			return Object.keys(documents) as (keyof Schemas)[];
 		},
 	};
 
 	return store;
 }
 
-function makeCollections<Schemas extends SchemasMap>(
-	configs: CollectionConfigMap<Schemas>,
+function makeDocuments<Schemas extends SchemasMap>(
+	configs: DocumentConfigMap<Schemas>,
 	getEventstamp: () => string,
-): CollectionInstances<Schemas> {
-	const collections = {} as CollectionInstances<Schemas>;
+): DocumentInstances<Schemas> {
+	const documents = {} as DocumentInstances<Schemas>;
 
 	for (const name of Object.keys(configs) as (keyof Schemas)[]) {
 		const config = configs[name];
-		collections[name] = createCollection(
+		documents[name] = createDocument(
 			name as string,
 			config.schema,
 			config.getId,
@@ -220,5 +222,5 @@ function makeCollections<Schemas extends SchemasMap>(
 		);
 	}
 
-	return collections;
+	return documents;
 }

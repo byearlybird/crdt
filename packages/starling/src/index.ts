@@ -2,7 +2,7 @@
  * @byearlybird/starling
  * Local-first data sync for JavaScript apps
  *
- * Main export: Store with typed collections, transactions, and snapshot sync.
+ * Main export: Store with typed documents, transactions, and JSON-serializable sync.
  * For low-level CRDT primitives, import from "@byearlybird/starling/core"
  *
  * Persistence and sync helpers are available as separate optional imports:
@@ -11,15 +11,15 @@
  */
 
 // Re-export commonly needed core types
-export type { AnyObject, StarlingDocument } from "./core";
+export type { AnyObject, DocumentState } from "./core";
 export {
-	type Collection,
-	CollectionInternals,
+	type Document,
+	DocumentInternals,
 	DuplicateIdError,
 	IdNotFoundError,
-} from "./store/collection";
+} from "./store/document";
 export type {
-	CollectionConfig,
+	DocumentConfig,
 	Store,
 	StoreConfig,
 } from "./store/store";
@@ -28,7 +28,7 @@ export { createStore } from "./store/store";
 export type { QueryContext } from "./store/query";
 export type { StandardSchemaV1 } from "./store/standard-schema";
 export type {
-	TransactionCollectionHandle,
+	TransactionDocumentHandle,
 	TransactionContext,
 } from "./store/transaction";
-export type { StoreSnapshot } from "./store/types";
+export type { StoreState } from "./store/types";

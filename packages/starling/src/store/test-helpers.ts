@@ -31,9 +31,9 @@ export function createTestStore() {
 	});
 }
 
-export function createMultiCollectionStore() {
+export function createMultiDocumentStore() {
 	return createStore({
-		name: "multi-collection-store",
+		name: "multi-document-store",
 		schema: {
 			tasks: {
 				schema: taskSchema,
@@ -69,10 +69,10 @@ export function makeTaskDocument(
 	return doc;
 }
 
-// Subscription helper for testing collection mutations
-export function subscribeToCollection(
-	store: ReturnType<typeof createTestStore | typeof createMultiCollectionStore>,
-	collectionName: string,
+// Subscription helper for testing document mutations
+export function subscribeToDocument(
+	store: ReturnType<typeof createTestStore | typeof createMultiDocumentStore>,
+	documentName: string,
 	handler: (mutations: {
 		added: unknown[];
 		updated: unknown[];
@@ -80,7 +80,7 @@ export function subscribeToCollection(
 	}) => void,
 ): () => void {
 	return store.on("mutation", (e) => {
-		if (e.collection === collectionName) {
+		if (e.document === documentName) {
 			handler({ added: e.added, updated: e.updated, removed: e.removed });
 		}
 	});

@@ -1,5 +1,5 @@
 import type { Store } from "../../store/store";
-import type { StoreSnapshot, SchemasMap } from "../../store/types";
+import type { StoreState, SchemasMap } from "../../store/types";
 
 /**
  * Context provided to the onRequest hook
@@ -7,7 +7,7 @@ import type { StoreSnapshot, SchemasMap } from "../../store/types";
 export type RequestContext = {
 	operation: "GET" | "PATCH";
 	url: string;
-	snapshot?: StoreSnapshot<SchemasMap>; // Present for PATCH operations
+	state?: StoreState<SchemasMap>; // Present for PATCH operations
 };
 
 /**
@@ -17,7 +17,7 @@ export type RequestHookResult =
 	| { skip: true }
 	| {
 			headers?: Record<string, string>;
-			snapshot?: StoreSnapshot<SchemasMap>;
+			state?: StoreState<SchemasMap>;
 	  }
 	| undefined;
 
@@ -25,7 +25,7 @@ export type RequestHookResult =
  * Result returned by the onResponse hook
  */
 export type ResponseHookResult =
-	| { snapshot: StoreSnapshot<SchemasMap> }
+	| { state: StoreState<SchemasMap> }
 	| { skip: true }
 	| undefined; // Use original snapshot
 
@@ -54,17 +54,17 @@ export type HttpSynchronizerConfig = {
 	 * Hook called before each HTTP request
 	 * Return { skip: true } to abort the request
 	 * Return { headers } to add custom headers
-	 * Return { snapshot } to transform the snapshot (PATCH only)
+	 * Return { state } to transform the state (PATCH only)
 	 */
 	onRequest?: (context: RequestContext) => RequestHookResult;
 
 	/**
 	 * Hook called after each successful HTTP response
 	 * Return { skip: true } to skip merging the response
-	 * Return { snapshot } to transform the snapshot before merging
+	 * Return { state } to transform the state before merging
 	 */
 	onResponse?: (context: {
-		snapshot: StoreSnapshot<SchemasMap>;
+		state: StoreState<SchemasMap>;
 	}) => ResponseHookResult;
 
 	/**
@@ -95,7 +95,7 @@ export type HttpSynchronizerConfig = {
  * Create an HTTP synchronizer for Starling stores.
  *
  * The synchronizer:
- * - Fetches store snapshot from the server on init (single attempt)
+ * - Fetches store state from the server on init (single attempt)
  * - Polls the server at regular intervals to fetch updates (with retry)
  * - Debounces local mutations and pushes them to the server (with retry)
  * - Supports request/response hooks for authentication, encryption, etc.
@@ -136,12 +136,12 @@ export type HttpSynchronizerConfig = {
  *
  * const cleanup = createHttpSynchronizer(store, {
  *   baseUrl: "https://api.example.com",
- *   onRequest: ({ snapshot }) => ({
+ *   onRequest: ({ state }) => ({
  *     headers: { Authorization: `Bearer ${token}` },
- *     snapshot: snapshot ? encrypt(snapshot) : undefined
+ *     state: state ? encrypt(state) : undefined
  *   }),
- *   onResponse: ({ snapshot }) => ({
- *     snapshot: decrypt(snapshot)
+ *   onResponse: ({ state }) => ({
+ *     state: decrypt(state)
  *   })
  * });
  * ```
@@ -244,7 +244,7 @@ export function createHttpSynchronizer(
 }
 
 /**
- * Fetch store snapshot from the server (GET request)
+ * Fetch store state from the server (GET request)
  */
 async function fetchStore(
 	store: Store<any>,
@@ -252,7 +252,7 @@ async function fetchStore(
 	onRequest: ((context: RequestContext) => RequestHookResult) | undefined,
 	onResponse:
 		| ((context: {
-				snapshot: StoreSnapshot<SchemasMap>;
+				state: StoreState<SchemasMap>;
 		  }) => ResponseHookResult)
 		| undefined,
 	enableRetry: boolean,
@@ -293,24 +293,24 @@ async function fetchStore(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const snapshot = (await response.json()) as StoreSnapshot<SchemasMap>;
+		const state = (await response.json()) as StoreState<SchemasMap>;
 
 		// Call onResponse hook
-		const responseResult = onResponse?.({ snapshot });
+		const responseResult = onResponse?.({ state });
 
 		// Check if merge should be skipped
 		if (responseResult && "skip" in responseResult && responseResult.skip) {
 			return;
 		}
 
-		// Use transformed snapshot if provided, otherwise use original
-		const finalSnapshot =
-			responseResult && "snapshot" in responseResult
-				? responseResult.snapshot
-				: snapshot;
+		// Use transformed state if provided, otherwise use original
+		const finalState =
+			responseResult && "state" in responseResult
+				? responseResult.state
+				: state;
 
 		// Merge into store
-		store.mergeSnapshot(finalSnapshot);
+		store.mergeState(finalState);
 	};
 
 	if (enableRetry) {
@@ -321,7 +321,7 @@ async function fetchStore(
 }
 
 /**
- * Push store snapshot to the server (PATCH request)
+ * Push store state to the server (PATCH request)
  */
 async function pushStore(
 	store: Store<any>,
@@ -329,7 +329,7 @@ async function pushStore(
 	onRequest: ((context: RequestContext) => RequestHookResult) | undefined,
 	onResponse:
 		| ((context: {
-				snapshot: StoreSnapshot<SchemasMap>;
+				state: StoreState<SchemasMap>;
 		  }) => ResponseHookResult)
 		| undefined,
 	maxAttempts = 3,
@@ -338,14 +338,14 @@ async function pushStore(
 ): Promise<void> {
 	const url = `${baseUrl}/database/${store.name}`;
 
-	// Get current snapshot
-	const snapshot = store.toSnapshot();
+	// Get current state
+	const state = store.toJSON();
 
 	// Call onRequest hook
 	const requestResult = onRequest?.({
 		operation: "PATCH",
 		url,
-		snapshot,
+		state,
 	});
 
 	// Check if request should be skipped
@@ -353,16 +353,16 @@ async function pushStore(
 		return;
 	}
 
-	// Extract headers and potentially transformed snapshot
+	// Extract headers and potentially transformed state
 	const headers =
 		requestResult && "headers" in requestResult
 			? requestResult.headers
 			: undefined;
 
-	const requestSnapshot =
-		requestResult && "snapshot" in requestResult
-			? requestResult.snapshot
-			: snapshot;
+	const requestState =
+		requestResult && "state" in requestResult
+			? requestResult.state
+			: state;
 
 	// Execute fetch with retry
 	const executeRequest = async (): Promise<void> => {
@@ -372,32 +372,32 @@ async function pushStore(
 				"Content-Type": "application/json",
 				...headers,
 			},
-			body: JSON.stringify(requestSnapshot),
+			body: JSON.stringify(requestState),
 		});
 
 		if (!response.ok) {
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const responseSnapshot =
-			(await response.json()) as StoreSnapshot<SchemasMap>;
+		const responseState =
+			(await response.json()) as StoreState<SchemasMap>;
 
 		// Call onResponse hook
-		const responseResult = onResponse?.({ snapshot: responseSnapshot });
+		const responseResult = onResponse?.({ state: responseState });
 
 		// Check if merge should be skipped
 		if (responseResult && "skip" in responseResult && responseResult.skip) {
 			return;
 		}
 
-		// Use transformed snapshot if provided, otherwise use original
-		const finalSnapshot =
-			responseResult && "snapshot" in responseResult
-				? responseResult.snapshot
-				: responseSnapshot;
+		// Use transformed state if provided, otherwise use original
+		const finalState =
+			responseResult && "state" in responseResult
+				? responseResult.state
+				: responseState;
 
 		// Merge server response (trust LWW merge)
-		store.mergeSnapshot(finalSnapshot);
+		store.mergeState(finalState);
 	};
 
 	await withRetry(executeRequest, maxAttempts, initialDelay, maxDelay);

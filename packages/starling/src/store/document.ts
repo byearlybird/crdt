@@ -3,18 +3,18 @@ import {
 	mapToDocument,
 	mergeDocuments,
 	mergeResources,
-	type ResourceObject,
-	type StarlingDocument,
+	type Resource,
+	type DocumentState,
 } from "../core";
 import { createEmitter } from "./emitter";
 import { standardValidate } from "./standard-schema";
 import type { AnyObjectSchema, InferInput, InferOutput } from "./types";
 
 /**
- * Symbols for internal collection methods used by transactions.
- * These are not part of the public Collection type.
+ * Symbols for internal document methods used by transactions.
+ * These are not part of the public Document type.
  */
-export const CollectionInternals = {
+export const DocumentInternals = {
 	getPendingMutations: Symbol("getPendingMutations"),
 	emitMutations: Symbol("emitMutations"),
 	replaceData: Symbol("replaceData"),
@@ -28,11 +28,11 @@ export type MutationBatch<T> = {
 	removed: Array<{ id: string; item: T }>;
 };
 
-export type CollectionEvents<T> = {
+export type DocumentEvents<T> = {
 	mutation: MutationBatch<T>;
 };
 
-export type Collection<T extends AnyObjectSchema> = {
+export type Document<T extends AnyObjectSchema> = {
 	get(id: string): InferOutput<T> | null;
 	getAll(): InferOutput<T>[];
 	find<U = InferOutput<T>>(
@@ -48,41 +48,41 @@ export type Collection<T extends AnyObjectSchema> = {
 };
 
 /** Internal type that includes Symbol-keyed methods for transaction support */
-export type CollectionWithInternals<T extends AnyObjectSchema> =
-	Collection<T> & {
-		merge(document: StarlingDocument<InferOutput<T>>): void;
-		toDocument(): StarlingDocument<InferOutput<T>>;
-		[CollectionInternals.data]: () => Map<
+export type DocumentWithInternals<T extends AnyObjectSchema> =
+	Document<T> & {
+		merge(state: DocumentState<InferOutput<T>>): void;
+		toJSON(): DocumentState<InferOutput<T>>;
+		[DocumentInternals.data]: () => Map<
 			string,
-			ResourceObject<InferOutput<T>>
+			Resource<InferOutput<T>>
 		>;
-		[CollectionInternals.getPendingMutations]: () => MutationBatch<
+		[DocumentInternals.getPendingMutations]: () => MutationBatch<
 			InferOutput<T>
 		>;
-		[CollectionInternals.emitMutations]: (
+		[DocumentInternals.emitMutations]: (
 			mutations: MutationBatch<InferOutput<T>>,
 		) => void;
-		[CollectionInternals.replaceData]: (
-			data: Map<string, ResourceObject<InferOutput<T>>>,
+		[DocumentInternals.replaceData]: (
+			data: Map<string, Resource<InferOutput<T>>>,
 		) => void;
-		[CollectionInternals.onMutation]: (
+		[DocumentInternals.onMutation]: (
 			handler: (batch: MutationBatch<InferOutput<T>>) => void,
 		) => () => void;
 	};
 
-export function createCollection<T extends AnyObjectSchema>(
+export function createDocument<T extends AnyObjectSchema>(
 	name: string,
 	schema: T,
 	getId: (item: InferOutput<T>) => string,
 	getEventstamp: () => string,
-	initialData?: Map<string, ResourceObject<InferOutput<T>>>,
+	initialData?: Map<string, Resource<InferOutput<T>>>,
 	options?: { autoFlush?: boolean },
-): CollectionWithInternals<T> {
+): DocumentWithInternals<T> {
 	const autoFlush = options?.autoFlush ?? true;
-	const data = initialData ?? new Map<string, ResourceObject<InferOutput<T>>>();
+	const data = initialData ?? new Map<string, Resource<InferOutput<T>>>();
 	const tombstones = new Map<string, string>();
 
-	const emitter = createEmitter<CollectionEvents<InferOutput<T>>>();
+	const emitter = createEmitter<DocumentEvents<InferOutput<T>>>();
 
 	// Pending mutations buffer
 	const pendingMutations: MutationBatch<InferOutput<T>> = {
@@ -229,20 +229,20 @@ export function createCollection<T extends AnyObjectSchema>(
 			}
 		},
 
-		merge(document: StarlingDocument<InferOutput<T>>): void {
+		merge(state: DocumentState<InferOutput<T>>): void {
 			// Capture before state for update/delete event tracking
 			const beforeState = new Map<string, InferOutput<T>>();
 			for (const [id, resource] of data.entries()) {
 				beforeState.set(id, resource.attributes);
 			}
 
-			// Build current document from collection state including tombstones
+			// Build current document from state including tombstones
 			const currentDoc = mapToDocument(name, data, tombstones);
 
 			// Merge using core mergeDocuments with current clock
-			const result = mergeDocuments(currentDoc, document, getEventstamp());
+			const result = mergeDocuments(currentDoc, state, getEventstamp());
 
-			// Replace collection data with merged result
+			// Replace document data with merged result
 			data.clear();
 			for (const [id, resource] of Object.entries(result.document.resources)) {
 				data.set(id, resource);
@@ -285,16 +285,16 @@ export function createCollection<T extends AnyObjectSchema>(
 			}
 		},
 
-		toDocument() {
+		toJSON() {
 			return mapToDocument(name, data, tombstones);
 		},
 
 		// Symbol-keyed internal methods for transaction support
-		[CollectionInternals.data]() {
+		[DocumentInternals.data]() {
 			return new Map(data);
 		},
 
-		[CollectionInternals.getPendingMutations]() {
+		[DocumentInternals.getPendingMutations]() {
 			return {
 				added: [...pendingMutations.added],
 				updated: [...pendingMutations.updated],
@@ -302,7 +302,7 @@ export function createCollection<T extends AnyObjectSchema>(
 			};
 		},
 
-		[CollectionInternals.emitMutations](
+		[DocumentInternals.emitMutations](
 			mutations: MutationBatch<InferOutput<T>>,
 		) {
 			if (
@@ -314,8 +314,8 @@ export function createCollection<T extends AnyObjectSchema>(
 			}
 		},
 
-		[CollectionInternals.replaceData](
-			newData: Map<string, ResourceObject<InferOutput<T>>>,
+		[DocumentInternals.replaceData](
+			newData: Map<string, Resource<InferOutput<T>>>,
 		) {
 			data.clear();
 			for (const [id, resource] of newData.entries()) {
@@ -323,7 +323,7 @@ export function createCollection<T extends AnyObjectSchema>(
 			}
 		},
 
-		[CollectionInternals.onMutation](
+		[DocumentInternals.onMutation](
 			handler: (batch: MutationBatch<InferOutput<T>>) => void,
 		) {
 			return emitter.on("mutation", handler);

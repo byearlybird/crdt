@@ -1,4 +1,4 @@
-import type { AnyObject, StarlingDocument } from "../core";
+import type { AnyObject, DocumentState } from "../core";
 import type { StandardSchemaV1 } from "./standard-schema";
 
 export type AnyObjectSchema<T extends AnyObject = AnyObject> =
@@ -14,14 +14,15 @@ export type InferInput<T extends AnyObjectSchema> =
 	StandardSchemaV1.InferInput<T>;
 
 /**
- * Serialized store snapshot containing all collections.
+ * Serialized store state containing all documents.
  * Used for persistence and sync operations.
+ * This is the JSON-serializable representation of the entire store.
  */
-export type StoreSnapshot<Schemas extends SchemasMap> = {
+export type StoreState<Schemas extends SchemasMap> = {
 	version: string;
 	name: string;
 	latest: string;
-	collections: {
-		[K in keyof Schemas]: StarlingDocument<InferOutput<Schemas[K]>>;
+	documents: {
+		[K in keyof Schemas]: DocumentState<InferOutput<Schemas[K]>>;
 	};
 };

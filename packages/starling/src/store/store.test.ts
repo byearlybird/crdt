@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createStore } from "./store";
 import {
-	createMultiCollectionStore,
+	createMultiDocumentStore,
 	createTestStore,
-	subscribeToCollection,
+	subscribeToDocument,
 } from "./test-helpers";
 
 describe("Store", () => {
@@ -21,7 +21,7 @@ describe("Store", () => {
 		});
 
 		test("creates multiple collections", () => {
-			const store = createMultiCollectionStore();
+			const store = createMultiDocumentStore();
 
 			expect(store.tasks).toBeDefined();
 			expect(store.users).toBeDefined();
@@ -80,12 +80,12 @@ describe("Store", () => {
 			store.tasks.add({ id: "1", title: "Task 1", completed: false });
 
 			expect(storeEvents).toHaveLength(1);
-			expect(storeEvents[0].collection).toBe("tasks");
+			expect(storeEvents[0].document).toBe("tasks");
 			expect(storeEvents[0].added).toHaveLength(1);
 		});
 
 		test("emits events from multiple collections", () => {
-			const store = createMultiCollectionStore();
+			const store = createMultiDocumentStore();
 			const storeEvents: any[] = [];
 			store.on("mutation", (e) => storeEvents.push(e));
 
@@ -96,17 +96,17 @@ describe("Store", () => {
 
 			expect(storeEvents).toHaveLength(2);
 
-			const tasksEvent = storeEvents.find((e) => e.collection === "tasks");
+			const tasksEvent = storeEvents.find((e) => e.document === "tasks");
 			expect(tasksEvent.added).toHaveLength(1);
 
-			const usersEvent = storeEvents.find((e) => e.collection === "users");
+			const usersEvent = storeEvents.find((e) => e.document === "users");
 			expect(usersEvent.added).toHaveLength(1);
 		});
 
 		test("keeps store subscriptions active after transactions", () => {
 			const store = createTestStore();
 			const events: any[] = [];
-			subscribeToCollection(store, "tasks", (e) => events.push(e));
+			subscribeToDocument(store, "tasks", (e) => events.push(e));
 
 			store.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Tx Task", completed: false });
@@ -122,43 +122,43 @@ describe("Store", () => {
 
 	describe("toSnapshot", () => {
 		test("returns snapshot for all collections", () => {
-			const store = createMultiCollectionStore();
+			const store = createMultiDocumentStore();
 			store.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
 			store.tasks.add({ id: "task-2", title: "Walk dog", completed: true });
 			store.users.add({ id: "user-1", name: "Alice", email: "alice@example.com" });
 
-			const snapshot = store.toSnapshot();
+			const state = store.toJSON();
 
 			// Verify snapshot structure
-			expect(snapshot.version).toBe("1.0");
-			expect(snapshot.name).toBe("multi-collection-store");
-			expect(snapshot.latest).toBeDefined();
-			expect(typeof snapshot.latest).toBe("string");
+			expect(state.version).toBe("1.0");
+			expect(state.name).toBe("multi-document-store");
+			expect(state.latest).toBeDefined();
+			expect(typeof state.latest).toBe("string");
 
 			// Verify collections
-			expect(snapshot.collections.tasks).toBeDefined();
-			expect(snapshot.collections.users).toBeDefined();
-			expect(Object.keys(snapshot.collections.tasks.resources)).toHaveLength(2);
-			expect(Object.keys(snapshot.collections.users.resources)).toHaveLength(1);
+			expect(state.documents.tasks).toBeDefined();
+			expect(state.documents.users).toBeDefined();
+			expect(Object.keys(state.documents.tasks.resources)).toHaveLength(2);
+			expect(Object.keys(state.documents.users.resources)).toHaveLength(1);
 		});
 
 		test("returns empty snapshot for empty collections", () => {
-			const store = createMultiCollectionStore();
+			const store = createMultiDocumentStore();
 
-			const snapshot = store.toSnapshot();
+			const state = store.toJSON();
 
 			// Verify snapshot structure
-			expect(snapshot.version).toBe("1.0");
-			expect(snapshot.name).toBe("multi-collection-store");
-			expect(snapshot.latest).toBeDefined();
+			expect(state.version).toBe("1.0");
+			expect(state.name).toBe("multi-document-store");
+			expect(state.latest).toBeDefined();
 
 			// Verify empty collections
-			expect(snapshot.collections.tasks).toBeDefined();
-			expect(snapshot.collections.users).toBeDefined();
-			expect(Object.keys(snapshot.collections.tasks.resources)).toHaveLength(0);
-			expect(Object.keys(snapshot.collections.users.resources)).toHaveLength(0);
-			expect(snapshot.collections.tasks.tombstones).toBeDefined();
-			expect(snapshot.collections.users.tombstones).toBeDefined();
+			expect(state.documents.tasks).toBeDefined();
+			expect(state.documents.users).toBeDefined();
+			expect(Object.keys(state.documents.tasks.resources)).toHaveLength(0);
+			expect(Object.keys(state.documents.users.resources)).toHaveLength(0);
+			expect(state.documents.tasks.tombstones).toBeDefined();
+			expect(state.documents.users.tombstones).toBeDefined();
 		});
 
 		test("includes tombstones in snapshot", () => {
@@ -166,32 +166,32 @@ describe("Store", () => {
 			store.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
 			store.tasks.remove("task-1");
 
-			const snapshot = store.toSnapshot();
+			const state = store.toJSON();
 
 			// Resource should be removed, tombstone should exist
-			expect(Object.keys(snapshot.collections.tasks.resources)).toHaveLength(0);
-			expect(snapshot.collections.tasks.tombstones["task-1"]).toBeDefined();
-			expect(typeof snapshot.collections.tasks.tombstones["task-1"]).toBe(
+			expect(Object.keys(state.documents.tasks.resources)).toHaveLength(0);
+			expect(state.documents.tasks.tombstones["task-1"]).toBeDefined();
+			expect(typeof state.documents.tasks.tombstones["task-1"]).toBe(
 				"string",
 			);
 		});
 
 		test("includes correct latest eventstamps", () => {
-			const store = createMultiCollectionStore();
+			const store = createMultiDocumentStore();
 			store.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
 			store.users.add({ id: "user-1", name: "Alice", email: "alice@example.com" });
 
-			const snapshot = store.toSnapshot();
+			const state = store.toJSON();
 
 			// Verify store-level latest eventstamp exists
-			expect(snapshot.latest).toBeDefined();
-			expect(typeof snapshot.latest).toBe("string");
+			expect(state.latest).toBeDefined();
+			expect(typeof state.latest).toBe("string");
 
 			// Verify collections exist with proper structure
-			expect(snapshot.collections.tasks).toBeDefined();
-			expect(snapshot.collections.users).toBeDefined();
-			expect(snapshot.collections.tasks.type).toBe("tasks");
-			expect(snapshot.collections.users.type).toBe("users");
+			expect(state.documents.tasks).toBeDefined();
+			expect(state.documents.users).toBeDefined();
+			expect(state.documents.tasks.type).toBe("tasks");
+			expect(state.documents.users.type).toBe("users");
 		});
 	});
 

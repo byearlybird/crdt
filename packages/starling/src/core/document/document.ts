@@ -1,5 +1,5 @@
 import { maxEventstamp } from "../clock/eventstamp";
-import { mergeResources, type ResourceObject } from "./resource";
+import { mergeResources, type Resource } from "./resource";
 
 /**
  * Base constraint for all document data in Starling.
@@ -8,20 +8,19 @@ import { mergeResources, type ResourceObject } from "./resource";
 export type AnyObject = Record<string, unknown>;
 
 /**
- * A Starling document represents the complete state of a collection:
+ * DocumentState represents the complete state of a document:
  * - Resource type identifier
  * - Map of resources keyed by ID
  * - Tombstones tracking deleted resource IDs
  *
- * Documents are the unit of synchronization between replicas.
- * Clock state is maintained at the database level, not per-document.
+ * DocumentState is the unit of synchronization between replicas.
  */
-export type StarlingDocument<T extends AnyObject> = {
-	/** Resource type for this homogeneous collection */
+export type DocumentState<T extends AnyObject> = {
+	/** Resource type for this document */
 	type: string;
 
 	/** Map of resources keyed by ID for efficient lookups */
-	resources: Record<string, ResourceObject<T>>;
+	resources: Record<string, Resource<T>>;
 
 	/** Map of deleted resource IDs to deletion eventstamps */
 	tombstones: Record<string, string>;
@@ -33,21 +32,21 @@ export type StarlingDocument<T extends AnyObject> = {
  */
 export type DocumentChanges<T extends AnyObject> = {
 	/** Resources that were newly added (didn't exist before or were previously deleted) */
-	added: Map<string, ResourceObject<T>>;
+	added: Map<string, Resource<T>>;
 
 	/** Resources that were modified (existed before and changed) */
-	updated: Map<string, ResourceObject<T>>;
+	updated: Map<string, Resource<T>>;
 
 	/** Resources that were deleted (newly marked with deletedAt) */
 	deleted: Set<string>;
 };
 
 /**
- * Result of merging two Starling documents.
+ * Result of merging two documents.
  */
 export type MergeDocumentsResult<T extends AnyObject> = {
 	/** The merged document with updated resources */
-	document: StarlingDocument<T>;
+	document: DocumentState<T>;
 
 	/** Change tracking for plugin hook notifications */
 	changes: DocumentChanges<T>;
@@ -57,7 +56,7 @@ export type MergeDocumentsResult<T extends AnyObject> = {
 };
 
 /**
- * Merges two Starling documents using field-level Last-Write-Wins semantics.
+ * Merges two documents using field-level Last-Write-Wins semantics.
  *
  * The merge operation:
  * 1. Merges tombstones (union, keeping newer deletion eventstamp)
@@ -70,7 +69,7 @@ export type MergeDocumentsResult<T extends AnyObject> = {
  *
  * @param into - The base document to merge into
  * @param from - The source document to merge from
- * @param currentClock - The current database clock value (for preventing regression)
+ * @param currentClock - The current store clock value (for preventing regression)
  * @returns Merged document, categorized changes, and maximum eventstamp
  *
  * @example
@@ -97,13 +96,13 @@ export type MergeDocumentsResult<T extends AnyObject> = {
  * ```
  */
 export function mergeDocuments<T extends AnyObject>(
-	into: StarlingDocument<T>,
-	from: StarlingDocument<T>,
+	into: DocumentState<T>,
+	from: DocumentState<T>,
 	currentClock: string,
 ): MergeDocumentsResult<T> {
 	// Track changes for hook notifications
-	const added = new Map<string, ResourceObject<T>>();
-	const updated = new Map<string, ResourceObject<T>>();
+	const added = new Map<string, Resource<T>>();
+	const updated = new Map<string, Resource<T>>();
 	const deleted = new Set<string>();
 
 	// Step 1: Merge tombstones (union, keeping newer eventstamp)
@@ -116,7 +115,7 @@ export function mergeDocuments<T extends AnyObject>(
 	}
 
 	// Step 2: Start with base resources, removing tombstoned ones
-	const mergedResources: Record<string, ResourceObject<T>> = {};
+	const mergedResources: Record<string, Resource<T>> = {};
 	for (const [id, resource] of Object.entries(into.resources)) {
 		if (!mergedTombstones[id]) {
 			mergedResources[id] = resource;
@@ -200,10 +199,10 @@ export function mergeDocuments<T extends AnyObject>(
 }
 
 /**
- * Creates an empty Starling document with the given type.
+ * Creates an empty document with the given type.
  * Useful for initializing new stores or testing.
  *
- * @param type - Resource type identifier for this collection
+ * @param type - Resource type identifier for this document
  * @returns Empty document
  *
  * @example
@@ -213,7 +212,7 @@ export function mergeDocuments<T extends AnyObject>(
  */
 export function makeDocument<T extends AnyObject>(
 	type: string,
-): StarlingDocument<T> {
+): DocumentState<T> {
 	return {
 		type,
 		resources: {},

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { DuplicateIdError, IdNotFoundError } from "./collection";
-import { createTestStore, makeTask, subscribeToCollection } from "./test-helpers";
+import { DuplicateIdError, IdNotFoundError } from "./document";
+import { createTestStore, makeTask, subscribeToDocument } from "./test-helpers";
 
 describe("Collection", () => {
 	describe("add", () => {
@@ -197,7 +197,7 @@ describe("Collection", () => {
 		test("emits add event", () => {
 			const store = createTestStore();
 			const events: any[] = [];
-			subscribeToCollection(store, "tasks", (e) => events.push(e));
+			subscribeToDocument(store, "tasks", (e) => events.push(e));
 
 			store.tasks.add({ id: "1", title: "Buy milk", completed: false });
 
@@ -216,7 +216,7 @@ describe("Collection", () => {
 			store.tasks.add({ id: "1", title: "Buy milk", completed: false });
 
 			const events: any[] = [];
-			subscribeToCollection(store, "tasks", (e) => events.push(e));
+			subscribeToDocument(store, "tasks", (e) => events.push(e));
 
 			store.tasks.update("1", { completed: true });
 
@@ -236,7 +236,7 @@ describe("Collection", () => {
 			store.tasks.add({ id: "1", title: "Buy milk", completed: false });
 
 			const events: any[] = [];
-			subscribeToCollection(store, "tasks", (e) => events.push(e));
+			subscribeToDocument(store, "tasks", (e) => events.push(e));
 
 			store.tasks.remove("1");
 
@@ -254,7 +254,7 @@ describe("Collection", () => {
 			const store = createTestStore();
 			const events: any[] = [];
 			const unsubscribe = store.on("mutation", (e) => {
-				if (e.collection === "tasks") {
+				if (e.document === "tasks") {
 					events.push({
 						added: e.added,
 						updated: e.updated,
@@ -275,7 +275,7 @@ describe("Collection", () => {
 		test("batches events in transactions", () => {
 			const store = createTestStore();
 			const events: any[] = [];
-			subscribeToCollection(store, "tasks", (e) => events.push(e));
+			subscribeToDocument(store, "tasks", (e) => events.push(e));
 
 			store.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
@@ -293,7 +293,7 @@ describe("Collection", () => {
 			store.tasks.add({ id: "2", title: "Task 2", completed: false });
 
 			const events: any[] = [];
-			subscribeToCollection(store, "tasks", (e) => events.push(e));
+			subscribeToDocument(store, "tasks", (e) => events.push(e));
 
 			store.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "3", title: "Task 3", completed: false });
@@ -310,7 +310,7 @@ describe("Collection", () => {
 		test("emits no events on transaction rollback", () => {
 			const store = createTestStore();
 			const events: any[] = [];
-			subscribeToCollection(store, "tasks", (e) => events.push(e));
+			subscribeToDocument(store, "tasks", (e) => events.push(e));
 
 			store.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
@@ -323,7 +323,7 @@ describe("Collection", () => {
 		test("emits no events on transaction exception", () => {
 			const store = createTestStore();
 			const events: any[] = [];
-			subscribeToCollection(store, "tasks", (e) => events.push(e));
+			subscribeToDocument(store, "tasks", (e) => events.push(e));
 
 			try {
 				store.transact(["notes", "tasks"], (tx) => {

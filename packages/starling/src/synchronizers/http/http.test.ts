@@ -15,7 +15,7 @@ import {
 	taskSchema,
 	userSchema,
 } from "../../store/test-helpers";
-import type { StoreSnapshot } from "../../store/types";
+import type { StoreState } from "../../store/types";
 import { createHttpSynchronizer, type RequestContext } from "./index";
 
 // Mock fetch
@@ -39,13 +39,13 @@ afterEach(() => {
 });
 
 // Helper to create an empty store snapshot
-function makeEmptySnapshot(storeName = "test-app"): StoreSnapshot<any> {
+function makeEmptySnapshot(storeName = "test-app"): StoreState<any> {
 	const tasksDoc = makeDocument("tasks");
 	return {
 		version: "1.0",
 		name: storeName,
 		latest: "2099-01-01T00:00:00.000Z|0001|a1b2",
-		collections: {
+		documents: {
 			tasks: tasksDoc,
 		},
 	};
@@ -56,7 +56,7 @@ function makeTaskSnapshot(
 	tasks: Array<{ id: string; title: string; completed: boolean }>,
 	eventstamp = "2099-01-01T00:00:00.000Z|0001|a1b2",
 	dbName = "test-app",
-): StoreSnapshot<any> {
+): StoreState<any> {
 	const tasksDoc = makeDocument<{
 		id: string;
 		title: string;
@@ -69,7 +69,7 @@ function makeTaskSnapshot(
 		version: "1.0",
 		name: dbName,
 		latest: eventstamp,
-		collections: {
+		documents: {
 			tasks: tasksDoc,
 		},
 	};
@@ -492,7 +492,7 @@ describe("createHttpSynchronizer", () => {
 				operation: "PATCH",
 				url: "https://api.example.com/database/test-app",
 			});
-			expect(patchCall?.[0]?.snapshot).toBeDefined();
+			expect(patchCall?.[0]?.state).toBeDefined();
 
 			cleanup();
 		});
@@ -566,7 +566,7 @@ describe("createHttpSynchronizer", () => {
 				baseUrl: "https://api.example.com",
 				pollingInterval: 60000,
 				onResponse: () => ({
-					snapshot: transformedSnapshot,
+					state: transformedSnapshot,
 				}),
 			});
 

@@ -55,14 +55,14 @@ function setValueAtPath(
 }
 
 /**
- * Resource object structure representing a single stored entity.
+ * Resource structure representing a single stored entity.
  * Resources are the primary unit of storage and synchronization in Starling.
  *
  * Each resource has a unique identifier, attributes containing the data,
  * and a flat map of eventstamps for tracking field-level changes.
  * The resource type is stored at the document level.
  */
-export type ResourceObject<T extends { [key: string]: unknown }> = {
+export type Resource<T extends { [key: string]: unknown }> = {
 	/** Unique identifier for this resource */
 	id: string;
 	/** The resource's data as a nested object structure */
@@ -75,7 +75,7 @@ export function makeResource<T extends AnyObject>(
 	id: string,
 	obj: T,
 	eventstamp: string,
-): ResourceObject<T> {
+): Resource<T> {
 	const eventstamps: Record<string, string> = {};
 
 	// Traverse the object and build flat paths
@@ -106,9 +106,9 @@ export function makeResource<T extends AnyObject>(
 }
 
 export function mergeResources<T extends AnyObject>(
-	into: ResourceObject<T>,
-	from: ResourceObject<T>,
-): ResourceObject<T> {
+	into: Resource<T>,
+	from: Resource<T>,
+): Resource<T> {
 	const resultAttributes: Record<string, unknown> = {};
 	const resultEventstamps: Record<string, string> = {};
 

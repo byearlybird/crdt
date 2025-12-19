@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createMultiCollectionStore, createTestStore } from "./test-helpers";
+import { createMultiDocumentStore, createTestStore } from "./test-helpers";
 
 describe("Transactions", () => {
 	describe("commit", () => {
@@ -28,7 +28,7 @@ describe("Transactions", () => {
 		});
 
 		test("commits changes across multiple collections", () => {
-			const store = createMultiCollectionStore();
+			const store = createMultiDocumentStore();
 
 			store.transact(["tasks", "users"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
@@ -76,7 +76,7 @@ describe("Transactions", () => {
 		});
 
 		test("rolls back all collections", () => {
-			const store = createMultiCollectionStore();
+			const store = createMultiDocumentStore();
 
 			store.transact(["tasks", "users"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });

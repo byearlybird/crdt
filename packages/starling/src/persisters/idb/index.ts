@@ -1,5 +1,5 @@
 import type { Store } from "../../store/store";
-import type { StoreSnapshot } from "../../store/types";
+import type { StoreState } from "../../store/types";
 
 export type IdbPersisterConfig = {
 	/**
@@ -77,13 +77,13 @@ export async function createIdbPersister(
 
 	// Merge loaded snapshot into store
 	if (savedSnapshot) {
-		store.mergeSnapshot(savedSnapshot);
+		store.mergeState(savedSnapshot);
 	}
 
 	// Subscribe to mutations and persist on change
 	unsubscribe = store.on("mutation", async () => {
 		if (dbInstance) {
-			const snapshot = store.toSnapshot();
+			const snapshot = store.toJSON();
 			await saveSnapshot(dbInstance, snapshot);
 
 			// Broadcast changes to other tabs via BroadcastChannel
@@ -112,7 +112,7 @@ export async function createIdbPersister(
 				// Another tab made changes - reload and merge
 				const savedSnapshot = await loadSnapshot(dbInstance);
 				if (savedSnapshot) {
-					store.mergeSnapshot(savedSnapshot);
+					store.mergeState(savedSnapshot);
 				}
 			}
 		};
@@ -171,8 +171,8 @@ function openDatabase(dbName: string, version: number): Promise<IDBDatabase> {
  */
 async function loadSnapshot(
 	db: IDBDatabase,
-): Promise<StoreSnapshot<any> | null> {
-	return getFromStore<StoreSnapshot<any>>(db, "snapshot", "current");
+): Promise<StoreState<any> | null> {
+	return getFromStore<StoreState<any>>(db, "snapshot", "current");
 }
 
 /**
@@ -180,7 +180,7 @@ async function loadSnapshot(
  */
 async function saveSnapshot(
 	db: IDBDatabase,
-	snapshot: StoreSnapshot<any>,
+	snapshot: StoreState<any>,
 ): Promise<void> {
 	await putToStore(db, "snapshot", "current", snapshot);
 }

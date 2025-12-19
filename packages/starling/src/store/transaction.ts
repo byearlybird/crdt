@@ -1,75 +1,80 @@
+import type { Resource } from "../core";
 import {
-	type Collection,
-	CollectionInternals,
-	type CollectionWithInternals,
-	createCollection,
-} from "./collection";
-import type { CollectionConfigMap } from "./db";
+	type Document,
+	DocumentInternals,
+	type DocumentWithInternals,
+	type MutationBatch,
+	createDocument,
+} from "./document";
+import type { DocumentConfigMap } from "./store";
 import type { AnyObjectSchema, SchemasMap } from "./types";
 
-/** Transaction-safe collection handle that excludes serialization */
-export type TransactionCollectionHandle<T extends AnyObjectSchema> = Omit<
-	Collection<T>,
-	"toDocument"
+/** Transaction-safe document handle that excludes serialization */
+export type TransactionDocumentHandle<T extends AnyObjectSchema> = Omit<
+	Document<T>,
+	"toJSON"
 >;
 
-type TransactionCollectionHandles<Schemas extends SchemasMap> = {
-	[K in keyof Schemas]: TransactionCollectionHandle<Schemas[K]>;
+type TransactionDocumentHandles<Schemas extends SchemasMap> = {
+	[K in keyof Schemas]: TransactionDocumentHandle<Schemas[K]>;
 };
 
 /**
- * Transaction context providing access to specified collections.
- * Only collections declared in the collection array are accessible.
+ * Transaction context providing access to specified documents.
+ * Only documents declared in the documents array are accessible.
  */
 export type TransactionContext<
 	Schemas extends SchemasMap,
 	Keys extends ReadonlyArray<keyof Schemas>,
-> = Pick<TransactionCollectionHandles<Schemas>, Keys[number]> & {
+> = Pick<TransactionDocumentHandles<Schemas>, Keys[number]> & {
 	rollback(): void;
 };
 
 /**
  * Execute a transaction with snapshot isolation and explicit dependencies.
  *
- * @param configs - Collection configurations for creating new instances
- * @param collections - Active collection instances (mutable reference)
+ * @param configs - Document configurations for creating new instances
+ * @param documents - Active document instances (mutable reference)
  * @param getEventstamp - Function to generate eventstamps
- * @param collectionNames - Array of collection names to include in transaction
+ * @param documentNames - Array of document names to include in transaction
  * @param callback - Transaction callback with tx context
  * @returns The return value from the callback
  *
  * @remarks
- * - Only specified collections are cloned (lazy cloning for performance)
+ * - Only specified documents are cloned (lazy cloning for performance)
  * - Provides snapshot isolation: tx sees consistent data from transaction start
  * - Explicit rollback via tx.rollback() or implicit on exception
- * - TypeScript enforces that only declared collections are accessible
+ * - TypeScript enforces that only declared documents are accessible
  */
 export function executeTransaction<
 	Schemas extends SchemasMap,
 	Keys extends ReadonlyArray<keyof Schemas>,
 	R,
 >(
-	configs: CollectionConfigMap<Schemas>,
-	collections: { [K in keyof Schemas]: CollectionWithInternals<Schemas[K]> },
+	configs: DocumentConfigMap<Schemas>,
+	documents: { [K in keyof Schemas]: DocumentWithInternals<Schemas[K]> },
 	getEventstamp: () => string,
-	collectionNames: Keys,
+	documentNames: Keys,
 	callback: (tx: TransactionContext<Schemas, Keys>) => R,
 ): R {
-	// Clone ONLY specified collections (efficient)
-	const clonedCollections = {} as {
-		[K in keyof Schemas]: CollectionWithInternals<Schemas[K]>;
+	// Clone ONLY specified documents (efficient)
+	const clonedDocuments = {} as {
+		[K in keyof Schemas]: DocumentWithInternals<Schemas[K]>;
 	};
 
-	for (const name of collectionNames) {
-		const original = collections[name];
+	for (const name of documentNames) {
+		const original = documents[name];
 		const config = configs[name];
 
-		clonedCollections[name] = createCollection(
+		const getData = original[DocumentInternals.data] as (() => Map<string, Resource<any>>) | undefined;
+		if (!getData) continue;
+
+		clonedDocuments[name] = createDocument(
 			name as string,
 			config.schema,
 			config.getId,
 			getEventstamp,
-			original[CollectionInternals.data](),
+			getData(),
 			{ autoFlush: false },
 		);
 	}
@@ -78,7 +83,7 @@ export function executeTransaction<
 	let shouldRollback = false;
 
 	const tx = {
-		...clonedCollections,
+		...clonedDocuments,
 		rollback() {
 			shouldRollback = true;
 		},
@@ -89,21 +94,28 @@ export function executeTransaction<
 
 	// Commit only if not rolled back
 	if (!shouldRollback) {
-		// Commit only the collections that were cloned
-		for (const name of collectionNames) {
-			const original = collections[
+		// Commit only the documents that were cloned
+		for (const name of documentNames) {
+			const original = documents[
 				name
-			] as CollectionWithInternals<AnyObjectSchema>;
-			const cloned = clonedCollections[
+			] as DocumentWithInternals<AnyObjectSchema>;
+			const cloned = clonedDocuments[
 				name
-			] as CollectionWithInternals<AnyObjectSchema>;
+			] as DocumentWithInternals<AnyObjectSchema>;
 
-			const pendingMutations =
-				cloned[CollectionInternals.getPendingMutations]?.();
-			original[CollectionInternals.replaceData]?.(
-				cloned[CollectionInternals.data]?.(),
-			);
-			original[CollectionInternals.emitMutations]?.(pendingMutations);
+			const getPendingMutations = cloned[DocumentInternals.getPendingMutations] as (() => MutationBatch<any>) | undefined;
+			const replaceData = original[DocumentInternals.replaceData] as ((data: Map<string, Resource<any>>) => void) | undefined;
+			const emitMutations = original[DocumentInternals.emitMutations] as ((mutations: MutationBatch<any>) => void) | undefined;
+			const getData = cloned[DocumentInternals.data] as (() => Map<string, Resource<any>>) | undefined;
+
+			if (!getPendingMutations || !replaceData || !emitMutations || !getData) {
+				continue;
+			}
+
+			const pendingMutations = getPendingMutations();
+			const data = getData();
+			replaceData(data);
+			emitMutations(pendingMutations);
 		}
 	}
 
