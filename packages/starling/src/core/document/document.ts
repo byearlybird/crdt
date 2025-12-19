@@ -13,18 +13,15 @@ export type AnyObject = Record<string, unknown>;
 /**
  * A Starling document represents the complete state of a collection:
  * - Resource type identifier
- * - Latest eventstamp for clock synchronization
  * - Map of resources keyed by ID
  * - Tombstones tracking deleted resource IDs
  *
  * Documents are the unit of synchronization between replicas.
+ * Clock state is maintained at the database level, not per-document.
  */
 export type StarlingDocument<T extends AnyObject> = {
 	/** Resource type for this homogeneous collection */
 	type: string;
-
-	/** Latest eventstamp observed by this document for clock synchronization */
-	latest: string;
 
 	/** Map of resources keyed by ID for efficient lookups */
 	resources: Record<string, ResourceObject<T>>;
@@ -52,11 +49,14 @@ export type DocumentChanges<T extends AnyObject> = {
  * Result of merging two Starling documents.
  */
 export type MergeDocumentsResult<T extends AnyObject> = {
-	/** The merged document with updated resources and forwarded clock */
+	/** The merged document with updated resources */
 	document: StarlingDocument<T>;
 
 	/** Change tracking for plugin hook notifications */
 	changes: DocumentChanges<T>;
+
+	/** The maximum eventstamp from the merge (for clock forwarding) */
+	latest: string;
 };
 
 /**
@@ -66,27 +66,26 @@ export type MergeDocumentsResult<T extends AnyObject> = {
  * 1. Merges tombstones (union, keeping newer deletion eventstamp)
  * 2. Removes resources that have tombstones
  * 3. Merges non-tombstoned resources using field-level LWW
- * 4. Forwards the clock to the newest eventstamp
+ * 4. Computes the maximum eventstamp from all resources and tombstones
  *
  * Deletion is final: once a resource is tombstoned, it will not be restored.
  * Tombstoned resources are removed from the resources map entirely.
  *
  * @param into - The base document to merge into
  * @param from - The source document to merge from
- * @returns Merged document and categorized changes
+ * @param currentClock - The current database clock value (for preventing regression)
+ * @returns Merged document, categorized changes, and maximum eventstamp
  *
  * @example
  * ```typescript
  * const into = {
  *   type: "items",
- *   latest: "2025-01-01T00:00:00.000Z|0001|a1b2",
  *   resources: { "doc1": { id: "doc1", attributes: {...}, meta: {...} } },
  *   tombstones: {}
  * };
  *
  * const from = {
  *   type: "items",
- *   latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
  *   resources: {
  *     "doc1": { id: "doc1", attributes: {...}, meta: {...} }, // updated
  *     "doc2": { id: "doc2", attributes: {...}, meta: {...} }  // new
@@ -94,8 +93,8 @@ export type MergeDocumentsResult<T extends AnyObject> = {
  *   tombstones: {}
  * };
  *
- * const result = mergeDocuments(into, from);
- * // result.document.latest === "2025-01-01T00:05:00.000Z|0001|c3d4"
+ * const result = mergeDocuments(into, from, "2025-01-01T00:00:00.000Z|0001|a1b2");
+ * // result.latest === max eventstamp from merge
  * // result.changes.added has "doc2"
  * // result.changes.updated has "doc1"
  * ```
@@ -103,6 +102,7 @@ export type MergeDocumentsResult<T extends AnyObject> = {
 export function mergeDocuments<T extends AnyObject>(
 	into: StarlingDocument<T>,
 	from: StarlingDocument<T>,
+	currentClock: string,
 ): MergeDocumentsResult<T> {
 	// Track changes for hook notifications
 	const added = new Map<string, ResourceObject<T>>();
@@ -132,7 +132,7 @@ export function mergeDocuments<T extends AnyObject>(
 		}
 	}
 
-	let newestEventstamp = into.latest >= from.latest ? into.latest : from.latest;
+	let newestEventstamp = currentClock;
 
 	// Step 3: Process each source resource (skip tombstoned ones)
 	for (const [id, fromDoc] of Object.entries(from.resources)) {
@@ -190,7 +190,6 @@ export function mergeDocuments<T extends AnyObject>(
 	return {
 		document: {
 			type: into.type,
-			latest: newestEventstamp,
 			resources: mergedResources,
 			tombstones: mergedTombstones,
 		},
@@ -199,29 +198,27 @@ export function mergeDocuments<T extends AnyObject>(
 			updated,
 			deleted,
 		},
+		latest: newestEventstamp,
 	};
 }
 
 /**
- * Creates an empty Starling document with the given type and eventstamp.
+ * Creates an empty Starling document with the given type.
  * Useful for initializing new stores or testing.
  *
  * @param type - Resource type identifier for this collection
- * @param eventstamp - Initial clock value for this document
  * @returns Empty document
  *
  * @example
  * ```typescript
- * const empty = makeDocument("tasks", "2025-01-01T00:00:00.000Z|0000|0000");
+ * const empty = makeDocument("tasks");
  * ```
  */
 export function makeDocument<T extends AnyObject>(
 	type: string,
-	eventstamp: string,
 ): StarlingDocument<T> {
 	return {
 		type,
-		latest: eventstamp,
 		resources: {},
 		tombstones: {},
 	};

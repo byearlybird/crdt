@@ -163,13 +163,8 @@ export function createStore<Schemas extends SchemasMap>(
 					collections[collectionName].toDocument();
 			}
 
-			// Find the maximum eventstamp across all collections
-			let latest = MIN_EVENTSTAMP;
-			for (const doc of Object.values(collectionDocs)) {
-				if (doc.latest > latest) {
-					latest = doc.latest as string;
-				}
-			}
+			// Use current clock value as snapshot latest
+			const latest = clock.latest();
 
 			return {
 				version: "1.0",
@@ -194,6 +189,9 @@ export function createStore<Schemas extends SchemasMap>(
 					collection.merge(document);
 				}
 			}
+
+			// Forward clock based on snapshot latest
+			clock.forward(snapshot.latest);
 		},
 		on(event, handler) {
 			return storeEmitter.on(event, handler);
