@@ -11,6 +11,7 @@ export type AnyObject = Record<string, unknown>;
  * - Resource type identifier
  * - Latest eventstamp for clock synchronization
  * - Map of resources keyed by ID
+ * - Tombstones tracking deleted resource IDs
  *
  * Documents are the unit of synchronization between replicas.
  */
@@ -23,6 +24,9 @@ export type StarlingDocument<T extends AnyObject> = {
 
 	/** Map of resources keyed by ID for efficient lookups */
 	resources: Record<string, ResourceObject<T>>;
+
+	/** Map of deleted resource IDs to deletion eventstamps */
+	tombstones: Record<string, string>;
 };
 
 /**
@@ -55,13 +59,13 @@ export type MergeDocumentsResult<T extends AnyObject> = {
  * Merges two Starling documents using field-level Last-Write-Wins semantics.
  *
  * The merge operation:
- * 1. Forwards the clock to the newest eventstamp from either document
- * 2. Merges each resource pair using field-level LWW (via mergeResources)
- * 3. Tracks what changed for hook notifications (added/updated/deleted)
+ * 1. Merges tombstones (union, keeping newer deletion eventstamp)
+ * 2. Removes resources that have tombstones
+ * 3. Merges non-tombstoned resources using field-level LWW
+ * 4. Forwards the clock to the newest eventstamp
  *
- * Deletion is final: once a resource is deleted, updates to it are merged into
- * the resource's attributes but don't restore visibility. Only new resources or
- * transitions into the deleted state are tracked.
+ * Deletion is final: once a resource is tombstoned, it will not be restored.
+ * Tombstoned resources are removed from the resources map entirely.
  *
  * @param into - The base document to merge into
  * @param from - The source document to merge from
@@ -72,7 +76,8 @@ export type MergeDocumentsResult<T extends AnyObject> = {
  * const into = {
  *   type: "items",
  *   latest: "2025-01-01T00:00:00.000Z|0001|a1b2",
- *   resources: { "doc1": { id: "doc1", attributes: {...}, meta: {...} } }
+ *   resources: { "doc1": { id: "doc1", attributes: {...}, meta: {...} } },
+ *   tombstones: {}
  * };
  *
  * const from = {
@@ -81,7 +86,8 @@ export type MergeDocumentsResult<T extends AnyObject> = {
  *   resources: {
  *     "doc1": { id: "doc1", attributes: {...}, meta: {...} }, // updated
  *     "doc2": { id: "doc2", attributes: {...}, meta: {...} }  // new
- *   }
+ *   },
+ *   tombstones: {}
  * };
  *
  * const result = mergeDocuments(into, from);
@@ -99,22 +105,49 @@ export function mergeDocuments<T extends AnyObject>(
 	const updated = new Map<string, ResourceObject<T>>();
 	const deleted = new Set<string>();
 
-	// Start with base resources
-	const mergedResources: Record<string, ResourceObject<T>> = {
-		...into.resources,
-	};
+	// Step 1: Merge tombstones (union, keeping newer eventstamp)
+	const mergedTombstones: Record<string, string> = { ...into.tombstones };
+	for (const [id, fromStamp] of Object.entries(from.tombstones)) {
+		const intoStamp = mergedTombstones[id];
+		if (!intoStamp || fromStamp > intoStamp) {
+			mergedTombstones[id] = fromStamp;
+		}
+	}
+
+	// Step 2: Start with base resources, removing tombstoned ones
+	const mergedResources: Record<string, ResourceObject<T>> = {};
+	for (const [id, resource] of Object.entries(into.resources)) {
+		if (!mergedTombstones[id]) {
+			mergedResources[id] = resource;
+		} else {
+			// Resource exists in 'into' but has a tombstone - mark as deleted
+			if (!into.tombstones[id]) {
+				// Newly tombstoned (from remote)
+				deleted.add(id);
+			}
+		}
+	}
+
 	let newestEventstamp = into.latest >= from.latest ? into.latest : from.latest;
 
-	// Process each source resource
+	// Step 3: Process each source resource (skip tombstoned ones)
 	for (const [id, fromDoc] of Object.entries(from.resources)) {
-		const intoDoc = into.resources[id];
+		// Skip if tombstoned (deletion is final)
+		if (mergedTombstones[id]) {
+			const intoDoc = into.resources[id];
+			if (intoDoc && !into.tombstones[id]) {
+				// Newly tombstoned
+				deleted.add(id);
+			}
+			continue;
+		}
+
+		const intoDoc = mergedResources[id];
 
 		if (!intoDoc) {
-			// New resource from source - store it and track if not deleted
+			// New resource - add it
 			mergedResources[id] = fromDoc;
-			if (!fromDoc.meta.deletedAt) {
-				added.set(id, fromDoc);
-			}
+			added.set(id, fromDoc);
 			if (fromDoc.meta.latest > newestEventstamp) {
 				newestEventstamp = fromDoc.meta.latest;
 			}
@@ -131,22 +164,17 @@ export function mergeDocuments<T extends AnyObject>(
 				newestEventstamp = mergedDoc.meta.latest;
 			}
 
-			// Track state transitions for hook notifications
-			const wasDeleted = intoDoc.meta.deletedAt !== null;
-			const isDeleted = mergedDoc.meta.deletedAt !== null;
-
-			// Only track transitions: new deletion or non-deleted update
-			if (!wasDeleted && isDeleted) {
-				// Transitioned to deleted
-				deleted.add(id);
-			} else if (!isDeleted) {
-				// Not deleted, so this is an update (but only if eventstamps differ)
-				// Compare meta.latest to avoid false positives when content is identical
-				if (intoDoc.meta.latest !== mergedDoc.meta.latest) {
-					updated.set(id, mergedDoc);
-				}
+			// Track update if eventstamps differ
+			if (intoDoc.meta.latest !== mergedDoc.meta.latest) {
+				updated.set(id, mergedDoc);
 			}
-			// If wasDeleted && isDeleted, resource stays deleted - no change tracking
+		}
+	}
+
+	// Step 4: Update newestEventstamp from tombstones
+	for (const stamp of Object.values(mergedTombstones)) {
+		if (stamp > newestEventstamp) {
+			newestEventstamp = stamp;
 		}
 	}
 
@@ -155,6 +183,7 @@ export function mergeDocuments<T extends AnyObject>(
 			type: into.type,
 			latest: newestEventstamp,
 			resources: mergedResources,
+			tombstones: mergedTombstones,
 		},
 		changes: {
 			added,
@@ -185,5 +214,6 @@ export function makeDocument<T extends AnyObject>(
 		type,
 		latest: eventstamp,
 		resources: {},
+		tombstones: {},
 	};
 }

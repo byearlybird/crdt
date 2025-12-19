@@ -56,13 +56,12 @@ function setValueAtPath(
 }
 
 /**
- * Compute the latest eventstamp for a resource from its field eventstamps and deletedAt.
+ * Compute the latest eventstamp for a resource from its field eventstamps.
  * Used internally and exported for testing/validation.
  * @internal
  */
 export function computeResourceLatest(
 	eventstamps: Record<string, string>,
-	deletedAt: string | null,
 	fallback?: string,
 ): string {
 	let max = fallback ?? MIN_EVENTSTAMP;
@@ -74,9 +73,6 @@ export function computeResourceLatest(
 		}
 	}
 
-	if (deletedAt && deletedAt > max) {
-		return deletedAt;
-	}
 	return max;
 }
 
@@ -85,7 +81,7 @@ export function computeResourceLatest(
  * Resources are the primary unit of storage and synchronization in Starling.
  *
  * Each resource has a unique identifier, attributes containing the data,
- * and metadata for tracking deletion state and eventstamps.
+ * and metadata for tracking eventstamps.
  * The resource type is stored at the document level.
  */
 export type ResourceObject<T extends { [key: string]: unknown }> = {
@@ -93,14 +89,12 @@ export type ResourceObject<T extends { [key: string]: unknown }> = {
 	id: string;
 	/** The resource's data as a nested object structure */
 	attributes: T;
-	/** Metadata for tracking deletion and eventstamps */
+	/** Metadata for tracking eventstamps */
 	meta: {
 		/** Flat map of dot-separated paths to eventstamps (e.g., "user.address.street": "2025-11-18...") */
 		eventstamps: Record<string, string>;
-		/** The greatest eventstamp in this resource (including deletedAt if applicable) */
+		/** The greatest eventstamp in this resource */
 		latest: string;
-		/** Eventstamp when this resource was soft-deleted, or null if not deleted */
-		deletedAt: string | null;
 	};
 };
 
@@ -108,7 +102,6 @@ export function makeResource<T extends AnyObject>(
 	id: string,
 	obj: T,
 	eventstamp: string,
-	deletedAt: string | null = null,
 ): ResourceObject<T> {
 	const eventstamps: Record<string, string> = {};
 
@@ -132,17 +125,12 @@ export function makeResource<T extends AnyObject>(
 
 	traverse(obj);
 
-	// All fields have the same eventstamp in a new resource,
-	// so latest is either the eventstamp or deletedAt (whichever is greater)
-	const latest = deletedAt && deletedAt > eventstamp ? deletedAt : eventstamp;
-
 	return {
 		id,
 		attributes: obj,
 		meta: {
 			eventstamps,
-			latest,
-			deletedAt,
+			latest: eventstamp,
 		},
 	};
 }
@@ -204,49 +192,14 @@ export function mergeResources<T extends AnyObject>(
 	// Use the cached latest values from both records
 	const baseLatest =
 		into.meta.latest > from.meta.latest ? into.meta.latest : from.meta.latest;
-	const dataLatest = computeResourceLatest(resultEventstamps, null, baseLatest);
-
-	const mergedDeletedAt =
-		into.meta.deletedAt && from.meta.deletedAt
-			? into.meta.deletedAt > from.meta.deletedAt
-				? into.meta.deletedAt
-				: from.meta.deletedAt
-			: into.meta.deletedAt || from.meta.deletedAt || null;
-
-	// Calculate the greatest eventstamp from data and deletion timestamp
-	const finalLatest =
-		mergedDeletedAt && mergedDeletedAt > dataLatest
-			? mergedDeletedAt
-			: dataLatest;
+	const latest = computeResourceLatest(resultEventstamps, baseLatest);
 
 	return {
 		id: into.id,
 		attributes: resultAttributes as T,
 		meta: {
 			eventstamps: resultEventstamps,
-			latest: finalLatest,
-			deletedAt: mergedDeletedAt,
-		},
-	};
-}
-
-export function deleteResource<T extends AnyObject>(
-	resource: ResourceObject<T>,
-	eventstamp: string,
-): ResourceObject<T> {
-	// If resource isn't already deleted, meta.latest already contains the data's max eventstamp
-	const dataLatest = resource.meta.deletedAt
-		? computeResourceLatest(resource.meta.eventstamps, null)
-		: resource.meta.latest;
-	const latest = eventstamp > dataLatest ? eventstamp : dataLatest;
-
-	return {
-		id: resource.id,
-		attributes: resource.attributes,
-		meta: {
-			eventstamps: resource.meta.eventstamps,
 			latest,
-			deletedAt: eventstamp,
 		},
 	};
 }
