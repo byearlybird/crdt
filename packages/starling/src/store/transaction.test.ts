@@ -6,7 +6,7 @@ describe("Transactions", () => {
 		test("commits changes on successful completion", () => {
 			const db = createTestStore();
 
-			db.begin(["tasks"], (tx) => {
+			db.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.tasks.add({ id: "2", title: "Task 2", completed: false });
 			});
@@ -18,7 +18,7 @@ describe("Transactions", () => {
 		test("returns callback result", () => {
 			const db = createTestStore();
 
-			const result = db.begin(["tasks"], (tx) => {
+			const result = db.transact(["tasks"], (tx) => {
 				const task = tx.tasks.add({ id: "1", title: "Test", completed: false });
 				return task;
 			});
@@ -30,7 +30,7 @@ describe("Transactions", () => {
 		test("commits changes across multiple collections", () => {
 			const db = createMultiCollectionStore();
 
-			db.begin(["tasks", "users"], (tx) => {
+			db.transact(["tasks", "users"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.users.add({ id: "1", name: "Alice", email: "alice@example.com" });
 			});
@@ -44,7 +44,7 @@ describe("Transactions", () => {
 		test("discards changes on explicit rollback", () => {
 			const db = createTestStore();
 
-			db.begin(["tasks"], (tx) => {
+			db.transact(["tasks"], (tx) => {
 				tx.tasks.add({
 					id: "1",
 					title: "Should not persist",
@@ -60,7 +60,7 @@ describe("Transactions", () => {
 			const db = createTestStore();
 
 			try {
-				db.begin(["tasks"], (tx) => {
+				db.transact(["tasks"], (tx) => {
 					tx.tasks.add({
 						id: "1",
 						title: "Should not persist",
@@ -78,7 +78,7 @@ describe("Transactions", () => {
 		test("rolls back all collections", () => {
 			const db = createMultiCollectionStore();
 
-			db.begin(["tasks", "users"], (tx) => {
+			db.transact(["tasks", "users"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.users.add({ id: "1", name: "Alice", email: "alice@example.com" });
 				tx.rollback();
@@ -92,7 +92,7 @@ describe("Transactions", () => {
 			const db = createTestStore();
 			db.tasks.add({ id: "1", title: "Task to keep", completed: false });
 
-			db.begin(["tasks"], (tx) => {
+			db.transact(["tasks"], (tx) => {
 				tx.tasks.remove("1");
 				tx.rollback();
 			});
@@ -106,7 +106,7 @@ describe("Transactions", () => {
 			const db = createTestStore();
 			db.tasks.add({ id: "1", title: "Original", completed: false });
 
-			db.begin(["tasks"], (tx) => {
+			db.transact(["tasks"], (tx) => {
 				const task = tx.tasks.get("1");
 				expect(task?.title).toBe("Original");
 
@@ -122,7 +122,7 @@ describe("Transactions", () => {
 		test("supports chained operations on same resource", () => {
 			const db = createTestStore();
 
-			db.begin(["tasks"], (tx) => {
+			db.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "New Task", completed: false });
 				tx.tasks.update("1", { completed: true });
 				tx.tasks.update("1", { title: "Modified Task" });
@@ -142,7 +142,7 @@ describe("Transactions", () => {
 			db.tasks.add({ id: "1", title: "Task 1", completed: false });
 			db.tasks.add({ id: "2", title: "Task 2", completed: true });
 
-			db.begin(["tasks"], (tx) => {
+			db.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "3", title: "Task 3", completed: false });
 
 				const incomplete = tx.tasks.find((task) => !task.completed);

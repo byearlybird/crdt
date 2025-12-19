@@ -54,7 +54,7 @@ store.tasks.update("1", { completed: true });
 const task = store.tasks.get("1");
 
 // Transactions with explicit dependencies and snapshot isolation
-store.begin(["tasks"], (tx) => {
+store.transact(["tasks"], (tx) => {
   tx.tasks.add({ id: "2", title: "Build an app", completed: false });
   tx.tasks.update("1", { completed: false });
 });
@@ -73,7 +73,7 @@ store.mergeSnapshot(remoteSnapshot);
 **Explicit Dependencies** - Transactions and queries require declaring which collections you'll access:
 ```ts
 // Transaction - only clones specified collections for efficiency
-store.begin(["tasks", "users"], (tx) => {
+store.transact(["tasks", "users"], (tx) => {
   const task = tx.tasks.add({ ... });
   tx.users.update(task.assignedTo, { lastActivity: Date.now() });
 });

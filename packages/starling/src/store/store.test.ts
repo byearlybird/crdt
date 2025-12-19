@@ -7,9 +7,9 @@ import {
 	subscribeToCollection,
 } from "./test-helpers";
 
-describe("Database", () => {
+describe("Store", () => {
 	describe("initialization", () => {
-		test("creates database with typed collections", () => {
+		test("creates store with typed collections", () => {
 			const db = createTestStore();
 
 			expect(db.tasks).toBeDefined();
@@ -17,7 +17,7 @@ describe("Database", () => {
 			expect(typeof db.tasks.get).toBe("function");
 			expect(typeof db.tasks.update).toBe("function");
 			expect(typeof db.tasks.remove).toBe("function");
-			expect(typeof db.begin).toBe("function");
+			expect(typeof db.transact).toBe("function");
 		});
 
 		test("creates multiple collections", () => {
@@ -25,7 +25,7 @@ describe("Database", () => {
 
 			expect(db.tasks).toBeDefined();
 			expect(db.users).toBeDefined();
-			expect(typeof db.begin).toBe("function");
+			expect(typeof db.transact).toBe("function");
 		});
 
 		test("supports custom getId functions", () => {
@@ -51,7 +51,7 @@ describe("Database", () => {
 		test("provides transaction method", () => {
 			const db = createTestStore();
 
-			const result = db.begin(["tasks"], (tx) => {
+			const result = db.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Test", completed: false });
 				return "success";
 			});
@@ -89,7 +89,7 @@ describe("Database", () => {
 			const dbEvents: any[] = [];
 			db.on("mutation", (e) => dbEvents.push(e));
 
-			db.begin(["tasks", "users"], (tx) => {
+			db.transact(["tasks", "users"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.users.add({ id: "u1", name: "Alice", email: "alice@example.com" });
 			});
@@ -108,7 +108,7 @@ describe("Database", () => {
 			const events: any[] = [];
 			subscribeToCollection(db, "tasks", (e) => events.push(e));
 
-			db.begin(["tasks"], (tx) => {
+			db.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Tx Task", completed: false });
 			});
 
