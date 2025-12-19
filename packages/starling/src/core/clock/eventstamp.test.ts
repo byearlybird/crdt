@@ -8,36 +8,45 @@ import {
 	maxEventstamp,
 } from "./eventstamp";
 
+const MAX_24BIT_VALUE = 0xffffff;
+const TEST_TIMESTAMP_MS = 1234567890123;
+const TEST_COUNTER = 42;
+const LARGER_TEST_COUNTER = 12345;
+
+const VALID_EVENTSTAMP_A = "00019c8f3a1e000001abcdef";
+const VALID_EVENTSTAMP_B = "00019c8f3a28000001abcdef";
+const VALID_EVENTSTAMP_C = "00019c8f3a23000001abcdef";
+
 test("decode() extracts timestamp and counter correctly", () => {
 	const nonce = generateNonce();
 	const eventstamp = encodeEventstamp({
-		ms: 1234567890123,
-		counter: 42,
+		ms: TEST_TIMESTAMP_MS,
+		counter: TEST_COUNTER,
 		nonce,
 	});
 	const { ms, counter } = decodeEventstamp(eventstamp);
 
-	expect(ms).toBe(1234567890123);
-	expect(counter).toBe(42);
+	expect(ms).toBe(TEST_TIMESTAMP_MS);
+	expect(counter).toBe(TEST_COUNTER);
 });
 
 test("encode() decode() handles large counters", () => {
 	const nonce = generateNonce();
 	const eventstamp = encodeEventstamp({
 		ms: Date.now(),
-		counter: 0xffffff, // Max 24-bit value
+		counter: MAX_24BIT_VALUE,
 		nonce,
 	});
 	const { ms, counter } = decodeEventstamp(eventstamp);
 
-	expect(counter).toBe(0xffffff);
+	expect(counter).toBe(MAX_24BIT_VALUE);
 	expect(typeof ms).toBe("number");
 	expect(ms).toBeGreaterThan(0);
 });
 
 test("encode() and decode() round-trip correctly", () => {
 	const originalMs = Date.now();
-	const originalCounter = 12345;
+	const originalCounter = LARGER_TEST_COUNTER;
 	const originalNonce = generateNonce();
 
 	const eventstamp = encodeEventstamp({
@@ -52,18 +61,19 @@ test("encode() and decode() round-trip correctly", () => {
 	expect(nonce).toBe(originalNonce);
 });
 
-// ============================================================================
-// isValidEventstamp() tests
-// ============================================================================
-
 test("isValidEventstamp() returns true for standard format", () => {
 	const nonce = generateNonce();
-	const eventstamp = encodeEventstamp({ ms: Date.now(), counter: 42, nonce });
+	const eventstamp = encodeEventstamp({
+		ms: Date.now(),
+		counter: TEST_COUNTER,
+		nonce,
+	});
 	expect(isValidEventstamp(eventstamp)).toBe(true);
 });
 
-test("isValidEventstamp() returns true for large counter (max 24-bit)", () => {
-	expect(isValidEventstamp("000000000000ffffff123456")).toBe(true);
+test("isValidEventstamp() returns true for large counter", () => {
+	const maxCounterEventstamp = "000000000000ffffff123456";
+	expect(isValidEventstamp(maxCounterEventstamp)).toBe(true);
 });
 
 test("isValidEventstamp() returns true for MIN_EVENTSTAMP", () => {
@@ -71,7 +81,7 @@ test("isValidEventstamp() returns true for MIN_EVENTSTAMP", () => {
 });
 
 test("isValidEventstamp() returns true for various valid timestamps", () => {
-	expect(isValidEventstamp("00019c8f3a1e000001abcdef")).toBe(true);
+	expect(isValidEventstamp(VALID_EVENTSTAMP_A)).toBe(true);
 	expect(isValidEventstamp("000000000000000000000000")).toBe(true);
 	expect(isValidEventstamp("0001a2b3c4d5000ff1234567")).toBe(true);
 });
@@ -96,58 +106,52 @@ test.each([
 	expect(isValidEventstamp(eventstamp)).toBe(false);
 });
 
-// ============================================================================
-// maxEventstamp() tests
-// ============================================================================
-
 test("maxEventstamp() returns MIN_EVENTSTAMP for empty array", () => {
 	expect(maxEventstamp([])).toBe(MIN_EVENTSTAMP);
 });
 
 test("maxEventstamp() returns the only eventstamp for single-element array", () => {
-	const stamp = "00019c8f3a1e000001abcdef";
-	expect(maxEventstamp([stamp])).toBe(stamp);
+	expect(maxEventstamp([VALID_EVENTSTAMP_A])).toBe(VALID_EVENTSTAMP_A);
 });
 
 test("maxEventstamp() returns the maximum eventstamp", () => {
-	const stamps = [
-		"00019c8f3a1e000001abcdef", // Earlier time
-		"00019c8f3a28000001abcdef", // Latest time
-		"00019c8f3a23000001abcdef", // Middle time
-	];
-	expect(maxEventstamp(stamps)).toBe("00019c8f3a28000001abcdef");
+	const eventstamps = [VALID_EVENTSTAMP_A, VALID_EVENTSTAMP_B, VALID_EVENTSTAMP_C];
+
+	expect(maxEventstamp(eventstamps)).toBe(VALID_EVENTSTAMP_B);
 });
 
 test("maxEventstamp() handles counters correctly", () => {
-	const stamps = [
-		"00019c8f3a1e000001abcdef", // Counter 1
-		"00019c8f3a1e000005abcdef", // Counter 5 (max)
-		"00019c8f3a1e000003abcdef", // Counter 3
+	const sameTimestamp = "00019c8f3a1e";
+	const eventstamps = [
+		`${sameTimestamp}000001abcdef`,
+		`${sameTimestamp}000005abcdef`,
+		`${sameTimestamp}000003abcdef`,
 	];
-	expect(maxEventstamp(stamps)).toBe("00019c8f3a1e000005abcdef");
+
+	expect(maxEventstamp(eventstamps)).toBe(`${sameTimestamp}000005abcdef`);
 });
 
 test("maxEventstamp() handles nonces correctly as tie-breaker", () => {
-	const stamps = [
-		"00019c8f3a1e000001a1b2c3", // Nonce a1b2c3
-		"00019c8f3a1e000001ffffff", // Nonce ffffff (max 24-bit)
-		"00019c8f3a1e000001b2c3d4", // Nonce b2c3d4
+	const sameTimestampAndCounter = "00019c8f3a1e000001";
+	const eventstamps = [
+		`${sameTimestampAndCounter}a1b2c3`,
+		`${sameTimestampAndCounter}ffffff`,
+		`${sameTimestampAndCounter}b2c3d4`,
 	];
-	expect(maxEventstamp(stamps)).toBe("00019c8f3a1e000001ffffff");
-});
 
-// ============================================================================
-// decodeEventstamp() error handling tests
-// ============================================================================
+	expect(maxEventstamp(eventstamps)).toBe(`${sameTimestampAndCounter}ffffff`);
+});
 
 test("decodeEventstamp() throws InvalidEventstampError for invalid input", () => {
 	expect(() => decodeEventstamp("invalid")).toThrow();
 });
 
 test("decodeEventstamp() throws for uppercase hex", () => {
-	expect(() => decodeEventstamp("00019C8F3A1E000001ABCDEF")).toThrow();
+	const uppercaseEventstamp = "00019C8F3A1E000001ABCDEF";
+	expect(() => decodeEventstamp(uppercaseEventstamp)).toThrow();
 });
 
 test("decodeEventstamp() throws for wrong length", () => {
-	expect(() => decodeEventstamp("00019c8f3a1e000001")).toThrow();
+	const tooShortEventstamp = "00019c8f3a1e000001";
+	expect(() => decodeEventstamp(tooShortEventstamp)).toThrow();
 });

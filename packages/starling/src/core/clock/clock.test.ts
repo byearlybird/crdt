@@ -6,81 +6,71 @@ import {
 	generateNonce,
 } from "./eventstamp";
 
+const EVENTSTAMP_FORMAT = /^[0-9a-f]{24}$/;
+const MILLISECONDS_IN_FUTURE = 1000;
+const MILLISECONDS_IN_PAST = 100;
+const TEST_NONCE = "abcdef";
+
 test("now() returns 24-character hex eventstamp", () => {
 	const clock = createClock();
 	const eventstamp = clock.now();
 
-	// Format: 24 lowercase hex characters
-	expect(eventstamp).toMatch(/^[0-9a-f]{24}$/);
+	expect(eventstamp).toMatch(EVENTSTAMP_FORMAT);
 });
 
 test("now() returns timestamps in strictly increasing order", () => {
 	const clock = createClock();
 
-	const stamp1 = clock.now();
-	const stamp2 = clock.now();
-	const stamp3 = clock.now();
+	const first = clock.now();
+	const second = clock.now();
+	const third = clock.now();
 
-	expect(stamp1 < stamp2).toBe(true);
-	expect(stamp2 < stamp3).toBe(true);
+	expect(first < second).toBe(true);
+	expect(second < third).toBe(true);
 });
 
 test("counter increments when called multiple times in same millisecond", () => {
 	const clock = createClock();
+	const stampCount = 5;
+	const stamps: string[] = [];
 
-	const stamps = [];
-	for (let i = 0; i < 5; i++) {
+	for (let i = 0; i < stampCount; i++) {
 		stamps.push(clock.now());
 	}
 
-	// All should have same time (first 12 chars) but different counters
-	const time = stamps[0]?.slice(0, 12);
-	expect(time).toBeDefined();
-
-	const counters = stamps.map((s) => {
-		const counterHex = s.slice(12, 18);
-		expect(counterHex).toBeDefined();
-		return counterHex || "";
+	const firstTimestamp = stamps[0]!.slice(0, 12);
+	const counters = stamps.map((stamp) => {
+		const counterHex = stamp.slice(12, 18);
+		return Number.parseInt(counterHex, 16);
 	});
 
-	for (let i = 0; i < stamps.length; i++) {
-		const timePart = stamps[i]?.slice(0, 12);
-		expect(timePart).toBeDefined();
-		expect(timePart).toBe(time);
+	for (const stamp of stamps) {
+		const timestampPart = stamp.slice(0, 12);
+		expect(timestampPart).toBe(firstTimestamp);
 	}
 
-	// Counters should be sequential hex values
 	for (let i = 0; i < counters.length - 1; i++) {
-		// biome-ignore lint/style/noNonNullAssertion: <test>
-		const current = parseInt(counters[i]!, 16);
-		// biome-ignore lint/style/noNonNullAssertion: <test>
-		const next = parseInt(counters[i + 1]!, 16);
+		const current = counters[i]!;
+		const next = counters[i + 1];
 		expect(next).toBe(current + 1);
 	}
 });
 
 test("counter increments when clock is ahead of system time", () => {
 	const clock = createClock();
-
-	// Get initial eventstamp
 	clock.now();
 
-	// Move clock forward to a future eventstamp
 	const futureEventstamp = encodeEventstamp({
-		ms: Date.now() + 1000,
+		ms: Date.now() + MILLISECONDS_IN_FUTURE,
 		counter: 0,
 		nonce: generateNonce(),
 	});
 	clock.forward(futureEventstamp);
 
-	// Real time hasn't advanced that much yet, so counter increments
-	const stamp2 = clock.now();
-	const counterPart = stamp2.slice(12, 18);
-	expect(counterPart).toBeDefined();
-	const counter2 = parseInt(counterPart || "", 16);
+	const nextStamp = clock.now();
+	const decoded = decodeEventstamp(nextStamp);
 
-	// Counter should increment because real time <= forwarded lastMs
-	expect(counter2).toBeGreaterThan(0);
+	expect(decoded.counter).toBeGreaterThan(0);
 });
 
 test("latest() returns last recorded eventstamp", () => {
@@ -90,7 +80,7 @@ test("latest() returns last recorded eventstamp", () => {
 	const latest = clock.latest();
 
 	expect(latest).toBe(stamp);
-	expect(latest).toMatch(/^[0-9a-f]{24}$/);
+	expect(latest).toMatch(EVENTSTAMP_FORMAT);
 });
 
 test("forward() updates the clock when given a newer timestamp", () => {
@@ -98,15 +88,15 @@ test("forward() updates the clock when given a newer timestamp", () => {
 
 	const initialStamp = clock.latest();
 	const { ms } = decodeEventstamp(initialStamp);
-	const newEventstamp = encodeEventstamp({
-		ms: ms + 1000,
+	const newerEventstamp = encodeEventstamp({
+		ms: ms + MILLISECONDS_IN_FUTURE,
 		counter: 0,
 		nonce: generateNonce(),
 	});
 
-	clock.forward(newEventstamp);
+	clock.forward(newerEventstamp);
 
-	expect(clock.latest()).toBe(newEventstamp);
+	expect(clock.latest()).toBe(newerEventstamp);
 });
 
 test("forward() ignores older timestamps", () => {
@@ -117,7 +107,7 @@ test("forward() ignores older timestamps", () => {
 
 	const { ms } = decodeEventstamp(currentStamp);
 	const olderEventstamp = encodeEventstamp({
-		ms: ms - 100,
+		ms: ms - MILLISECONDS_IN_PAST,
 		counter: 0,
 		nonce: generateNonce(),
 	});
@@ -146,7 +136,7 @@ test("fromEventstamp() creates clock from valid eventstamp", () => {
 	const eventstamp = encodeEventstamp({
 		ms: Date.now(),
 		counter: 42,
-		nonce: "abcdef",
+		nonce: TEST_NONCE,
 	});
 	const clock = createClockFromEventstamp(eventstamp);
 
@@ -169,7 +159,7 @@ test.each([
 test("fromEventstamp() preserves timestamp, counter, and nonce", () => {
 	const ms = Date.now();
 	const counter = 123;
-	const nonce = "abcdef";
+	const nonce = TEST_NONCE;
 	const eventstamp = encodeEventstamp({ ms, counter, nonce });
 
 	const clock = createClockFromEventstamp(eventstamp);
@@ -181,36 +171,32 @@ test("fromEventstamp() preserves timestamp, counter, and nonce", () => {
 });
 
 test("fromEventstamp() allows clock to continue from decoded state", () => {
+	const initialCounter = 10;
 	const eventstamp = encodeEventstamp({
 		ms: Date.now(),
-		counter: 10,
+		counter: initialCounter,
 		nonce: generateNonce(),
 	});
 	const clock = createClockFromEventstamp(eventstamp);
 
-	// Advance the clock
-	const newStamp = clock.now();
+	const nextStamp = clock.now();
+	const decoded = decodeEventstamp(nextStamp);
 
-	// Decode and check that counter incremented
-	const decoded = decodeEventstamp(newStamp);
-	expect(decoded.counter).toBeGreaterThan(10);
+	expect(decoded.counter).toBeGreaterThan(initialCounter);
 });
 
 test("now() resets counter when system time advances", () => {
-	// Initialize clock with a timestamp in the past
-	const pastTimestamp = Date.now() - 1000;
+	const pastTimestamp = Date.now() - MILLISECONDS_IN_FUTURE;
+	const initialCounter = 100;
 	const clock = createClock({
-		counter: 100,
+		counter: initialCounter,
 		ms: pastTimestamp,
 		nonce: "000000",
 	});
 
-	// Get a new eventstamp - wall clock should have advanced
 	const stamp = clock.now();
 	const decoded = decodeEventstamp(stamp);
 
-	// Counter should be reset to 0 because wallMs > lastMs
 	expect(decoded.counter).toBe(0);
-	// Timestamp should be current, not the old one
 	expect(decoded.ms).toBeGreaterThan(pastTimestamp);
 });
