@@ -80,15 +80,15 @@ export type MergeDocumentsResult<T extends AnyObject> = {
  * ```typescript
  * const into = {
  *   type: "items",
- *   resources: { "doc1": { id: "doc1", attributes: {...}, meta: {...} } },
+ *   resources: { "doc1": { id: "doc1", attributes: {...}, eventstamps: {...} } },
  *   tombstones: {}
  * };
  *
  * const from = {
  *   type: "items",
  *   resources: {
- *     "doc1": { id: "doc1", attributes: {...}, meta: {...} }, // updated
- *     "doc2": { id: "doc2", attributes: {...}, meta: {...} }  // new
+ *     "doc1": { id: "doc1", attributes: {...}, eventstamps: {...} }, // updated
+ *     "doc2": { id: "doc2", attributes: {...}, eventstamps: {...} }  // new
  *   },
  *   tombstones: {}
  * };
@@ -152,7 +152,7 @@ export function mergeDocuments<T extends AnyObject>(
 			// New resource - add it
 			mergedResources[id] = fromDoc;
 			added.set(id, fromDoc);
-			const resourceLatest = computeResourceLatest(fromDoc.meta.eventstamps);
+			const resourceLatest = computeResourceLatest(fromDoc.eventstamps);
 			if (resourceLatest > newestEventstamp) {
 				newestEventstamp = resourceLatest;
 			}
@@ -165,15 +165,15 @@ export function mergeDocuments<T extends AnyObject>(
 			// Merge existing resource using field-level LWW
 			const mergedDoc = mergeResources(intoDoc, fromDoc);
 			mergedResources[id] = mergedDoc;
-			const resourceLatest = computeResourceLatest(mergedDoc.meta.eventstamps);
+			const resourceLatest = computeResourceLatest(mergedDoc.eventstamps);
 			if (resourceLatest > newestEventstamp) {
 				newestEventstamp = resourceLatest;
 			}
 
 			// Track update if eventstamps changed
 			// Compare eventstamp maps to detect changes
-			const intoStamps = JSON.stringify(intoDoc.meta.eventstamps);
-			const mergedStamps = JSON.stringify(mergedDoc.meta.eventstamps);
+			const intoStamps = JSON.stringify(intoDoc.eventstamps);
+			const mergedStamps = JSON.stringify(mergedDoc.eventstamps);
 			if (intoStamps !== mergedStamps) {
 				updated.set(id, mergedDoc);
 			}
