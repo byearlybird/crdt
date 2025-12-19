@@ -89,7 +89,7 @@ export type MergeDocumentsResult<T extends AnyObject> = {
  *   tombstones: {}
  * };
  *
- * const result = mergeDocuments(into, from, "2025-01-01T00:00:00.000Z|0001|a1b2");
+ * const result = mergeDocuments(into, from, "000192e85b8c000001a1b2c3");
  * // result.latest === max eventstamp from merge
  * // result.changes.added has "doc2"
  * // result.changes.updated has "doc1"

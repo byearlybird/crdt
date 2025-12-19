@@ -6,14 +6,12 @@ import {
 	generateNonce,
 } from "./eventstamp";
 
-test("now() returns ISO string with counter and nonce suffix", () => {
+test("now() returns 24-character hex eventstamp", () => {
 	const clock = createClock();
 	const eventstamp = clock.now();
 
-	// Format: ISO|hexCounter|hexNonce
-	expect(eventstamp).toMatch(
-		/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]{4}\|[0-9a-f]{4}$/,
-	);
+	// Format: 24 lowercase hex characters
+	expect(eventstamp).toMatch(/^[0-9a-f]{24}$/);
 });
 
 test("now() returns timestamps in strictly increasing order", () => {
@@ -35,21 +33,20 @@ test("counter increments when called multiple times in same millisecond", () => 
 		stamps.push(clock.now());
 	}
 
-	// All should have same ISO timestamp but different counters
-	const iso = stamps[0]?.split("|")[0];
-	expect(iso).toBeDefined();
+	// All should have same time (first 12 chars) but different counters
+	const time = stamps[0]?.slice(0, 12);
+	expect(time).toBeDefined();
 
 	const counters = stamps.map((s) => {
-		const parts = s.split("|");
-		expect(parts[1]).toBeDefined();
-		return parts[1] || "";
+		const counterHex = s.slice(12, 18);
+		expect(counterHex).toBeDefined();
+		return counterHex || "";
 	});
 
 	for (let i = 0; i < stamps.length; i++) {
-		const parts = stamps[i]?.split("|");
-		const isoPart = parts?.[0];
-		expect(isoPart).toBeDefined();
-		expect(isoPart).toBe(iso);
+		const timePart = stamps[i]?.slice(0, 12);
+		expect(timePart).toBeDefined();
+		expect(timePart).toBe(time);
 	}
 
 	// Counters should be sequential hex values
@@ -78,7 +75,7 @@ test("counter increments when clock is ahead of system time", () => {
 
 	// Real time hasn't advanced that much yet, so counter increments
 	const stamp2 = clock.now();
-	const counterPart = stamp2.split("|")[1];
+	const counterPart = stamp2.slice(12, 18);
 	expect(counterPart).toBeDefined();
 	const counter2 = parseInt(counterPart || "", 16);
 
@@ -93,9 +90,7 @@ test("latest() returns last recorded eventstamp", () => {
 	const latest = clock.latest();
 
 	expect(latest).toBe(stamp);
-	expect(latest).toMatch(
-		/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]{4}\|[0-9a-f]{4}$/,
-	);
+	expect(latest).toMatch(/^[0-9a-f]{24}$/);
 });
 
 test("forward() updates the clock when given a newer timestamp", () => {
@@ -134,10 +129,10 @@ test("forward() ignores older timestamps", () => {
 
 test.each([
 	["plain string", "invalid"],
-	["date only", "2025-01-01"],
-	["no counter/nonce", "2025-01-01T00:00:00.000Z"],
-	["invalid counter", "2025-01-01T00:00:00.000Z|invalid|abcd"],
-	["invalid nonce", "2025-01-01T00:00:00.000Z|0001|xyz"],
+	["too short", "00019c8f3a1e"],
+	["too long", "00019c8f3a1e000001abcdef00"],
+	["uppercase", "00019C8F3A1E000001ABCDEF"],
+	["non-hex", "00019c8f3a1e000001xyz123"],
 	["empty string", ""],
 ])(
 	"forward() throws error for invalid eventstamp: %s",
@@ -151,7 +146,7 @@ test("fromEventstamp() creates clock from valid eventstamp", () => {
 	const eventstamp = encodeEventstamp({
 		ms: Date.now(),
 		counter: 42,
-		nonce: "abcd",
+		nonce: "abcdef",
 	});
 	const clock = createClockFromEventstamp(eventstamp);
 
@@ -160,10 +155,10 @@ test("fromEventstamp() creates clock from valid eventstamp", () => {
 
 test.each([
 	["plain string", "invalid"],
-	["date only", "2025-01-01"],
-	["no counter/nonce", "2025-01-01T00:00:00.000Z"],
-	["invalid counter", "2025-01-01T00:00:00.000Z|invalid|abcd"],
-	["invalid nonce", "2025-01-01T00:00:00.000Z|0001|xyz"],
+	["too short", "00019c8f3a1e"],
+	["too long", "00019c8f3a1e000001abcdef00"],
+	["uppercase", "00019C8F3A1E000001ABCDEF"],
+	["non-hex", "00019c8f3a1e000001xyz123"],
 ])(
 	"fromEventstamp() throws error for invalid eventstamp: %s",
 	(_description, invalid) => {
@@ -174,7 +169,7 @@ test.each([
 test("fromEventstamp() preserves timestamp, counter, and nonce", () => {
 	const ms = Date.now();
 	const counter = 123;
-	const nonce = "beef";
+	const nonce = "abcdef";
 	const eventstamp = encodeEventstamp({ ms, counter, nonce });
 
 	const clock = createClockFromEventstamp(eventstamp);
@@ -207,7 +202,7 @@ test("now() resets counter when system time advances", () => {
 	const clock = createClock({
 		counter: 100,
 		ms: pastTimestamp,
-		nonce: "0000",
+		nonce: "000000",
 	});
 
 	// Get a new eventstamp - wall clock should have advanced

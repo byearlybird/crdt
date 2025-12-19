@@ -2,28 +2,30 @@ import type { ClockState } from "./clock";
 import { InvalidEventstampError } from "./errors";
 
 /**
- * Generates a random 4-character hex nonce
+ * Generates a random 6-character hex nonce (24-bit)
  */
 export function generateNonce(): string {
-	return Math.random().toString(16).slice(2, 6).padStart(4, "0");
+	const bytes = new Uint8Array(3); // 3 bytes = 24 bits = 6 hex chars
+	crypto.getRandomValues(bytes);
+	return Array.from(bytes)
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
 }
 
 export function encodeEventstamp(clockState: ClockState): string {
-	const isoString = new Date(clockState.ms).toISOString();
-	const counterHex = clockState.counter.toString(16).padStart(4, "0");
-	return `${isoString}|${counterHex}|${clockState.nonce}`;
+	const time48 = clockState.ms.toString(16).padStart(12, "0");
+	const counter24 = clockState.counter.toString(16).padStart(6, "0");
+	const nonce24 = clockState.nonce;
+	return `${time48}${counter24}${nonce24}`.toLowerCase();
 }
 
 /**
  * Validates whether a string is a properly formatted eventstamp.
- * Expected format: YYYY-MM-DDTHH:mm:ss.SSSZ|HHHH+|HHHH
- * where HHHH+ represents 4 or more hex characters for the counter,
- * and HHHH represents exactly 4 hex characters for the nonce.
+ * Expected format: 24 lowercase hex characters (TTTTTTTTTTTTCCCCCCNNNNNN)
+ * where T = time (12 chars), C = counter (6 chars), N = nonce (6 chars).
  */
 export function isValidEventstamp(stamp: string): boolean {
-	return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]{4,}\|[0-9a-f]{4}$/.test(
-		stamp,
-	);
+	return /^[0-9a-f]{24}$/.test(stamp);
 }
 
 export function decodeEventstamp(eventstamp: string): ClockState {
@@ -31,22 +33,21 @@ export function decodeEventstamp(eventstamp: string): ClockState {
 		throw new InvalidEventstampError(eventstamp);
 	}
 
-	const parts = eventstamp.split("|");
-	const isoString = parts[0] as string;
-	const hexCounter = parts[1] as string;
-	const nonce = parts[2] as string;
+	const time48 = eventstamp.slice(0, 12);
+	const counter24 = eventstamp.slice(12, 18);
+	const nonce24 = eventstamp.slice(18, 24);
 
 	return {
-		ms: new Date(isoString).getTime(),
-		counter: parseInt(hexCounter, 16),
-		nonce,
+		ms: parseInt(time48, 16),
+		counter: parseInt(counter24, 16),
+		nonce: nonce24,
 	};
 }
 
 export const MIN_EVENTSTAMP = encodeEventstamp({
 	ms: 0,
 	counter: 0,
-	nonce: "0000",
+	nonce: "000000",
 });
 
 /**

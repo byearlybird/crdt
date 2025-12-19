@@ -25,12 +25,12 @@ test("encode() decode() handles large counters", () => {
 	const nonce = generateNonce();
 	const eventstamp = encodeEventstamp({
 		ms: Date.now(),
-		counter: 0xffffffff,
+		counter: 0xffffff, // Max 24-bit value
 		nonce,
 	});
 	const { ms, counter } = decodeEventstamp(eventstamp);
 
-	expect(counter).toBe(0xffffffff);
+	expect(counter).toBe(0xffffff);
 	expect(typeof ms).toBe("number");
 	expect(ms).toBeGreaterThan(0);
 });
@@ -62,10 +62,8 @@ test("isValidEventstamp() returns true for standard format", () => {
 	expect(isValidEventstamp(eventstamp)).toBe(true);
 });
 
-test("isValidEventstamp() returns true for large counter (8 hex chars)", () => {
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|ffffffff|a1b2")).toBe(
-		true,
-	);
+test("isValidEventstamp() returns true for large counter (max 24-bit)", () => {
+	expect(isValidEventstamp("000000000000ffffff123456")).toBe(true);
 });
 
 test("isValidEventstamp() returns true for MIN_EVENTSTAMP", () => {
@@ -73,39 +71,27 @@ test("isValidEventstamp() returns true for MIN_EVENTSTAMP", () => {
 });
 
 test("isValidEventstamp() returns true for various valid timestamps", () => {
-	expect(isValidEventstamp("2025-12-31T23:59:59.999Z|0001|abcd")).toBe(true);
-	expect(isValidEventstamp("2020-01-01T00:00:00.000Z|0000|0000")).toBe(true);
-	expect(isValidEventstamp("2025-06-15T12:30:45.123Z|00ff|1234")).toBe(true);
+	expect(isValidEventstamp("00019c8f3a1e000001abcdef")).toBe(true);
+	expect(isValidEventstamp("000000000000000000000000")).toBe(true);
+	expect(isValidEventstamp("0001a2b3c4d5000ff1234567")).toBe(true);
 });
 
 test.each([
-	["missing nonce", "2025-01-01T00:00:00.000Z|0001"],
-	["missing counter", "2025-01-01T00:00:00.000Z|a1b2"],
-	["invalid ISO (no time)", "2025-01-01|0001|a1b2"],
-	["invalid ISO (slashes)", "2025/01/01T00:00:00.000Z|0001|a1b2"],
-	["invalid ISO (single digits)", "2025-1-1T00:00:00.000Z|0001|a1b2"],
-	["invalid ISO (no millis)", "2025-01-01T00:00:00Z|0001|a1b2"],
-	["wrong delimiter (colon)", "2025-01-01T00:00:00.000Z:0001:a1b2"],
-	["wrong delimiter (dash)", "2025-01-01T00:00:00.000Z-0001-a1b2"],
-	["wrong delimiter (space)", "2025-01-01T00:00:00.000Z 0001 a1b2"],
-	["uppercase hex in counter", "2025-01-01T00:00:00.000Z|ABCD|a1b2"],
-	["uppercase hex in counter (mixed)", "2025-01-01T00:00:00.000Z|00FF|a1b2"],
-	["uppercase hex in nonce", "2025-01-01T00:00:00.000Z|0001|ABCD"],
-	["uppercase hex in nonce (mixed)", "2025-01-01T00:00:00.000Z|0001|A1B2"],
-	["counter too short (3 chars)", "2025-01-01T00:00:00.000Z|001|a1b2"],
-	["counter too short (2 chars)", "2025-01-01T00:00:00.000Z|01|a1b2"],
-	["counter too short (1 char)", "2025-01-01T00:00:00.000Z|1|a1b2"],
-	["nonce too short (3 chars)", "2025-01-01T00:00:00.000Z|0001|a1b"],
-	["nonce too short (2 chars)", "2025-01-01T00:00:00.000Z|0001|ab"],
-	["nonce too short (1 char)", "2025-01-01T00:00:00.000Z|0001|a"],
-	["nonce too long (5 chars)", "2025-01-01T00:00:00.000Z|0001|a1b2c"],
-	["nonce too long (6 chars)", "2025-01-01T00:00:00.000Z|0001|a1b2c3"],
-	["non-hex in counter (g)", "2025-01-01T00:00:00.000Z|00g1|a1b2"],
-	["non-hex in counter (xyz)", "2025-01-01T00:00:00.000Z|xyz1|a1b2"],
-	["non-hex in nonce (xyz)", "2025-01-01T00:00:00.000Z|0001|xyz1"],
-	["non-hex in nonce (g)", "2025-01-01T00:00:00.000Z|0001|g1b2"],
+	["too short (23 chars)", "00019c8f3a1e000001abcde"],
+	["too long (25 chars)", "00019c8f3a1e000001abcdef0"],
+	["too short (12 chars)", "00019c8f3a1e"],
+	["too short (1 char)", "0"],
 	["empty string", ""],
-	["extra parts", "2025-01-01T00:00:00.000Z|0001|a1b2|extra"],
+	["uppercase hex (all)", "00019C8F3A1E000001ABCDEF"],
+	["uppercase hex (partial)", "00019c8f3a1e000001ABCDEF"],
+	["uppercase hex (single)", "00019c8f3a1e000001abCdef"],
+	["non-hex chars (g)", "00019c8f3a1e000001abcdeg"],
+	["non-hex chars (xyz)", "00019c8f3a1exyz001abcdef"],
+	["non-hex chars (space)", "00019c8f3a1e 00001abcdef"],
+	["non-hex chars (dash)", "00019c8f-3a1e-00001abcdef"],
+	["non-hex chars (pipe)", "00019c8f3a1e|000001|abcdef"],
+	["special chars (@)", "00019c8f3a1e000001abcd@f"],
+	["unicode", "00019c8f3a1e000001ab🚀ef"],
 ])("isValidEventstamp() returns false for %s", (_description, eventstamp) => {
 	expect(isValidEventstamp(eventstamp)).toBe(false);
 });
@@ -119,35 +105,35 @@ test("maxEventstamp() returns MIN_EVENTSTAMP for empty array", () => {
 });
 
 test("maxEventstamp() returns the only eventstamp for single-element array", () => {
-	const stamp = "2025-01-01T00:00:00.000Z|0001|a1b2";
+	const stamp = "00019c8f3a1e000001abcdef";
 	expect(maxEventstamp([stamp])).toBe(stamp);
 });
 
 test("maxEventstamp() returns the maximum eventstamp", () => {
 	const stamps = [
-		"2025-01-01T00:00:00.000Z|0001|a1b2",
-		"2025-01-01T00:05:00.000Z|0001|c3d4",
-		"2025-01-01T00:02:00.000Z|0001|b2c3",
+		"00019c8f3a1e000001abcdef", // Earlier time
+		"00019c8f3a28000001abcdef", // Latest time
+		"00019c8f3a23000001abcdef", // Middle time
 	];
-	expect(maxEventstamp(stamps)).toBe("2025-01-01T00:05:00.000Z|0001|c3d4");
+	expect(maxEventstamp(stamps)).toBe("00019c8f3a28000001abcdef");
 });
 
 test("maxEventstamp() handles counters correctly", () => {
 	const stamps = [
-		"2025-01-01T00:00:00.000Z|0001|a1b2",
-		"2025-01-01T00:00:00.000Z|0005|c3d4",
-		"2025-01-01T00:00:00.000Z|0003|b2c3",
+		"00019c8f3a1e000001abcdef", // Counter 1
+		"00019c8f3a1e000005abcdef", // Counter 5 (max)
+		"00019c8f3a1e000003abcdef", // Counter 3
 	];
-	expect(maxEventstamp(stamps)).toBe("2025-01-01T00:00:00.000Z|0005|c3d4");
+	expect(maxEventstamp(stamps)).toBe("00019c8f3a1e000005abcdef");
 });
 
 test("maxEventstamp() handles nonces correctly as tie-breaker", () => {
 	const stamps = [
-		"2025-01-01T00:00:00.000Z|0001|a1b2",
-		"2025-01-01T00:00:00.000Z|0001|ffff",
-		"2025-01-01T00:00:00.000Z|0001|b2c3",
+		"00019c8f3a1e000001a1b2c3", // Nonce a1b2c3
+		"00019c8f3a1e000001ffffff", // Nonce ffffff (max 24-bit)
+		"00019c8f3a1e000001b2c3d4", // Nonce b2c3d4
 	];
-	expect(maxEventstamp(stamps)).toBe("2025-01-01T00:00:00.000Z|0001|ffff");
+	expect(maxEventstamp(stamps)).toBe("00019c8f3a1e000001ffffff");
 });
 
 // ============================================================================
@@ -156,4 +142,12 @@ test("maxEventstamp() handles nonces correctly as tie-breaker", () => {
 
 test("decodeEventstamp() throws InvalidEventstampError for invalid input", () => {
 	expect(() => decodeEventstamp("invalid")).toThrow();
+});
+
+test("decodeEventstamp() throws for uppercase hex", () => {
+	expect(() => decodeEventstamp("00019C8F3A1E000001ABCDEF")).toThrow();
+});
+
+test("decodeEventstamp() throws for wrong length", () => {
+	expect(() => decodeEventstamp("00019c8f3a1e000001")).toThrow();
 });
