@@ -52,7 +52,7 @@ export type StoreConfig<Schemas extends SchemasMap> = {
 export type Store<Schemas extends SchemasMap> = Collections<Schemas> & {
 	name: string;
 	version: number;
-	begin<Keys extends ReadonlyArray<keyof Schemas>, R>(
+	transact<Keys extends ReadonlyArray<keyof Schemas>, R>(
 		collections: Keys,
 		callback: (tx: TransactionContext<Schemas, Keys>) => R,
 	): R;
@@ -133,7 +133,7 @@ export function createStore<Schemas extends SchemasMap>(
 		...publicCollections,
 		name,
 		version,
-		begin<Keys extends ReadonlyArray<keyof Schemas>, R>(
+		transact<Keys extends ReadonlyArray<keyof Schemas>, R>(
 			collectionNames: Keys,
 			callback: (tx: TransactionContext<Schemas, Keys>) => R,
 		): R {
