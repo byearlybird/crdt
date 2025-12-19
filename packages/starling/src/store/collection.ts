@@ -237,10 +237,15 @@ export function createCollection<T extends AnyObjectSchema>(
 			}
 
 			// Build current document from collection state including tombstones
-			const currentDoc = mapToDocument(name, data, getEventstamp(), tombstones);
+			const { document: currentDoc, latest: currentLatest } = mapToDocument(
+				name,
+				data,
+				getEventstamp(),
+				tombstones,
+			);
 
-			// Merge using core mergeDocuments
-			const result = mergeDocuments(currentDoc, document);
+			// Merge using core mergeDocuments with current clock
+			const result = mergeDocuments(currentDoc, document, currentLatest);
 
 			// Replace collection data with merged result
 			data.clear();
@@ -286,7 +291,13 @@ export function createCollection<T extends AnyObjectSchema>(
 		},
 
 		toDocument() {
-			return mapToDocument(name, data, getEventstamp(), tombstones);
+			const { document } = mapToDocument(
+				name,
+				data,
+				getEventstamp(),
+				tombstones,
+			);
+			return document;
 		},
 
 		// Symbol-keyed internal methods for transaction support

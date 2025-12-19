@@ -40,7 +40,7 @@ afterEach(() => {
 
 // Helper to create an empty store snapshot
 function makeEmptySnapshot(storeName = "test-app"): StoreSnapshot<any> {
-	const tasksDoc = makeDocument("tasks", "2099-01-01T00:00:00.000Z|0001|a1b2");
+	const tasksDoc = makeDocument("tasks");
 	return {
 		version: "1.0",
 		name: storeName,

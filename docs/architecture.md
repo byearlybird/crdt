@@ -121,12 +121,11 @@ Merged: { name: "Alice Smith", email: "alice@new.com" }
 
 ### Document Format
 
-The `StarlingDocument` type represents the complete persistent state of a collection, containing a type identifier, latest eventstamp, and resources as a keyed object:
+The `StarlingDocument` type represents the complete persistent state of a collection:
 
 ```typescript
 export type StarlingDocument<T extends AnyObject> = {
   type: string;
-  latest: string;
   resources: Record<string, ResourceObject<T>>;
   tombstones: Record<string, string>;
 };
@@ -135,16 +134,16 @@ export type StarlingDocument<T extends AnyObject> = {
 **Design notes:**
 
 - **`type`**: Resource type identifier for this collection (e.g., "users", "todos", "posts")
-- **`latest`**: The highest eventstamp observed by the document, including tombstone eventstamps. When merging documents, the clock forwards to the newest eventstamp to prevent collisions across sync boundaries
 - **`resources`**: Object mapping resource IDs to ResourceObjects. Only contains active (non-deleted) resources
 - **`tombstones`**: Object mapping deleted resource IDs to deletion eventstamps. Ensures deletion events propagate during sync and prevents resurrection of deleted resources
+
+Clock state is maintained at the database level, not on individual documents. During merge operations, the maximum eventstamp is computed from all resources and tombstones and returned to the caller for clock forwarding.
 
 Example document:
 
 ```typescript
 {
   type: "users",
-  latest: "2025-10-26T10:00:00.000Z|0001|a7f2",
   resources: {
     "user-1": {
       id: "user-1",
@@ -190,13 +189,15 @@ Note: The resource type is stored at the document level (`StarlingDocument.type`
 
 ### Merging Documents
 
-The `mergeDocuments(into, from)` function handles document-level merging with automatic change detection using a 4-phase process:
+The `mergeDocuments(into, from, currentClock)` function handles document-level merging with automatic change detection using a 4-phase process:
 
 1. **Merge tombstones**: Union both tombstone maps, using LWW on eventstamps for conflicts
 2. **Remove tombstoned resources**: Filter out resources that have tombstones from the base document
 3. **Merge active resources**: Each resource pair merges using `mergeResources`, preserving the newest eventstamp for each field. Resources with tombstones are skipped (deletion is final)
-4. **Forward clock**: The resulting document's latest value is the maximum of all resource eventstamps and tombstone eventstamps
+4. **Compute maximum eventstamp**: The resulting `latest` value is the maximum of currentClock, all resource eventstamps, and all tombstone eventstamps
 5. **Track changes**: Returns categorized changes (added, updated, deleted) for event notifications
+
+The function returns `{ document, changes, latest }` where `latest` is the computed maximum eventstamp that the caller (typically the database) uses to forward its clock.
 
 **Deletion finality**: Once a resource has a tombstone, it will not be resurrected during merge, even if a remote document contains an updated version of the resource. This ensures deleted data stays deleted.
 

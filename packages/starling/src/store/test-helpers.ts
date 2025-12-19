@@ -62,7 +62,7 @@ export function makeTaskDocument(
 	tasks: Array<{ id: string; title: string; completed: boolean }>,
 	eventstamp = "2099-01-01T00:00:00.000Z|0001|a1b2",
 ) {
-	const doc = makeDocument<Task>("tasks", eventstamp);
+	const doc = makeDocument<Task>("tasks");
 	for (const task of tasks) {
 		doc.resources[task.id] = makeResource(task.id, task, eventstamp);
 	}
