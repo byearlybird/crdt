@@ -4,21 +4,21 @@ import { createMultiCollectionStore, createTestStore } from "./test-helpers";
 describe("Transactions", () => {
 	describe("commit", () => {
 		test("commits changes on successful completion", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 
-			db.transact(["tasks"], (tx) => {
+			store.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.tasks.add({ id: "2", title: "Task 2", completed: false });
 			});
 
-			expect(db.tasks.get("1")?.title).toBe("Task 1");
-			expect(db.tasks.get("2")?.title).toBe("Task 2");
+			expect(store.tasks.get("1")?.title).toBe("Task 1");
+			expect(store.tasks.get("2")?.title).toBe("Task 2");
 		});
 
 		test("returns callback result", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 
-			const result = db.transact(["tasks"], (tx) => {
+			const result = store.transact(["tasks"], (tx) => {
 				const task = tx.tasks.add({ id: "1", title: "Test", completed: false });
 				return task;
 			});
@@ -28,23 +28,23 @@ describe("Transactions", () => {
 		});
 
 		test("commits changes across multiple collections", () => {
-			const db = createMultiCollectionStore();
+			const store = createMultiCollectionStore();
 
-			db.transact(["tasks", "users"], (tx) => {
+			store.transact(["tasks", "users"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.users.add({ id: "1", name: "Alice", email: "alice@example.com" });
 			});
 
-			expect(db.tasks.get("1")?.title).toBe("Task 1");
-			expect(db.users.get("1")?.name).toBe("Alice");
+			expect(store.tasks.get("1")?.title).toBe("Task 1");
+			expect(store.users.get("1")?.name).toBe("Alice");
 		});
 	});
 
 	describe("rollback", () => {
 		test("discards changes on explicit rollback", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 
-			db.transact(["tasks"], (tx) => {
+			store.transact(["tasks"], (tx) => {
 				tx.tasks.add({
 					id: "1",
 					title: "Should not persist",
@@ -53,14 +53,14 @@ describe("Transactions", () => {
 				tx.rollback();
 			});
 
-			expect(db.tasks.get("1")).toBeNull();
+			expect(store.tasks.get("1")).toBeNull();
 		});
 
 		test("discards changes on exception", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 
 			try {
-				db.transact(["tasks"], (tx) => {
+				store.transact(["tasks"], (tx) => {
 					tx.tasks.add({
 						id: "1",
 						title: "Should not persist",
@@ -72,41 +72,41 @@ describe("Transactions", () => {
 				// Expected
 			}
 
-			expect(db.tasks.get("1")).toBeNull();
+			expect(store.tasks.get("1")).toBeNull();
 		});
 
 		test("rolls back all collections", () => {
-			const db = createMultiCollectionStore();
+			const store = createMultiCollectionStore();
 
-			db.transact(["tasks", "users"], (tx) => {
+			store.transact(["tasks", "users"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.users.add({ id: "1", name: "Alice", email: "alice@example.com" });
 				tx.rollback();
 			});
 
-			expect(db.tasks.get("1")).toBeNull();
-			expect(db.users.get("1")).toBeNull();
+			expect(store.tasks.get("1")).toBeNull();
+			expect(store.users.get("1")).toBeNull();
 		});
 
 		test("prevents remove operation from persisting", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Task to keep", completed: false });
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Task to keep", completed: false });
 
-			db.transact(["tasks"], (tx) => {
+			store.transact(["tasks"], (tx) => {
 				tx.tasks.remove("1");
 				tx.rollback();
 			});
 
-			expect(db.tasks.get("1")?.title).toBe("Task to keep");
+			expect(store.tasks.get("1")?.title).toBe("Task to keep");
 		});
 	});
 
 	describe("isolation", () => {
 		test("sees snapshot of data at transaction start", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Original", completed: false });
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Original", completed: false });
 
-			db.transact(["tasks"], (tx) => {
+			store.transact(["tasks"], (tx) => {
 				const task = tx.tasks.get("1");
 				expect(task?.title).toBe("Original");
 
@@ -116,13 +116,13 @@ describe("Transactions", () => {
 				expect(updatedTask?.title).toBe("Updated");
 			});
 
-			expect(db.tasks.get("1")?.title).toBe("Updated");
+			expect(store.tasks.get("1")?.title).toBe("Updated");
 		});
 
 		test("supports chained operations on same resource", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 
-			db.transact(["tasks"], (tx) => {
+			store.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "New Task", completed: false });
 				tx.tasks.update("1", { completed: true });
 				tx.tasks.update("1", { title: "Modified Task" });
@@ -132,17 +132,17 @@ describe("Transactions", () => {
 				expect(task?.completed).toBe(true);
 			});
 
-			const task = db.tasks.get("1");
+			const task = store.tasks.get("1");
 			expect(task?.title).toBe("Modified Task");
 			expect(task?.completed).toBe(true);
 		});
 
 		test("supports queries within transaction", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Task 1", completed: false });
-			db.tasks.add({ id: "2", title: "Task 2", completed: true });
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Task 1", completed: false });
+			store.tasks.add({ id: "2", title: "Task 2", completed: true });
 
-			db.transact(["tasks"], (tx) => {
+			store.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "3", title: "Task 3", completed: false });
 
 				const incomplete = tx.tasks.find((task) => !task.completed);

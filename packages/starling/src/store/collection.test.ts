@@ -5,9 +5,9 @@ import { createTestStore, makeTask, subscribeToCollection } from "./test-helpers
 describe("Collection", () => {
 	describe("add", () => {
 		test("adds new item and returns validated result", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 
-			const task = db.tasks.add({
+			const task = store.tasks.add({
 				id: "1",
 				title: "Learn Starling",
 				completed: false,
@@ -19,9 +19,9 @@ describe("Collection", () => {
 		});
 
 		test("generates default id when not provided", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 
-			const task = db.tasks.add({
+			const task = store.tasks.add({
 				title: "Auto ID Task",
 				completed: false,
 			});
@@ -32,45 +32,45 @@ describe("Collection", () => {
 		});
 
 		test("throws on duplicate id", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 			const task = makeTask({ id: "1" });
 
-			db.tasks.add(task);
+			store.tasks.add(task);
 
-			expect(() => db.tasks.add(task)).toThrow(DuplicateIdError);
+			expect(() => store.tasks.add(task)).toThrow(DuplicateIdError);
 		});
 	});
 
 	describe("get", () => {
 		test("retrieves existing item", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Test", completed: false });
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Test", completed: false });
 
-			const task = db.tasks.get("1");
+			const task = store.tasks.get("1");
 
 			expect(task?.title).toBe("Test");
 		});
 
 		test("returns null for non-existent item", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 
-			expect(db.tasks.get("missing")).toBeNull();
+			expect(store.tasks.get("missing")).toBeNull();
 		});
 
 		test("excludes soft-deleted items by default", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Test", completed: false });
-			db.tasks.remove("1");
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Test", completed: false });
+			store.tasks.remove("1");
 
-			expect(db.tasks.get("1")).toBeNull();
+			expect(store.tasks.get("1")).toBeNull();
 		});
 
 		test("includes soft-deleted items with includeDeleted flag", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Test", completed: false });
-			db.tasks.remove("1");
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Test", completed: false });
+			store.tasks.remove("1");
 
-			const task = db.tasks.get("1", { includeDeleted: true });
+			const task = store.tasks.get("1", { includeDeleted: true });
 
 			expect(task?.title).toBe("Test");
 		});
@@ -78,20 +78,20 @@ describe("Collection", () => {
 
 	describe("update", () => {
 		test("updates existing item with partial data", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Learn Starling", completed: false });
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Learn Starling", completed: false });
 
-			db.tasks.update("1", { completed: true });
+			store.tasks.update("1", { completed: true });
 
-			const task = db.tasks.get("1");
+			const task = store.tasks.get("1");
 			expect(task?.completed).toBe(true);
 			expect(task?.title).toBe("Learn Starling");
 		});
 
 		test("throws on non-existent item", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 
-			expect(() => db.tasks.update("missing", { completed: true })).toThrow(
+			expect(() => store.tasks.update("missing", { completed: true })).toThrow(
 				IdNotFoundError,
 			);
 		});
@@ -99,53 +99,53 @@ describe("Collection", () => {
 
 	describe("remove", () => {
 		test("soft-deletes item", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Test", completed: false });
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Test", completed: false });
 
-			db.tasks.remove("1");
+			store.tasks.remove("1");
 
-			expect(db.tasks.get("1")).toBeNull();
-			expect(db.tasks.get("1", { includeDeleted: true })).toBeDefined();
+			expect(store.tasks.get("1")).toBeNull();
+			expect(store.tasks.get("1", { includeDeleted: true })).toBeDefined();
 		});
 
 		test("throws on non-existent item", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 
-			expect(() => db.tasks.remove("missing")).toThrow(IdNotFoundError);
+			expect(() => store.tasks.remove("missing")).toThrow(IdNotFoundError);
 		});
 	});
 
 	describe("getAll", () => {
 		test("returns all non-deleted items", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Task 1", completed: false });
-			db.tasks.add({ id: "2", title: "Task 2", completed: true });
-			db.tasks.add({ id: "3", title: "Task 3", completed: false });
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Task 1", completed: false });
+			store.tasks.add({ id: "2", title: "Task 2", completed: true });
+			store.tasks.add({ id: "3", title: "Task 3", completed: false });
 
-			const allTasks = db.tasks.getAll();
+			const allTasks = store.tasks.getAll();
 
 			expect(allTasks).toHaveLength(3);
 		});
 
 		test("excludes soft-deleted items by default", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Task 1", completed: false });
-			db.tasks.add({ id: "2", title: "Task 2", completed: true });
-			db.tasks.remove("2");
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Task 1", completed: false });
+			store.tasks.add({ id: "2", title: "Task 2", completed: true });
+			store.tasks.remove("2");
 
-			const allTasks = db.tasks.getAll();
+			const allTasks = store.tasks.getAll();
 
 			expect(allTasks).toHaveLength(1);
 			expect(allTasks[0]?.id).toBe("1");
 		});
 
 		test("includes soft-deleted items with includeDeleted flag", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Task 1", completed: false });
-			db.tasks.add({ id: "2", title: "Task 2", completed: true });
-			db.tasks.remove("2");
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Task 1", completed: false });
+			store.tasks.add({ id: "2", title: "Task 2", completed: true });
+			store.tasks.remove("2");
 
-			const allTasks = db.tasks.getAll({ includeDeleted: true });
+			const allTasks = store.tasks.getAll({ includeDeleted: true });
 
 			expect(allTasks).toHaveLength(2);
 			expect(allTasks.map((t) => t.id).sort()).toEqual(["1", "2"]);
@@ -154,12 +154,12 @@ describe("Collection", () => {
 
 	describe("find", () => {
 		test("filters items with predicate", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Task 1", completed: false });
-			db.tasks.add({ id: "2", title: "Task 2", completed: true });
-			db.tasks.add({ id: "3", title: "Task 3", completed: false });
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Task 1", completed: false });
+			store.tasks.add({ id: "2", title: "Task 2", completed: true });
+			store.tasks.add({ id: "3", title: "Task 3", completed: false });
 
-			const incomplete = db.tasks.find((task) => !task.completed);
+			const incomplete = store.tasks.find((task) => !task.completed);
 
 			expect(incomplete).toHaveLength(2);
 			expect(incomplete[0]?.id).toBe("1");
@@ -167,25 +167,25 @@ describe("Collection", () => {
 		});
 
 		test("excludes soft-deleted items", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Task 1", completed: false });
-			db.tasks.add({ id: "2", title: "Task 2", completed: false });
-			db.tasks.add({ id: "3", title: "Task 3", completed: false });
-			db.tasks.remove("2");
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Task 1", completed: false });
+			store.tasks.add({ id: "2", title: "Task 2", completed: false });
+			store.tasks.add({ id: "3", title: "Task 3", completed: false });
+			store.tasks.remove("2");
 
-			const all = db.tasks.find(() => true);
+			const all = store.tasks.find(() => true);
 
 			expect(all).toHaveLength(2);
 			expect(all.map((t) => t.id)).toEqual(["1", "3"]);
 		});
 
 		test("supports map and sort options", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "C Task", completed: false });
-			db.tasks.add({ id: "2", title: "A Task", completed: false });
-			db.tasks.add({ id: "3", title: "B Task", completed: false });
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "C Task", completed: false });
+			store.tasks.add({ id: "2", title: "A Task", completed: false });
+			store.tasks.add({ id: "3", title: "B Task", completed: false });
 
-			const titles = db.tasks.find(() => true, {
+			const titles = store.tasks.find(() => true, {
 				map: (task) => task.title,
 				sort: (a, b) => a.localeCompare(b),
 			});
@@ -196,11 +196,11 @@ describe("Collection", () => {
 
 	describe("events", () => {
 		test("emits add event", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 			const events: any[] = [];
-			subscribeToCollection(db, "tasks", (e) => events.push(e));
+			subscribeToCollection(store, "tasks", (e) => events.push(e));
 
-			db.tasks.add({ id: "1", title: "Buy milk", completed: false });
+			store.tasks.add({ id: "1", title: "Buy milk", completed: false });
 
 			expect(events).toHaveLength(1);
 			expect(events[0]).toEqual({
@@ -213,13 +213,13 @@ describe("Collection", () => {
 		});
 
 		test("emits update event with before/after", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Buy milk", completed: false });
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Buy milk", completed: false });
 
 			const events: any[] = [];
-			subscribeToCollection(db, "tasks", (e) => events.push(e));
+			subscribeToCollection(store, "tasks", (e) => events.push(e));
 
-			db.tasks.update("1", { completed: true });
+			store.tasks.update("1", { completed: true });
 
 			expect(events).toHaveLength(1);
 			expect(events[0].added).toEqual([]);
@@ -233,13 +233,13 @@ describe("Collection", () => {
 		});
 
 		test("emits remove event", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Buy milk", completed: false });
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Buy milk", completed: false });
 
 			const events: any[] = [];
-			subscribeToCollection(db, "tasks", (e) => events.push(e));
+			subscribeToCollection(store, "tasks", (e) => events.push(e));
 
-			db.tasks.remove("1");
+			store.tasks.remove("1");
 
 			expect(events).toHaveLength(1);
 			expect(events[0]).toEqual({
@@ -252,9 +252,9 @@ describe("Collection", () => {
 		});
 
 		test("supports unsubscribe", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 			const events: any[] = [];
-			const unsubscribe = db.on("mutation", (e) => {
+			const unsubscribe = store.on("mutation", (e) => {
 				if (e.collection === "tasks") {
 					events.push({
 						added: e.added,
@@ -264,21 +264,21 @@ describe("Collection", () => {
 				}
 			});
 
-			db.tasks.add({ id: "1", title: "Task 1", completed: false });
+			store.tasks.add({ id: "1", title: "Task 1", completed: false });
 			expect(events).toHaveLength(1);
 
 			unsubscribe();
-			db.tasks.add({ id: "2", title: "Task 2", completed: false });
+			store.tasks.add({ id: "2", title: "Task 2", completed: false });
 
 			expect(events).toHaveLength(1);
 		});
 
 		test("batches events in transactions", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 			const events: any[] = [];
-			subscribeToCollection(db, "tasks", (e) => events.push(e));
+			subscribeToCollection(store, "tasks", (e) => events.push(e));
 
-			db.transact(["tasks"], (tx) => {
+			store.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.tasks.add({ id: "2", title: "Task 2", completed: false });
 				tx.tasks.add({ id: "3", title: "Task 3", completed: false });
@@ -289,14 +289,14 @@ describe("Collection", () => {
 		});
 
 		test("batches mixed operations in transactions", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "1", title: "Task 1", completed: false });
-			db.tasks.add({ id: "2", title: "Task 2", completed: false });
+			const store = createTestStore();
+			store.tasks.add({ id: "1", title: "Task 1", completed: false });
+			store.tasks.add({ id: "2", title: "Task 2", completed: false });
 
 			const events: any[] = [];
-			subscribeToCollection(db, "tasks", (e) => events.push(e));
+			subscribeToCollection(store, "tasks", (e) => events.push(e));
 
-			db.transact(["tasks"], (tx) => {
+			store.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "3", title: "Task 3", completed: false });
 				tx.tasks.update("1", { completed: true });
 				tx.tasks.remove("2");
@@ -309,11 +309,11 @@ describe("Collection", () => {
 		});
 
 		test("emits no events on transaction rollback", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 			const events: any[] = [];
-			subscribeToCollection(db, "tasks", (e) => events.push(e));
+			subscribeToCollection(store, "tasks", (e) => events.push(e));
 
-			db.transact(["tasks"], (tx) => {
+			store.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.rollback();
 			});
@@ -322,12 +322,12 @@ describe("Collection", () => {
 		});
 
 		test("emits no events on transaction exception", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 			const events: any[] = [];
-			subscribeToCollection(db, "tasks", (e) => events.push(e));
+			subscribeToCollection(store, "tasks", (e) => events.push(e));
 
 			try {
-				db.transact(["notes", "tasks"], (tx) => {
+				store.transact(["notes", "tasks"], (tx) => {
 					tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 					throw new Error("Oops!");
 				});

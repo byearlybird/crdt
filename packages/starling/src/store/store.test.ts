@@ -10,26 +10,26 @@ import {
 describe("Store", () => {
 	describe("initialization", () => {
 		test("creates store with typed collections", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 
-			expect(db.tasks).toBeDefined();
-			expect(typeof db.tasks.add).toBe("function");
-			expect(typeof db.tasks.get).toBe("function");
-			expect(typeof db.tasks.update).toBe("function");
-			expect(typeof db.tasks.remove).toBe("function");
-			expect(typeof db.transact).toBe("function");
+			expect(store.tasks).toBeDefined();
+			expect(typeof store.tasks.add).toBe("function");
+			expect(typeof store.tasks.get).toBe("function");
+			expect(typeof store.tasks.update).toBe("function");
+			expect(typeof store.tasks.remove).toBe("function");
+			expect(typeof store.transact).toBe("function");
 		});
 
 		test("creates multiple collections", () => {
-			const db = createMultiCollectionStore();
+			const store = createMultiCollectionStore();
 
-			expect(db.tasks).toBeDefined();
-			expect(db.users).toBeDefined();
-			expect(typeof db.transact).toBe("function");
+			expect(store.tasks).toBeDefined();
+			expect(store.users).toBeDefined();
+			expect(typeof store.transact).toBe("function");
 		});
 
 		test("supports custom getId functions", () => {
-			const db = createStore({
+			const store = createStore({
 				name: "kv-db",
 				schema: {
 					kv: {
@@ -42,30 +42,30 @@ describe("Store", () => {
 				},
 			});
 
-			const item = db.kv.add({ key: "foo", value: "bar" });
-			expect(db.kv.get("foo")).toEqual(item);
+			const item = store.kv.add({ key: "foo", value: "bar" });
+			expect(store.kv.get("foo")).toEqual(item);
 		});
 	});
 
 	describe("API surface", () => {
 		test("provides transaction method", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 
-			const result = db.transact(["tasks"], (tx) => {
+			const result = store.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Test", completed: false });
 				return "success";
 			});
 
 			expect(result).toBe("success");
-			expect(db.tasks.get("1")?.title).toBe("Test");
+			expect(store.tasks.get("1")?.title).toBe("Test");
 		});
 
 		test("provides event subscription", () => {
-			const db = createTestStore();
+			const store = createTestStore();
 			const events: any[] = [];
 
-			db.on("mutation", (e) => events.push(e));
-			db.tasks.add({ id: "1", title: "Test", completed: false });
+			store.on("mutation", (e) => events.push(e));
+			store.tasks.add({ id: "1", title: "Test", completed: false });
 
 			expect(events).toHaveLength(1);
 		});
@@ -73,46 +73,46 @@ describe("Store", () => {
 
 	describe("events", () => {
 		test("emits events with collection name", () => {
-			const db = createTestStore();
-			const dbEvents: any[] = [];
-			db.on("mutation", (e) => dbEvents.push(e));
+			const store = createTestStore();
+			const storeEvents: any[] = [];
+			store.on("mutation", (e) => storeEvents.push(e));
 
-			db.tasks.add({ id: "1", title: "Task 1", completed: false });
+			store.tasks.add({ id: "1", title: "Task 1", completed: false });
 
-			expect(dbEvents).toHaveLength(1);
-			expect(dbEvents[0].collection).toBe("tasks");
-			expect(dbEvents[0].added).toHaveLength(1);
+			expect(storeEvents).toHaveLength(1);
+			expect(storeEvents[0].collection).toBe("tasks");
+			expect(storeEvents[0].added).toHaveLength(1);
 		});
 
 		test("emits events from multiple collections", () => {
-			const db = createMultiCollectionStore();
-			const dbEvents: any[] = [];
-			db.on("mutation", (e) => dbEvents.push(e));
+			const store = createMultiCollectionStore();
+			const storeEvents: any[] = [];
+			store.on("mutation", (e) => storeEvents.push(e));
 
-			db.transact(["tasks", "users"], (tx) => {
+			store.transact(["tasks", "users"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Task 1", completed: false });
 				tx.users.add({ id: "u1", name: "Alice", email: "alice@example.com" });
 			});
 
-			expect(dbEvents).toHaveLength(2);
+			expect(storeEvents).toHaveLength(2);
 
-			const tasksEvent = dbEvents.find((e) => e.collection === "tasks");
+			const tasksEvent = storeEvents.find((e) => e.collection === "tasks");
 			expect(tasksEvent.added).toHaveLength(1);
 
-			const usersEvent = dbEvents.find((e) => e.collection === "users");
+			const usersEvent = storeEvents.find((e) => e.collection === "users");
 			expect(usersEvent.added).toHaveLength(1);
 		});
 
-		test("keeps database subscriptions active after transactions", () => {
-			const db = createTestStore();
+		test("keeps store subscriptions active after transactions", () => {
+			const store = createTestStore();
 			const events: any[] = [];
-			subscribeToCollection(db, "tasks", (e) => events.push(e));
+			subscribeToCollection(store, "tasks", (e) => events.push(e));
 
-			db.transact(["tasks"], (tx) => {
+			store.transact(["tasks"], (tx) => {
 				tx.tasks.add({ id: "1", title: "Tx Task", completed: false });
 			});
 
-			db.tasks.add({ id: "2", title: "Outside Task", completed: false });
+			store.tasks.add({ id: "2", title: "Outside Task", completed: false });
 
 			expect(events).toHaveLength(2);
 			expect(events[0].added).toHaveLength(1);
@@ -122,12 +122,12 @@ describe("Store", () => {
 
 	describe("toSnapshot", () => {
 		test("returns snapshot for all collections", () => {
-			const db = createMultiCollectionStore();
-			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
-			db.tasks.add({ id: "task-2", title: "Walk dog", completed: true });
-			db.users.add({ id: "user-1", name: "Alice", email: "alice@example.com" });
+			const store = createMultiCollectionStore();
+			store.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
+			store.tasks.add({ id: "task-2", title: "Walk dog", completed: true });
+			store.users.add({ id: "user-1", name: "Alice", email: "alice@example.com" });
 
-			const snapshot = db.toSnapshot();
+			const snapshot = store.toSnapshot();
 
 			// Verify snapshot structure
 			expect(snapshot.version).toBe("1.0");
@@ -143,9 +143,9 @@ describe("Store", () => {
 		});
 
 		test("returns empty snapshot for empty collections", () => {
-			const db = createMultiCollectionStore();
+			const store = createMultiCollectionStore();
 
-			const snapshot = db.toSnapshot();
+			const snapshot = store.toSnapshot();
 
 			// Verify snapshot structure
 			expect(snapshot.version).toBe("1.0");
@@ -162,11 +162,11 @@ describe("Store", () => {
 		});
 
 		test("includes soft-deleted items in snapshot", () => {
-			const db = createTestStore();
-			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
-			db.tasks.remove("task-1");
+			const store = createTestStore();
+			store.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
+			store.tasks.remove("task-1");
 
-			const snapshot = db.toSnapshot();
+			const snapshot = store.toSnapshot();
 
 			expect(Object.keys(snapshot.collections.tasks.resources)).toHaveLength(1);
 			expect(
@@ -178,11 +178,11 @@ describe("Store", () => {
 		});
 
 		test("includes correct latest eventstamps", () => {
-			const db = createMultiCollectionStore();
-			db.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
-			db.users.add({ id: "user-1", name: "Alice", email: "alice@example.com" });
+			const store = createMultiCollectionStore();
+			store.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
+			store.users.add({ id: "user-1", name: "Alice", email: "alice@example.com" });
 
-			const snapshot = db.toSnapshot();
+			const snapshot = store.toSnapshot();
 
 			// Verify eventstamps exist (format validation is core's responsibility)
 			expect(snapshot.latest).toBeDefined();
