@@ -14,13 +14,13 @@ function isObject(value: unknown): boolean {
  * Get a value from a nested object using a dot-separated path.
  * @internal
  */
-function getValueAtPath(obj: any, path: string): unknown {
+function getValueAtPath(obj: Record<string, unknown>, path: string): unknown {
 	const parts = path.split(".");
-	let current = obj;
+	let current: unknown = obj;
 
 	for (const part of parts) {
-		if (current == null) return undefined;
-		current = current[part];
+		if (current == null || typeof current !== "object") return undefined;
+		current = (current as Record<string, unknown>)[part];
 	}
 
 	return current;
@@ -31,18 +31,28 @@ function getValueAtPath(obj: any, path: string): unknown {
  * Creates intermediate objects as needed.
  * @internal
  */
-function setValueAtPath(obj: any, path: string, value: unknown): void {
+function setValueAtPath(
+	obj: Record<string, unknown>,
+	path: string,
+	value: unknown,
+): void {
 	const parts = path.split(".");
-	let current = obj;
+	let current: Record<string, unknown> = obj;
 
 	for (let i = 0; i < parts.length - 1; i++) {
-		if (!current[parts[i]] || typeof current[parts[i]] !== "object") {
-			current[parts[i]] = {};
+		const part = parts[i];
+		if (part === undefined) continue;
+
+		if (!current[part] || typeof current[part] !== "object") {
+			current[part] = {};
 		}
-		current = current[parts[i]];
+		current = current[part] as Record<string, unknown>;
 	}
 
-	current[parts[parts.length - 1]] = value;
+	const lastPart = parts[parts.length - 1];
+	if (lastPart !== undefined) {
+		current[lastPart] = value;
+	}
 }
 
 /**
@@ -78,7 +88,7 @@ export function computeResourceLatest(
  * and metadata for tracking deletion state and eventstamps.
  * The resource type is stored at the document level.
  */
-export type ResourceObject<T extends AnyObject> = {
+export type ResourceObject<T extends { [key: string]: unknown }> = {
 	/** Unique identifier for this resource */
 	id: string;
 	/** The resource's data as a nested object structure */
@@ -122,7 +132,9 @@ export function makeResource<T extends AnyObject>(
 
 	traverse(obj);
 
-	const latest = computeResourceLatest(eventstamps, deletedAt, eventstamp);
+	// All fields have the same eventstamp in a new resource,
+	// so latest is either the eventstamp or deletedAt (whichever is greater)
+	const latest = deletedAt && deletedAt > eventstamp ? deletedAt : eventstamp;
 
 	return {
 		id,
@@ -178,7 +190,7 @@ export function mergeResources<T extends AnyObject>(
 				getValueAtPath(into.attributes, path),
 			);
 			resultEventstamps[path] = stamp1;
-		} else {
+		} else if (stamp2) {
 			// Only in second record
 			setValueAtPath(
 				resultAttributes,
