@@ -131,7 +131,7 @@ describe("Database", () => {
 
 			// Verify snapshot structure
 			expect(snapshot.version).toBe("1.0");
-			expect(snapshot.name).toBe("multi-collection-db");
+			expect(snapshot.name).toBe("multi-collection-store");
 			expect(snapshot.latest).toBeDefined();
 			expect(typeof snapshot.latest).toBe("string");
 
@@ -149,7 +149,7 @@ describe("Database", () => {
 
 			// Verify snapshot structure
 			expect(snapshot.version).toBe("1.0");
-			expect(snapshot.name).toBe("multi-collection-db");
+			expect(snapshot.name).toBe("multi-collection-store");
 			expect(snapshot.latest).toBeDefined();
 
 			// Verify empty collections
@@ -202,153 +202,4 @@ describe("Database", () => {
 		});
 	});
 
-	describe("plugins", () => {
-		test("init handlers execute in registration order", async () => {
-			const calls: string[] = [];
-
-			const db = createStore({
-				name: "plugins-db",
-				schema: {
-					tasks: {
-						schema: z.object({
-							id: z.string(),
-							title: z.string(),
-							completed: z.boolean(),
-						}),
-						getId: (task) => task.id,
-					},
-				},
-			})
-				.use({ handlers: { init: () => calls.push("1") } })
-				.use({ handlers: { init: () => calls.push("2") } })
-				.use({ handlers: { init: () => calls.push("3") } });
-
-			await db.init();
-			expect(calls).toEqual(["1", "2", "3"]);
-		});
-
-		test("dispose handlers execute in reverse order", async () => {
-			const calls: string[] = [];
-
-			const db = createStore({
-				name: "plugins-db",
-				schema: {
-					tasks: {
-						schema: z.object({
-							id: z.string(),
-							title: z.string(),
-							completed: z.boolean(),
-						}),
-						getId: (task) => task.id,
-					},
-				},
-			})
-				.use({ handlers: { dispose: () => calls.push("1") } })
-				.use({ handlers: { dispose: () => calls.push("2") } })
-				.use({ handlers: { dispose: () => calls.push("3") } });
-
-			await db.dispose();
-			expect(calls).toEqual(["3", "2", "1"]);
-		});
-
-		test("plugins can perform database operations", async () => {
-			const db = createStore({
-				name: "plugins-db",
-				schema: {
-					tasks: {
-						schema: z.object({
-							id: z.string(),
-							title: z.string(),
-							completed: z.boolean(),
-						}),
-						getId: (task) => task.id,
-					},
-				},
-			}).use({
-				handlers: {
-					init: (db) => {
-						db.tasks.add({
-							id: "1",
-							title: "Added by plugin",
-							completed: false,
-						});
-					},
-				},
-			});
-
-			await db.init();
-			expect(db.tasks.get("1")?.title).toBe("Added by plugin");
-		});
-
-		test("async handlers work correctly", async () => {
-			const calls: string[] = [];
-
-			const db = createStore({
-				name: "plugins-db",
-				schema: {
-					tasks: {
-						schema: z.object({
-							id: z.string(),
-							title: z.string(),
-							completed: z.boolean(),
-						}),
-						getId: (task) => task.id,
-					},
-				},
-			}).use({
-				handlers: {
-					init: async () => {
-						await new Promise((resolve) => setTimeout(resolve, 10));
-						calls.push("init");
-					},
-					dispose: async () => {
-						await new Promise((resolve) => setTimeout(resolve, 10));
-						calls.push("dispose");
-					},
-				},
-			});
-
-			await db.init();
-			await db.dispose();
-			expect(calls).toEqual(["init", "dispose"]);
-		});
-
-		test("plugins can subscribe to mutation events", async () => {
-			const pluginEvents: any[] = [];
-
-			const db = createStore({
-				name: "plugins-db",
-				schema: {
-					tasks: {
-						schema: z.object({
-							id: z.string(),
-							title: z.string(),
-							completed: z.boolean(),
-						}),
-						getId: (task) => task.id,
-					},
-				},
-			}).use({
-				handlers: {
-					init: (db) => {
-						db.on("mutation", (event) => pluginEvents.push(event));
-					},
-				},
-			});
-
-			await db.init();
-			db.tasks.add({ id: "1", title: "Test", completed: false });
-
-			expect(pluginEvents).toHaveLength(1);
-			expect(pluginEvents[0].collection).toBe("tasks");
-		});
-
-		test("works without plugins", async () => {
-			const db = createTestStore();
-			await db.init();
-			await db.dispose();
-			db.tasks.add({ id: "1", title: "Test", completed: false });
-			expect(db.tasks.get("1")).toBeDefined();
-		});
-	});
 });

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import "fake-indexeddb/auto";
 import { createStore } from "../../store/store";
 import { makeTask, taskSchema } from "../../store/test-helpers";
-import { idbPlugin } from "./index";
+import { createIdbPersister } from "./index";
 
 // Mock BroadcastChannel for testing cross-tab sync
 class MockBroadcastChannel {
@@ -46,21 +46,10 @@ afterEach(() => {
 	MockBroadcastChannel.reset();
 });
 
-// Helper to trigger IDB errors
-function _makeFailingIDBRequest(errorMessage: string): IDBRequest {
-	const request = {
-		result: null,
-		error: new DOMException(errorMessage),
-		onerror: null as ((this: IDBRequest, ev: Event) => any) | null,
-		onsuccess: null as ((this: IDBRequest, ev: Event) => any) | null,
-	} as unknown as IDBRequest;
-	return request;
-}
-
-describe("idbPlugin", () => {
+describe("createIdbPersister", () => {
 	test("loads and persists documents", async () => {
-		// Create database with plugin
-		const db1 = await createStore({
+		// Create store with persister
+		const store1 = createStore({
 			name: "test-db",
 			schema: {
 				tasks: {
@@ -68,22 +57,21 @@ describe("idbPlugin", () => {
 					getId: (task) => task.id,
 				},
 			},
-		})
-			.use(idbPlugin())
-			.init();
+		});
+		const cleanup1 = await createIdbPersister(store1);
 
 		// Add a task
 		const task = makeTask({ id: "1", title: "Test Task" });
-		db1.tasks.add(task);
+		store1.tasks.add(task);
 
 		// Wait for mutation event to propagate
 		await new Promise((resolve) => setTimeout(resolve, 10));
 
-		// Dispose to save
-		await db1.dispose();
+		// Cleanup
+		cleanup1();
 
-		// Create a new database instance and load (same db name to load persisted data)
-		const db2 = await createStore({
+		// Create a new store instance and load (same db name to load persisted data)
+		const store2 = createStore({
 			name: "test-db",
 			schema: {
 				tasks: {
@@ -91,20 +79,19 @@ describe("idbPlugin", () => {
 					getId: (task) => task.id,
 				},
 			},
-		})
-			.use(idbPlugin())
-			.init();
+		});
+		const cleanup2 = await createIdbPersister(store2);
 
 		// Verify task was loaded
-		const loadedTask = db2.tasks.get("1");
+		const loadedTask = store2.tasks.get("1");
 		expect(loadedTask).toBeDefined();
 		expect(loadedTask?.title).toBe("Test Task");
 
-		await db2.dispose();
+		cleanup2();
 	});
 
 	test("creates object stores on upgrade", async () => {
-		const db = await createStore({
+		const store = createStore({
 			name: "upgrade-test",
 			schema: {
 				tasks: {
@@ -112,18 +99,17 @@ describe("idbPlugin", () => {
 					getId: (task) => task.id,
 				},
 			},
-		})
-			.use(idbPlugin())
-			.init();
+		});
+		const cleanup = await createIdbPersister(store);
 
 		// Verify database was created without errors
-		expect(db.tasks.getAll()).toEqual([]);
+		expect(store.tasks.getAll()).toEqual([]);
 
-		await db.dispose();
+		cleanup();
 	});
 
 	test("handles empty database gracefully", async () => {
-		const db = await createStore({
+		const store = createStore({
 			name: "empty-db",
 			schema: {
 				tasks: {
@@ -131,18 +117,17 @@ describe("idbPlugin", () => {
 					getId: (task) => task.id,
 				},
 			},
-		})
-			.use(idbPlugin())
-			.init();
+		});
+		const cleanup = await createIdbPersister(store);
 
 		// Should not throw and should have no tasks
-		expect(db.tasks.getAll()).toEqual([]);
+		expect(store.tasks.getAll()).toEqual([]);
 
-		await db.dispose();
+		cleanup();
 	});
 
 	test("uses custom version", async () => {
-		const db = await createStore({
+		const store = createStore({
 			name: "version-test",
 			schema: {
 				tasks: {
@@ -150,18 +135,17 @@ describe("idbPlugin", () => {
 					getId: (task) => task.id,
 				},
 			},
-		})
-			.use(idbPlugin({ version: 5 }))
-			.init();
+		});
+		const cleanup = await createIdbPersister(store, { version: 5 });
 
 		// If init completes without error, the version was set correctly
-		expect(db.tasks.getAll()).toEqual([]);
+		expect(store.tasks.getAll()).toEqual([]);
 
-		await db.dispose();
+		cleanup();
 	});
 
 	test("persists on mutations", async () => {
-		const db = await createStore({
+		const store1 = createStore({
 			name: "mutation-test",
 			schema: {
 				tasks: {
@@ -169,20 +153,19 @@ describe("idbPlugin", () => {
 					getId: (task) => task.id,
 				},
 			},
-		})
-			.use(idbPlugin())
-			.init();
+		});
+		const cleanup1 = await createIdbPersister(store1);
 
 		// Add task
-		db.tasks.add(makeTask({ id: "1", title: "Task 1" }));
+		store1.tasks.add(makeTask({ id: "1", title: "Task 1" }));
 
 		// Wait for mutation event
 		await new Promise((resolve) => setTimeout(resolve, 10));
 
-		// Dispose and reload to verify persistence (same db name)
-		await db.dispose();
+		// Cleanup and reload to verify persistence (same db name)
+		cleanup1();
 
-		const db2 = await createStore({
+		const store2 = createStore({
 			name: "mutation-test",
 			schema: {
 				tasks: {
@@ -190,19 +173,18 @@ describe("idbPlugin", () => {
 					getId: (task) => task.id,
 				},
 			},
-		})
-			.use(idbPlugin())
-			.init();
+		});
+		const cleanup2 = await createIdbPersister(store2);
 
-		const tasks = db2.tasks.getAll();
+		const tasks = store2.tasks.getAll();
 		expect(tasks).toHaveLength(1);
 		expect(tasks[0]?.title).toBe("Task 1");
 
-		await db2.dispose();
+		cleanup2();
 	});
 
-	test("closes database on dispose", async () => {
-		const db = await createStore({
+	test("closes database on cleanup", async () => {
+		const store = createStore({
 			name: "dispose-test",
 			schema: {
 				tasks: {
@@ -210,10 +192,9 @@ describe("idbPlugin", () => {
 					getId: (task) => task.id,
 				},
 			},
-		})
-			.use(idbPlugin())
-			.init();
-		await db.dispose();
+		});
+		const cleanup = await createIdbPersister(store);
+		cleanup();
 
 		// The database should have been closed
 		// We can't directly check if close() was called, but we can verify no errors occurred
@@ -225,7 +206,7 @@ describe("idbPlugin", () => {
 			email: taskSchema.shape.title,
 		});
 
-		const db = await createStore({
+		const store1 = createStore({
 			name: "multi-collection-test",
 			schema: {
 				tasks: {
@@ -237,13 +218,12 @@ describe("idbPlugin", () => {
 					getId: (user) => user.id,
 				},
 			},
-		})
-			.use(idbPlugin())
-			.init();
+		});
+		const cleanup1 = await createIdbPersister(store1);
 
 		// Add items to both collections
-		db.tasks.add(makeTask({ id: "1", title: "Task 1" }));
-		db.users.add({
+		store1.tasks.add(makeTask({ id: "1", title: "Task 1" }));
+		store1.users.add({
 			id: "u1",
 			title: "User 1",
 			email: "user@example.com",
@@ -253,10 +233,10 @@ describe("idbPlugin", () => {
 		// Wait for mutations
 		await new Promise((resolve) => setTimeout(resolve, 10));
 
-		await db.dispose();
+		cleanup1();
 
 		// Reload and verify both collections persisted (same db name)
-		const db2 = await createStore({
+		const store2 = createStore({
 			name: "multi-collection-test",
 			schema: {
 				tasks: {
@@ -268,19 +248,18 @@ describe("idbPlugin", () => {
 					getId: (user) => user.id,
 				},
 			},
-		})
-			.use(idbPlugin())
-			.init();
+		});
+		const cleanup2 = await createIdbPersister(store2);
 
-		expect(db2.tasks.getAll()).toHaveLength(1);
-		expect(db2.users.getAll()).toHaveLength(1);
+		expect(store2.tasks.getAll()).toHaveLength(1);
+		expect(store2.users.getAll()).toHaveLength(1);
 
-		await db2.dispose();
+		cleanup2();
 	});
 
 	test("syncs changes across tabs via BroadcastChannel", async () => {
-		// Create two database instances (simulating two tabs)
-		const db1 = await createStore({
+		// Create two store instances (simulating two tabs)
+		const store1 = createStore({
 			name: "broadcast-test",
 			schema: {
 				tasks: {
@@ -288,11 +267,10 @@ describe("idbPlugin", () => {
 					getId: (task) => task.id,
 				},
 			},
-		})
-			.use(idbPlugin())
-			.init();
+		});
+		const cleanup1 = await createIdbPersister(store1);
 
-		const db2 = await createStore({
+		const store2 = createStore({
 			name: "broadcast-test",
 			schema: {
 				tasks: {
@@ -300,27 +278,26 @@ describe("idbPlugin", () => {
 					getId: (task) => task.id,
 				},
 			},
-		})
-			.use(idbPlugin())
-			.init();
+		});
+		const cleanup2 = await createIdbPersister(store2);
 
-		// Add task in db1
-		db1.tasks.add(makeTask({ id: "1", title: "Task from tab 1" }));
+		// Add task in store1
+		store1.tasks.add(makeTask({ id: "1", title: "Task from tab 1" }));
 
 		// Wait for broadcast and reload
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
-		// db2 should have received the update via broadcast
-		const task = db2.tasks.get("1");
+		// store2 should have received the update via broadcast
+		const task = store2.tasks.get("1");
 		expect(task).toBeDefined();
 		expect(task?.title).toBe("Task from tab 1");
 
-		await db1.dispose();
-		await db2.dispose();
+		cleanup1();
+		cleanup2();
 	});
 
 	test("ignores own broadcasts", async () => {
-		const db = await createStore({
+		const store = createStore({
 			name: "self-broadcast-test",
 			schema: {
 				tasks: {
@@ -328,24 +305,23 @@ describe("idbPlugin", () => {
 					getId: (task) => task.id,
 				},
 			},
-		})
-			.use(idbPlugin())
-			.init();
+		});
+		const cleanup = await createIdbPersister(store);
 
 		// Add a task - this will broadcast, but the same instance should ignore it
-		db.tasks.add(makeTask({ id: "1", title: "Task 1" }));
+		store.tasks.add(makeTask({ id: "1", title: "Task 1" }));
 
 		// Wait for any potential broadcast handling
 		await new Promise((resolve) => setTimeout(resolve, 20));
 
 		// Should still have exactly one task
-		expect(db.tasks.getAll()).toHaveLength(1);
+		expect(store.tasks.getAll()).toHaveLength(1);
 
-		await db.dispose();
+		cleanup();
 	});
 
 	test("ignores broadcasts with matching instanceId", async () => {
-		const db = await createStore({
+		const store = createStore({
 			name: "instance-id-test",
 			schema: {
 				tasks: {
@@ -353,11 +329,10 @@ describe("idbPlugin", () => {
 					getId: (task) => task.id,
 				},
 			},
-		})
-			.use(idbPlugin())
-			.init();
+		});
+		const cleanup = await createIdbPersister(store);
 
-		// Get the broadcast channel for this db
+		// Get the broadcast channel for this store
 		const channels =
 			MockBroadcastChannel.channels.get("starling:instance-id-test") || [];
 		expect(channels.length).toBeGreaterThan(0);
@@ -374,7 +349,7 @@ describe("idbPlugin", () => {
 		};
 
 		// Add a task to trigger a broadcast
-		db.tasks.add(makeTask({ id: "1", title: "Task 1" }));
+		store.tasks.add(makeTask({ id: "1", title: "Task 1" }));
 		await new Promise((resolve) => setTimeout(resolve, 20));
 
 		// Now manually call onmessage with the same instanceId
@@ -392,13 +367,13 @@ describe("idbPlugin", () => {
 		await new Promise((resolve) => setTimeout(resolve, 20));
 
 		// Should still have exactly one task (the broadcast was ignored)
-		expect(db.tasks.getAll()).toHaveLength(1);
+		expect(store.tasks.getAll()).toHaveLength(1);
 
-		await db.dispose();
+		cleanup();
 	});
 
 	test("can disable BroadcastChannel", async () => {
-		const db = await createStore({
+		const store = createStore({
 			name: "no-broadcast-test",
 			schema: {
 				tasks: {
@@ -406,19 +381,20 @@ describe("idbPlugin", () => {
 					getId: (task) => task.id,
 				},
 			},
-		})
-			.use(idbPlugin({ useBroadcastChannel: false }))
-			.init();
+		});
+		const cleanup = await createIdbPersister(store, {
+			useBroadcastChannel: false,
+		});
 
 		// Add task
-		db.tasks.add(makeTask({ id: "1", title: "Task 1" }));
+		store.tasks.add(makeTask({ id: "1", title: "Task 1" }));
 
 		// Wait for mutation
 		await new Promise((resolve) => setTimeout(resolve, 10));
 
 		// Should work without errors
-		expect(db.tasks.getAll()).toHaveLength(1);
+		expect(store.tasks.getAll()).toHaveLength(1);
 
-		await db.dispose();
+		cleanup();
 	});
 });

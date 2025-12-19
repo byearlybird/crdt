@@ -1,7 +1,7 @@
-import type { Store, StorePlugin } from "../../store/store";
+import type { Store } from "../../store/store";
 import type { StoreSnapshot } from "../../store/types";
 
-export type IdbPluginConfig = {
+export type IdbPersisterConfig = {
 	/**
 	 * Version of the IndexedDB database
 	 * @default 1
@@ -15,129 +15,128 @@ export type IdbPluginConfig = {
 };
 
 /**
- * Create an IndexedDB persistence plugin for Starling stores.
+ * Create an IndexedDB persister for Starling stores.
  *
- * The plugin:
+ * The persister:
  * - Loads existing snapshot from IndexedDB on init
  * - Persists store snapshot to IndexedDB on every mutation
  * - Enables instant cross-tab sync via BroadcastChannel API
- * - Gracefully closes the database connection on dispose
  *
  * Cross-tab sync uses the BroadcastChannel API to notify other tabs
  * of changes in real-time. When a mutation occurs in one tab, other tabs
  * are instantly notified and reload the data from IndexedDB.
  *
+ * @param store - The Starling store to persist
  * @param config - IndexedDB configuration
- * @returns A StorePlugin instance
+ * @returns A cleanup function to stop persistence and close the database
  *
  * @example
  * ```typescript
- * const store = await createStore({
+ * const store = createStore({
  *   name: "my-app",
  *   schema: {
  *     tasks: { schema: taskSchema, getId: (task) => task.id },
  *   },
- * })
- *   .use(idbPlugin())
- *   .init();
+ * });
+ *
+ * const cleanup = await createIdbPersister(store);
+ *
+ * // Later, when done:
+ * cleanup();
  * ```
  *
  * @example Disable BroadcastChannel
  * ```typescript
- * const store = await createStore({
+ * const store = createStore({
  *   name: "my-app",
  *   schema: {
  *     tasks: { schema: taskSchema, getId: (task) => task.id },
  *   },
- * })
- *   .use(idbPlugin({ useBroadcastChannel: false }))
- *   .init();
+ * });
+ *
+ * const cleanup = await createIdbPersister(store, {
+ *   useBroadcastChannel: false
+ * });
  * ```
  */
-export function idbPlugin(config: IdbPluginConfig = {}): StorePlugin<any> {
+export async function createIdbPersister(
+	store: Store<any>,
+	config: IdbPersisterConfig = {},
+): Promise<() => void> {
 	const { version = 1, useBroadcastChannel = true } = config;
 	let dbInstance: IDBDatabase | null = null;
 	let unsubscribe: (() => void) | null = null;
 	let broadcastChannel: BroadcastChannel | null = null;
 	const instanceId = crypto.randomUUID();
 
-	return {
-		handlers: {
-			async init(store: Store<any>) {
-				// Open IndexedDB connection with single store
-				dbInstance = await openDatabase(store.name, version);
+	// Open IndexedDB connection with single store
+	dbInstance = await openDatabase(store.name, version);
 
-				// Load existing snapshot from IndexedDB
+	// Load existing snapshot from IndexedDB
+	const savedSnapshot = await loadSnapshot(dbInstance);
+
+	// Merge loaded snapshot into store
+	if (savedSnapshot) {
+		store.mergeSnapshot(savedSnapshot);
+	}
+
+	// Subscribe to mutations and persist on change
+	unsubscribe = store.on("mutation", async () => {
+		if (dbInstance) {
+			const snapshot = store.toSnapshot();
+			await saveSnapshot(dbInstance, snapshot);
+
+			// Broadcast changes to other tabs via BroadcastChannel
+			if (broadcastChannel) {
+				broadcastChannel.postMessage({
+					type: "mutation",
+					instanceId,
+					timestamp: Date.now(),
+				});
+			}
+		}
+	});
+
+	// Set up BroadcastChannel for instant cross-tab sync
+	if (useBroadcastChannel && typeof BroadcastChannel !== "undefined") {
+		broadcastChannel = new BroadcastChannel(`starling:${store.name}`);
+
+		// Listen for changes from other tabs
+		broadcastChannel.onmessage = async (event) => {
+			// Ignore our own broadcasts
+			if (event.data.instanceId === instanceId) {
+				return;
+			}
+
+			if (event.data.type === "mutation" && dbInstance) {
+				// Another tab made changes - reload and merge
 				const savedSnapshot = await loadSnapshot(dbInstance);
-
-				// Merge loaded snapshot into store
 				if (savedSnapshot) {
 					store.mergeSnapshot(savedSnapshot);
 				}
+			}
+		};
+	}
 
-				// Subscribe to mutations and persist on change
-				unsubscribe = store.on("mutation", async () => {
-					if (dbInstance) {
-						const snapshot = store.toSnapshot();
-						await saveSnapshot(dbInstance, snapshot);
+	// Return cleanup function
+	return () => {
+		// Close BroadcastChannel
+		if (broadcastChannel) {
+			broadcastChannel.close();
+			broadcastChannel = null;
+		}
 
-						// Broadcast changes to other tabs via BroadcastChannel
-						if (broadcastChannel) {
-							broadcastChannel.postMessage({
-								type: "mutation",
-								instanceId,
-								timestamp: Date.now(),
-							});
-						}
-					}
-				});
+		// Unsubscribe from mutation events
+		if (unsubscribe) {
+			unsubscribe();
+			unsubscribe = null;
+		}
 
-				// Set up BroadcastChannel for instant cross-tab sync
-				if (useBroadcastChannel && typeof BroadcastChannel !== "undefined") {
-					broadcastChannel = new BroadcastChannel(`starling:${store.name}`);
-
-					// Listen for changes from other tabs
-					broadcastChannel.onmessage = async (event) => {
-						// Ignore our own broadcasts
-						if (event.data.instanceId === instanceId) {
-							return;
-						}
-
-						if (event.data.type === "mutation" && dbInstance) {
-							// Another tab made changes - reload and merge
-							const savedSnapshot = await loadSnapshot(dbInstance);
-							if (savedSnapshot) {
-								store.mergeSnapshot(savedSnapshot);
-							}
-						}
-					};
-				}
-			},
-
-			async dispose(store: Store<any>) {
-				// Close BroadcastChannel
-				if (broadcastChannel) {
-					broadcastChannel.close();
-					broadcastChannel = null;
-				}
-
-				// Unsubscribe from mutation events
-				if (unsubscribe) {
-					unsubscribe();
-					unsubscribe = null;
-				}
-
-				// Save final state
-				if (dbInstance) {
-					const snapshot = store.toSnapshot();
-					await saveSnapshot(dbInstance, snapshot);
-
-					// Close the database connection
-					dbInstance.close();
-					dbInstance = null;
-				}
-			},
-		},
+		// Close the database connection
+		if (dbInstance) {
+			dbInstance.close();
+			dbInstance = null;
+		}
 	};
 }
 
