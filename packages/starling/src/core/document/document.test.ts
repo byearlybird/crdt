@@ -79,6 +79,7 @@ test("mergeDocuments adds new document from source", () => {
 				"2025-01-01T00:05:00.000Z|0001|c3d4",
 			),
 		},
+		tombstones: {},
 	};
 
 	const result = mergeDocuments(into, from);
@@ -102,6 +103,7 @@ test("mergeDocuments updates existing document", () => {
 				"2025-01-01T00:00:00.000Z|0000|a1b2",
 			),
 		},
+		tombstones: {},
 	};
 	const from: StarlingDocument<AnyObject> = {
 		type: "items",
@@ -113,6 +115,7 @@ test("mergeDocuments updates existing document", () => {
 				"2025-01-01T00:05:00.000Z|0001|c3d4",
 			),
 		},
+		tombstones: {},
 	};
 
 	const result = mergeDocuments(into, from);
@@ -135,27 +138,24 @@ test("mergeDocuments marks document as deleted", () => {
 				"2025-01-01T00:00:00.000Z|0000|a1b2",
 			),
 		},
+		tombstones: {},
 	};
 
-	const deletedDoc = makeResource(
-		"doc-1",
-		{ name: "Alice" },
-		"2025-01-01T00:00:00.000Z|0000|a1b2",
-	);
-	deletedDoc.meta.deletedAt = "2025-01-01T00:05:00.000Z|0001|c3d4";
-
+	// Remote has tombstone for doc-1
 	const from: StarlingDocument<AnyObject> = {
 		type: "items",
 		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
-		resources: {
-			"doc-1": deletedDoc,
+		resources: {},
+		tombstones: {
+			"doc-1": "2025-01-01T00:05:00.000Z|0001|c3d4",
 		},
 	};
 
 	const result = mergeDocuments(into, from);
 
-	expect(Object.keys(result.document.resources).length).toBe(1);
-	expect(Object.values(result.document.resources)[0]?.meta.deletedAt).toBe(
+	// Resource should be removed (tombstoned)
+	expect(Object.keys(result.document.resources).length).toBe(0);
+	expect(result.document.tombstones["doc-1"]).toBe(
 		"2025-01-01T00:05:00.000Z|0001|c3d4",
 	);
 	expect(result.changes.added.size).toBe(0);
@@ -165,21 +165,17 @@ test("mergeDocuments marks document as deleted", () => {
 });
 
 test("mergeDocuments keeps deleted document deleted on update", () => {
-	const deletedDoc = makeResource(
-		"doc-1",
-		{ name: "Alice" },
-		"2025-01-01T00:00:00.000Z|0000|a1b2",
-	);
-	deletedDoc.meta.deletedAt = "2025-01-01T00:02:00.000Z|0001|b2c3";
-
+	// Local has tombstone for doc-1
 	const into: StarlingDocument<AnyObject> = {
 		type: "items",
 		latest: "2025-01-01T00:02:00.000Z|0001|b2c3",
-		resources: {
-			"doc-1": deletedDoc,
+		resources: {},
+		tombstones: {
+			"doc-1": "2025-01-01T00:02:00.000Z|0001|b2c3",
 		},
 	};
 
+	// Remote has updated resource for doc-1
 	const from: StarlingDocument<AnyObject> = {
 		type: "items",
 		latest: "2025-01-01T00:05:00.000Z|0002|c3d4",
@@ -190,13 +186,14 @@ test("mergeDocuments keeps deleted document deleted on update", () => {
 				"2025-01-01T00:05:00.000Z|0002|c3d4",
 			),
 		},
+		tombstones: {},
 	};
 
 	const result = mergeDocuments(into, from);
 
-	// Deletion is final: document stays deleted, but data is merged internally
-	expect(Object.keys(result.document.resources).length).toBe(1);
-	expect(Object.values(result.document.resources)[0]?.meta.deletedAt).toBe(
+	// Deletion is final: resource should stay tombstoned, not restored
+	expect(Object.keys(result.document.resources).length).toBe(0);
+	expect(result.document.tombstones["doc-1"]).toBe(
 		"2025-01-01T00:02:00.000Z|0001|b2c3",
 	);
 	expect(result.changes.added.size).toBe(0);
@@ -204,30 +201,29 @@ test("mergeDocuments keeps deleted document deleted on update", () => {
 	expect(result.changes.deleted.size).toBe(0);
 });
 
-test("mergeDocuments does not track deleted documents as added", () => {
+test("mergeDocuments does not track tombstoned documents as added", () => {
 	const into = makeDocument<AnyObject>(
 		"items",
 		"2025-01-01T00:00:00.000Z|0000|a1b2",
 	);
 
-	const deletedDoc = makeResource(
-		"doc-1",
-		{ name: "Alice" },
-		"2025-01-01T00:05:00.000Z|0001|c3d4",
-	);
-	deletedDoc.meta.deletedAt = "2025-01-01T00:05:00.000Z|0001|c3d4";
-
+	// Remote has a tombstone (no resource)
 	const from: StarlingDocument<AnyObject> = {
 		type: "items",
 		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
-		resources: {
-			"doc-1": deletedDoc,
+		resources: {},
+		tombstones: {
+			"doc-1": "2025-01-01T00:05:00.000Z|0001|c3d4",
 		},
 	};
 
 	const result = mergeDocuments(into, from);
 
-	expect(Object.keys(result.document.resources).length).toBe(1);
+	// Tombstone should be merged, no resources added
+	expect(Object.keys(result.document.resources).length).toBe(0);
+	expect(result.document.tombstones["doc-1"]).toBe(
+		"2025-01-01T00:05:00.000Z|0001|c3d4",
+	);
 	expect(result.changes.added.size).toBe(0);
 	expect(result.changes.updated.size).toBe(0);
 	expect(result.changes.deleted.size).toBe(0);
@@ -249,15 +245,10 @@ test("mergeDocuments merges multiple documents with mixed operations", () => {
 				"2025-01-01T00:00:00.000Z|0000|a1b2",
 			),
 		},
+		tombstones: {},
 	};
 
-	const deletedDoc = makeResource(
-		"doc-2",
-		{ name: "Bob" },
-		"2025-01-01T00:00:00.000Z|0000|a1b2",
-	);
-	deletedDoc.meta.deletedAt = "2025-01-01T00:05:00.000Z|0001|c3d4";
-
+	// Remote has doc-2 tombstoned, doc-1 updated, doc-3 added
 	const from: StarlingDocument<AnyObject> = {
 		type: "items",
 		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
@@ -267,18 +258,24 @@ test("mergeDocuments merges multiple documents with mixed operations", () => {
 				{ age: 31 },
 				"2025-01-01T00:05:00.000Z|0001|c3d4",
 			),
-			"doc-2": deletedDoc,
 			"doc-3": makeResource(
 				"doc-3",
 				{ name: "Charlie", age: 28 },
 				"2025-01-01T00:05:00.000Z|0001|c3d4",
 			),
 		},
+		tombstones: {
+			"doc-2": "2025-01-01T00:05:00.000Z|0001|c3d4",
+		},
 	};
 
 	const result = mergeDocuments(into, from);
 
-	expect(Object.keys(result.document.resources).length).toBe(3);
+	// doc-1 updated, doc-2 deleted, doc-3 added
+	expect(Object.keys(result.document.resources).length).toBe(2);
+	expect(result.document.tombstones["doc-2"]).toBe(
+		"2025-01-01T00:05:00.000Z|0001|c3d4",
+	);
 	expect(result.changes.added.size).toBe(1);
 	expect(result.changes.added.has("doc-3")).toBe(true);
 	expect(result.changes.updated.size).toBe(1);
@@ -303,6 +300,7 @@ test("mergeDocuments preserves documents only in base collection", () => {
 				"2025-01-01T00:00:00.000Z|0000|a1b2",
 			),
 		},
+		tombstones: {},
 	};
 	const from: StarlingDocument<AnyObject> = {
 		type: "items",
@@ -314,6 +312,7 @@ test("mergeDocuments preserves documents only in base collection", () => {
 				"2025-01-01T00:05:00.000Z|0001|c3d4",
 			),
 		},
+		tombstones: {},
 	};
 
 	const result = mergeDocuments(into, from);
@@ -338,6 +337,7 @@ test("mergeDocuments does not mark unchanged documents as updated", () => {
 		resources: {
 			"doc-1": doc,
 		},
+		tombstones: {},
 	};
 	const from: StarlingDocument<AnyObject> = {
 		type: "items",
@@ -345,6 +345,7 @@ test("mergeDocuments does not mark unchanged documents as updated", () => {
 		resources: {
 			"doc-1": doc,
 		},
+		tombstones: {},
 	};
 
 	const result = mergeDocuments(into, from);
@@ -366,6 +367,7 @@ test("mergeDocuments field-level LWW for nested objects", () => {
 				"2025-01-01T00:00:00.000Z|0000|a1b2",
 			),
 		},
+		tombstones: {},
 	};
 
 	const from: StarlingDocument<AnyObject> = {
@@ -378,6 +380,7 @@ test("mergeDocuments field-level LWW for nested objects", () => {
 				"2025-01-01T00:05:00.000Z|0001|c3d4",
 			),
 		},
+		tombstones: {},
 	};
 
 	const result = mergeDocuments(into, from);
@@ -401,6 +404,7 @@ test("mergeDocuments detects no changes when content is identical", () => {
 		resources: {
 			"doc-1": resource,
 		},
+		tombstones: {},
 	};
 
 	// Create a copy of the document with identical content but different object reference
@@ -416,6 +420,7 @@ test("mergeDocuments detects no changes when content is identical", () => {
 		resources: {
 			"doc-1": fromResource,
 		},
+		tombstones: {},
 	};
 
 	const result = mergeDocuments(into, from);
@@ -445,6 +450,7 @@ test("mergeDocuments: document meta.latest matches max of resource meta.latest v
 				"2025-01-01T00:02:00.000Z|0000|e5f6",
 			),
 		},
+		tombstones: {},
 	};
 
 	const from: StarlingDocument<AnyObject> = {
@@ -457,6 +463,7 @@ test("mergeDocuments: document meta.latest matches max of resource meta.latest v
 				"2025-01-01T00:05:00.000Z|0001|c3d4",
 			),
 		},
+		tombstones: {},
 	};
 
 	const result = mergeDocuments(into, from);
@@ -476,6 +483,7 @@ test("mergeDocuments: document meta.latest after adding new resource", () => {
 				"2025-01-01T00:00:00.000Z|0000|a1b2",
 			),
 		},
+		tombstones: {},
 	};
 
 	const from: StarlingDocument<AnyObject> = {
@@ -488,6 +496,7 @@ test("mergeDocuments: document meta.latest after adding new resource", () => {
 				"2025-01-01T00:10:00.000Z|0002|i9j0",
 			),
 		},
+		tombstones: {},
 	};
 
 	const result = mergeDocuments(into, from);
@@ -506,6 +515,7 @@ test("mergeDocuments: document meta.latest after update", () => {
 				"2025-01-01T00:00:00.000Z|0000|a1b2",
 			),
 		},
+		tombstones: {},
 	};
 
 	const from: StarlingDocument<AnyObject> = {
@@ -518,6 +528,7 @@ test("mergeDocuments: document meta.latest after update", () => {
 				"2025-01-01T00:08:00.000Z|0001|g7h8",
 			),
 		},
+		tombstones: {},
 	};
 
 	const result = mergeDocuments(into, from);
@@ -536,6 +547,7 @@ test("mergeDocuments: document meta.latest with deleted resource", () => {
 				"2025-01-01T00:00:00.000Z|0000|a1b2",
 			),
 		},
+		tombstones: {},
 	};
 
 	const deletedDoc = makeResource(
@@ -551,6 +563,7 @@ test("mergeDocuments: document meta.latest with deleted resource", () => {
 		resources: {
 			"doc-1": deletedDoc,
 		},
+		tombstones: {},
 	};
 
 	const result = mergeDocuments(into, from);
@@ -575,6 +588,7 @@ test("mergeDocuments: document meta.latest with multiple resources at different 
 				"2025-01-01T00:03:00.000Z|0001|c3d4",
 			),
 		},
+		tombstones: {},
 	};
 
 	const from: StarlingDocument<AnyObject> = {
@@ -592,6 +606,7 @@ test("mergeDocuments: document meta.latest with multiple resources at different 
 				"2025-01-01T00:07:00.000Z|0002|g7h8",
 			),
 		},
+		tombstones: {},
 	};
 
 	const result = mergeDocuments(into, from);
@@ -620,6 +635,7 @@ test("mergeDocuments: updates newestEventstamp from new resource with later time
 				"2025-01-01T00:05:00.000Z|0001|e5f6", // Later than from.latest
 			),
 		},
+		tombstones: {},
 	};
 
 	const result = mergeDocuments(into, from);
@@ -642,6 +658,7 @@ test("mergeDocuments: updates newestEventstamp from merged resource with later t
 				"2025-01-01T00:00:00.000Z|0000|a1b2",
 			),
 		},
+		tombstones: {},
 	};
 
 	// from document has resource with later timestamp but document latest is older
@@ -655,6 +672,7 @@ test("mergeDocuments: updates newestEventstamp from merged resource with later t
 				"2025-01-01T00:10:00.000Z|0001|j9k0", // Much later than document latest
 			),
 		},
+		tombstones: {},
 	};
 
 	const result = mergeDocuments(into, from);
@@ -662,4 +680,202 @@ test("mergeDocuments: updates newestEventstamp from merged resource with later t
 	// Document's latest should be updated to merged resource's timestamp
 	expect(result.document.latest).toBe("2025-01-01T00:10:00.000Z|0001|j9k0");
 	expect(result.changes.updated.size).toBe(1);
+});
+
+// Tombstone merge tests
+test("mergeDocuments merges tombstones with LWW on eventstamps", () => {
+	const into: StarlingDocument<AnyObject> = {
+		type: "items",
+		latest: "2025-01-01T00:10:00.000Z|0001|e5f6",
+		resources: {},
+		tombstones: {
+			"doc-1": "2025-01-01T00:10:00.000Z|0001|e5f6",
+			"doc-2": "2025-01-01T00:05:00.000Z|0001|c3d4",
+		},
+	};
+
+	const from: StarlingDocument<AnyObject> = {
+		type: "items",
+		latest: "2025-01-01T00:15:00.000Z|0001|g7h8",
+		resources: {},
+		tombstones: {
+			"doc-2": "2025-01-01T00:15:00.000Z|0001|g7h8", // Newer
+			"doc-3": "2025-01-01T00:12:00.000Z|0001|i9j0",
+		},
+	};
+
+	const result = mergeDocuments(into, from);
+
+	// Should keep all tombstones, using LWW for doc-2
+	expect(Object.keys(result.document.tombstones)).toHaveLength(3);
+	expect(result.document.tombstones["doc-1"]).toBe(
+		"2025-01-01T00:10:00.000Z|0001|e5f6",
+	);
+	expect(result.document.tombstones["doc-2"]).toBe(
+		"2025-01-01T00:15:00.000Z|0001|g7h8",
+	); // Newer wins
+	expect(result.document.tombstones["doc-3"]).toBe(
+		"2025-01-01T00:12:00.000Z|0001|i9j0",
+	);
+});
+
+test("mergeDocuments tombstone prevents resurrection from remote", () => {
+	const into: StarlingDocument<AnyObject> = {
+		type: "items",
+		latest: "2025-01-01T00:10:00.000Z|0001|e5f6",
+		resources: {},
+		tombstones: {
+			"doc-1": "2025-01-01T00:10:00.000Z|0001|e5f6",
+		},
+	};
+
+	// Remote has resource that we deleted
+	const from: StarlingDocument<AnyObject> = {
+		type: "items",
+		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
+		resources: {
+			"doc-1": makeResource(
+				"doc-1",
+				{ name: "Alice" },
+				"2025-01-01T00:05:00.000Z|0001|c3d4",
+			),
+		},
+		tombstones: {},
+	};
+
+	const result = mergeDocuments(into, from);
+
+	// Resource should NOT be resurrected
+	expect(result.document.resources["doc-1"]).toBeUndefined();
+	expect(result.document.tombstones["doc-1"]).toBe(
+		"2025-01-01T00:10:00.000Z|0001|e5f6",
+	);
+	expect(result.changes.added.size).toBe(0);
+	expect(result.changes.deleted.size).toBe(0);
+});
+
+test("mergeDocuments tombstone prevents resurrection from local", () => {
+	const into: StarlingDocument<AnyObject> = {
+		type: "items",
+		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
+		resources: {
+			"doc-1": makeResource(
+				"doc-1",
+				{ name: "Alice" },
+				"2025-01-01T00:05:00.000Z|0001|c3d4",
+			),
+		},
+		tombstones: {},
+	};
+
+	// Remote has tombstone for resource we still have
+	const from: StarlingDocument<AnyObject> = {
+		type: "items",
+		latest: "2025-01-01T00:10:00.000Z|0001|e5f6",
+		resources: {},
+		tombstones: {
+			"doc-1": "2025-01-01T00:10:00.000Z|0001|e5f6",
+		},
+	};
+
+	const result = mergeDocuments(into, from);
+
+	// Resource should be removed, tombstone kept
+	expect(result.document.resources["doc-1"]).toBeUndefined();
+	expect(result.document.tombstones["doc-1"]).toBe(
+		"2025-01-01T00:10:00.000Z|0001|e5f6",
+	);
+	expect(result.changes.deleted.size).toBe(1);
+	expect(result.changes.deleted.has("doc-1")).toBe(true);
+});
+
+test("mergeDocuments tombstone eventstamps update document.latest", () => {
+	const into: StarlingDocument<AnyObject> = {
+		type: "items",
+		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
+		resources: {
+			"doc-1": makeResource(
+				"doc-1",
+				{ name: "Alice" },
+				"2025-01-01T00:05:00.000Z|0001|c3d4",
+			),
+		},
+		tombstones: {},
+	};
+
+	const from: StarlingDocument<AnyObject> = {
+		type: "items",
+		latest: "2025-01-01T00:20:00.000Z|0001|k1l2",
+		resources: {},
+		tombstones: {
+			"doc-2": "2025-01-01T00:20:00.000Z|0001|k1l2", // Newest eventstamp
+		},
+	};
+
+	const result = mergeDocuments(into, from);
+
+	// Document latest should be updated from tombstone eventstamp
+	expect(result.document.latest).toBe("2025-01-01T00:20:00.000Z|0001|k1l2");
+});
+
+test("mergeDocuments handles concurrent deletions (both have tombstone)", () => {
+	const into: StarlingDocument<AnyObject> = {
+		type: "items",
+		latest: "2025-01-01T00:10:00.000Z|0001|e5f6",
+		resources: {},
+		tombstones: {
+			"doc-1": "2025-01-01T00:10:00.000Z|0001|e5f6",
+		},
+	};
+
+	const from: StarlingDocument<AnyObject> = {
+		type: "items",
+		latest: "2025-01-01T00:08:00.000Z|0001|g7h8",
+		resources: {},
+		tombstones: {
+			"doc-1": "2025-01-01T00:08:00.000Z|0001|g7h8", // Older
+		},
+	};
+
+	const result = mergeDocuments(into, from);
+
+	// Should keep newer tombstone eventstamp
+	expect(result.document.tombstones["doc-1"]).toBe(
+		"2025-01-01T00:10:00.000Z|0001|e5f6",
+	);
+	expect(result.changes.deleted.size).toBe(0); // No new deletion
+});
+
+test("mergeDocuments empty tombstones merge correctly", () => {
+	const into: StarlingDocument<AnyObject> = {
+		type: "items",
+		latest: "2025-01-01T00:05:00.000Z|0001|c3d4",
+		resources: {
+			"doc-1": makeResource(
+				"doc-1",
+				{ name: "Alice" },
+				"2025-01-01T00:05:00.000Z|0001|c3d4",
+			),
+		},
+		tombstones: {},
+	};
+
+	const from: StarlingDocument<AnyObject> = {
+		type: "items",
+		latest: "2025-01-01T00:10:00.000Z|0001|e5f6",
+		resources: {
+			"doc-2": makeResource(
+				"doc-2",
+				{ name: "Bob" },
+				"2025-01-01T00:10:00.000Z|0001|e5f6",
+			),
+		},
+		tombstones: {},
+	};
+
+	const result = mergeDocuments(into, from);
+
+	// Should merge resources normally, no tombstones
+	expect(Object.keys(result.document.resources)).toHaveLength(2);
+	expect(Object.keys(result.document.tombstones)).toHaveLength(0);
 });

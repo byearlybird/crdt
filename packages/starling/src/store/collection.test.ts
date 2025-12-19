@@ -65,14 +65,14 @@ describe("Collection", () => {
 			expect(store.tasks.get("1")).toBeNull();
 		});
 
-		test("includes soft-deleted items with includeDeleted flag", () => {
+		test("truly deletes items (no recovery)", () => {
 			const store = createTestStore();
 			store.tasks.add({ id: "1", title: "Test", completed: false });
 			store.tasks.remove("1");
 
-			const task = store.tasks.get("1", { includeDeleted: true });
+			const task = store.tasks.get("1");
 
-			expect(task?.title).toBe("Test");
+			expect(task).toBeNull();
 		});
 	});
 
@@ -98,14 +98,13 @@ describe("Collection", () => {
 	});
 
 	describe("remove", () => {
-		test("soft-deletes item", () => {
+		test("truly deletes item", () => {
 			const store = createTestStore();
 			store.tasks.add({ id: "1", title: "Test", completed: false });
 
 			store.tasks.remove("1");
 
 			expect(store.tasks.get("1")).toBeNull();
-			expect(store.tasks.get("1", { includeDeleted: true })).toBeDefined();
 		});
 
 		test("throws on non-existent item", () => {
@@ -139,16 +138,16 @@ describe("Collection", () => {
 			expect(allTasks[0]?.id).toBe("1");
 		});
 
-		test("includes soft-deleted items with includeDeleted flag", () => {
+		test("excludes deleted items", () => {
 			const store = createTestStore();
 			store.tasks.add({ id: "1", title: "Task 1", completed: false });
 			store.tasks.add({ id: "2", title: "Task 2", completed: true });
 			store.tasks.remove("2");
 
-			const allTasks = store.tasks.getAll({ includeDeleted: true });
+			const allTasks = store.tasks.getAll();
 
-			expect(allTasks).toHaveLength(2);
-			expect(allTasks.map((t) => t.id).sort()).toEqual(["1", "2"]);
+			expect(allTasks).toHaveLength(1);
+			expect(allTasks[0]?.id).toBe("1");
 		});
 	});
 

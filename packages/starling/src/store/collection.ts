@@ -1,5 +1,4 @@
 import {
-	deleteResource,
 	makeResource,
 	mapToDocument,
 	mergeDocuments,
@@ -34,8 +33,8 @@ export type CollectionEvents<T> = {
 };
 
 export type Collection<T extends AnyObjectSchema> = {
-	get(id: string, opts?: { includeDeleted?: boolean }): InferOutput<T> | null;
-	getAll(opts?: { includeDeleted?: boolean }): InferOutput<T>[];
+	get(id: string): InferOutput<T> | null;
+	getAll(): InferOutput<T>[];
 	find<U = InferOutput<T>>(
 		filter: (item: InferOutput<T>) => boolean,
 		opts?: {
@@ -81,6 +80,7 @@ export function createCollection<T extends AnyObjectSchema>(
 ): CollectionWithInternals<T> {
 	const autoFlush = options?.autoFlush ?? true;
 	const data = initialData ?? new Map<string, ResourceObject<InferOutput<T>>>();
+	const tombstones = new Map<string, string>();
 
 	const emitter = createEmitter<CollectionEvents<InferOutput<T>>>();
 
@@ -111,28 +111,18 @@ export function createCollection<T extends AnyObjectSchema>(
 	};
 
 	return {
-		get(id: string, opts: { includeDeleted?: boolean } = {}) {
+		get(id: string) {
 			const resource = data.get(id);
 			if (!resource) {
-				return null;
-			}
-
-			if (!opts.includeDeleted && resource.meta.deletedAt) {
 				return null;
 			}
 
 			return resource.attributes;
 		},
 
-		getAll(opts: { includeDeleted?: boolean } = {}) {
+		getAll() {
 			const resources = Array.from(data.values());
-			if (opts.includeDeleted) {
-				return resources.map((resource) => resource.attributes);
-			} else {
-				return resources
-					.filter((resource) => !resource.meta.deletedAt)
-					.map((resource) => resource.attributes);
-			}
+			return resources.map((resource) => resource.attributes);
 		},
 
 		find<U = InferOutput<T>>(
@@ -145,10 +135,6 @@ export function createCollection<T extends AnyObjectSchema>(
 			const results: U[] = [];
 
 			for (const [, resource] of data.entries()) {
-				if (resource.meta.deletedAt) {
-					continue;
-				}
-
 				const attributes = resource.attributes;
 
 				if (filter(attributes)) {
@@ -228,9 +214,11 @@ export function createCollection<T extends AnyObjectSchema>(
 			// Capture the item before deletion
 			const item = existing.attributes;
 
-			const removed = deleteResource(existing, getEventstamp());
+			// Actually delete from map
+			data.delete(id);
 
-			data.set(id, removed);
+			// Track tombstone
+			tombstones.set(id, getEventstamp());
 
 			// Buffer the remove mutation
 			pendingMutations.removed.push({ id, item });
@@ -248,8 +236,8 @@ export function createCollection<T extends AnyObjectSchema>(
 				beforeState.set(id, resource.attributes);
 			}
 
-			// Build current document from collection state
-			const currentDoc = mapToDocument(name, data, getEventstamp());
+			// Build current document from collection state including tombstones
+			const currentDoc = mapToDocument(name, data, getEventstamp(), tombstones);
 
 			// Merge using core mergeDocuments
 			const result = mergeDocuments(currentDoc, document);
@@ -258,6 +246,12 @@ export function createCollection<T extends AnyObjectSchema>(
 			data.clear();
 			for (const [id, resource] of Object.entries(result.document.resources)) {
 				data.set(id, resource);
+			}
+
+			// Update tombstones
+			tombstones.clear();
+			for (const [id, stamp] of Object.entries(result.document.tombstones)) {
+				tombstones.set(id, stamp);
 			}
 
 			// Emit events for changes
@@ -292,7 +286,7 @@ export function createCollection<T extends AnyObjectSchema>(
 		},
 
 		toDocument() {
-			return mapToDocument(name, data, getEventstamp());
+			return mapToDocument(name, data, getEventstamp(), tombstones);
 		},
 
 		// Symbol-keyed internal methods for transaction support

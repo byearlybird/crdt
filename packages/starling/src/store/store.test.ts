@@ -161,20 +161,19 @@ describe("Store", () => {
 			expect(snapshot.collections.users.latest).toBeDefined();
 		});
 
-		test("includes soft-deleted items in snapshot", () => {
+		test("includes tombstones in snapshot", () => {
 			const store = createTestStore();
 			store.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
 			store.tasks.remove("task-1");
 
 			const snapshot = store.toSnapshot();
 
-			expect(Object.keys(snapshot.collections.tasks.resources)).toHaveLength(1);
-			expect(
-				Object.values(snapshot.collections.tasks.resources)[0]?.meta.deletedAt,
-			).toBeDefined();
-			expect(
-				Object.values(snapshot.collections.tasks.resources)[0]?.meta.deletedAt,
-			).not.toBeNull();
+			// Resource should be removed, tombstone should exist
+			expect(Object.keys(snapshot.collections.tasks.resources)).toHaveLength(0);
+			expect(snapshot.collections.tasks.tombstones["task-1"]).toBeDefined();
+			expect(typeof snapshot.collections.tasks.tombstones["task-1"]).toBe(
+				"string",
+			);
 		});
 
 		test("includes correct latest eventstamps", () => {

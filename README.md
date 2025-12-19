@@ -149,7 +149,7 @@ For custom sync implementations, you can import low-level primitives from the `/
 
 - `createClock` / `createClockFromEventstamp` – clock utilities for eventstamps
 - `makeDocument` / `mergeDocuments` – document creation and merging
-- `makeResource` / `mergeResources` / `deleteResource` – resource object operations
+- `makeResource` / `mergeResources` – resource object operations
 
 ## Project Status
 
