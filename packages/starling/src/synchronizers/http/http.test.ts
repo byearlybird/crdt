@@ -639,6 +639,9 @@ describe("createHttpSynchronizer", () => {
 			expect(callCount).toBeGreaterThan(2);
 
 			cleanup();
+
+			// Wait for any async operations to complete before next test
+			await new Promise((resolve) => setTimeout(resolve, 50));
 		});
 
 		test("stops retrying after max attempts", async () => {
@@ -681,8 +684,10 @@ describe("createHttpSynchronizer", () => {
 
 			store.tasks.add(makeTask({ id: "1", title: "Test" }));
 
-			// Wait for all retries to complete
-			await new Promise((resolve) => setTimeout(resolve, 300));
+			// Wait for debounce + all 3 retry attempts with exponential backoff
+			// Debounce: 10ms, Attempt 1: 0ms, Delay: 10ms, Attempt 2: 0ms, Delay: 20ms, Attempt 3: 0ms
+			// Total: ~40ms, use 100ms for safety
+			await new Promise((resolve) => setTimeout(resolve, 100));
 
 			// Should have stopped after max attempts
 			expect(patchCallCount).toBe(3);
