@@ -1,6 +1,6 @@
 import { maxEventstamp } from "../clock/eventstamp";
 import type { AnyObject, StarlingDocument } from "./document";
-import { computeResourceLatest, type ResourceObject } from "./resource";
+import type { ResourceObject } from "./resource";
 
 /**
  * Convert a StarlingDocument's resources into a Map keyed by resource ID.
@@ -31,7 +31,7 @@ export function mapToDocument<T extends AnyObject>(
 ): { document: StarlingDocument<T>; latest: string } {
 	const resourceArray = Array.from(resources.values());
 	const eventstamps = resourceArray.map((r) =>
-		computeResourceLatest(r.eventstamps),
+		maxEventstamp(Object.values(r.eventstamps)),
 	);
 
 	// Include fallback eventstamp in the max calculation if provided

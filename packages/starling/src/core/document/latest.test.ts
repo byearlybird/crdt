@@ -1,41 +1,39 @@
 import { expect, test } from "bun:test";
-import { maxEventstamp } from "../clock/eventstamp";
-import { computeResourceLatest } from "./resource";
+import { maxEventstamp, MIN_EVENTSTAMP } from "../clock/eventstamp";
 
 /**
  * Focused tests for "latest eventstamp" computation utilities.
  * These utilities are used to compute cached latest values in resources and documents.
  */
 
-test("computeResourceLatest returns max eventstamp from flat eventstamps", () => {
+test("maxEventstamp returns max eventstamp from flat eventstamps", () => {
 	const eventstamps = {
 		name: "2025-01-01T00:00:00.000Z|0001|a1b2",
 		email: "2025-01-01T00:05:00.000Z|0001|c3d4", // Newer
 		age: "2025-01-01T00:02:00.000Z|0001|e5f6",
 	};
 
-	const latest = computeResourceLatest(eventstamps);
+	const latest = maxEventstamp(Object.values(eventstamps));
 
 	expect(latest).toBe("2025-01-01T00:05:00.000Z|0001|c3d4");
 });
 
-test("computeResourceLatest uses fallback for empty eventstamps", () => {
+test("maxEventstamp returns MIN_EVENTSTAMP for empty eventstamps", () => {
 	const eventstamps = {};
-	const fallback = "2025-01-01T00:00:00.000Z|0001|a1b2";
 
-	const latest = computeResourceLatest(eventstamps, fallback);
+	const latest = maxEventstamp(Object.values(eventstamps));
 
-	expect(latest).toBe(fallback);
+	expect(latest).toBe(MIN_EVENTSTAMP);
 });
 
-test("computeResourceLatest handles nested eventstamps from flat paths", () => {
+test("maxEventstamp handles nested eventstamps from flat paths", () => {
 	const eventstamps = {
 		name: "2025-01-01T00:00:00.000Z|0001|a1b2",
 		"settings.theme": "2025-01-01T00:05:00.000Z|0001|c3d4",
 		"settings.notifications": "2025-01-01T00:03:00.000Z|0001|e5f6",
 	};
 
-	const latest = computeResourceLatest(eventstamps);
+	const latest = maxEventstamp(Object.values(eventstamps));
 
 	expect(latest).toBe("2025-01-01T00:05:00.000Z|0001|c3d4");
 });

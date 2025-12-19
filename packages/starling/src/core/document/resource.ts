@@ -1,4 +1,3 @@
-import { MIN_EVENTSTAMP } from "../clock/eventstamp";
 import type { AnyObject } from "./document";
 
 function isObject(value: unknown): boolean {
@@ -53,27 +52,6 @@ function setValueAtPath(
 	if (lastPart !== undefined) {
 		current[lastPart] = value;
 	}
-}
-
-/**
- * Compute the latest eventstamp for a resource from its field eventstamps.
- * Used internally and exported for testing/validation.
- * @internal
- */
-export function computeResourceLatest(
-	eventstamps: Record<string, string>,
-	fallback?: string,
-): string {
-	let max = fallback ?? MIN_EVENTSTAMP;
-
-	// With flat eventstamps, just iterate over all values
-	for (const stamp of Object.values(eventstamps)) {
-		if (stamp > max) {
-			max = stamp;
-		}
-	}
-
-	return max;
 }
 
 /**

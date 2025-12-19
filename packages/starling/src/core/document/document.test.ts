@@ -462,7 +462,7 @@ test("mergeDocuments: document meta.latest after adding new resource", () => {
 			"doc-2": makeResource(
 				"doc-2",
 				{ name: "Bob" },
-				"2025-01-01T00:10:00.000Z|0002|i9j0",
+				"2025-01-01T00:10:00.000Z|0002|a9b0",
 			),
 		},
 		tombstones: {},
@@ -470,7 +470,7 @@ test("mergeDocuments: document meta.latest after adding new resource", () => {
 
 	const result = mergeDocuments(into, from, "2025-01-01T00:00:00.000Z|0000|a1b2");
 
-	expect(result.latest).toBe("2025-01-01T00:10:00.000Z|0002|i9j0");
+	expect(result.latest).toBe("2025-01-01T00:10:00.000Z|0002|a9b0");
 });
 
 test("mergeDocuments: document meta.latest after update", () => {
@@ -492,7 +492,7 @@ test("mergeDocuments: document meta.latest after update", () => {
 			"doc-1": makeResource(
 				"doc-1",
 				{ age: 31 },
-				"2025-01-01T00:08:00.000Z|0001|g7h8",
+				"2025-01-01T00:08:00.000Z|0001|a7b8",
 			),
 		},
 		tombstones: {},
@@ -500,7 +500,7 @@ test("mergeDocuments: document meta.latest after update", () => {
 
 	const result = mergeDocuments(into, from, "2025-01-01T00:00:00.000Z|0000|a1b2");
 
-	expect(result.latest).toBe("2025-01-01T00:08:00.000Z|0001|g7h8");
+	expect(result.latest).toBe("2025-01-01T00:08:00.000Z|0001|a7b8");
 });
 
 test("mergeDocuments: document meta.latest with deleted resource", () => {
@@ -521,14 +521,14 @@ test("mergeDocuments: document meta.latest with deleted resource", () => {
 		type: "items",
 		resources: {},
 		tombstones: {
-			"doc-1": "2025-01-01T00:12:00.000Z|0003|k1l2",
+			"doc-1": "2025-01-01T00:12:00.000Z|0003|b1c2",
 		},
 	};
 
 	const result = mergeDocuments(into, from, "2025-01-01T00:00:00.000Z|0000|a1b2");
 
 	// Should include the deletion eventstamp
-	expect(result.latest).toBe("2025-01-01T00:12:00.000Z|0003|k1l2");
+	expect(result.latest).toBe("2025-01-01T00:12:00.000Z|0003|b1c2");
 });
 
 test("mergeDocuments: document meta.latest with multiple resources at different times", () => {
@@ -560,7 +560,7 @@ test("mergeDocuments: document meta.latest with multiple resources at different 
 			"doc-4": makeResource(
 				"doc-4",
 				{ name: "Dave" },
-				"2025-01-01T00:07:00.000Z|0002|g7h8",
+				"2025-01-01T00:07:00.000Z|0002|a7b8",
 			),
 		},
 		tombstones: {},
@@ -569,7 +569,7 @@ test("mergeDocuments: document meta.latest with multiple resources at different 
 	const result = mergeDocuments(into, from, "2025-01-01T00:00:00.000Z|0000|a1b2");
 
 	// Should be the newest resource eventstamp across all resources
-	expect(result.latest).toBe("2025-01-01T00:07:00.000Z|0002|g7h8");
+	expect(result.latest).toBe("2025-01-01T00:07:00.000Z|0002|a7b8");
 });
 
 test("mergeDocuments: updates newestEventstamp from new resource with later timestamp than document meta", () => {
@@ -622,7 +622,7 @@ test("mergeDocuments: updates newestEventstamp from merged resource with later t
 			"doc-1": makeResource(
 				"doc-1",
 				{ age: 31 },
-				"2025-01-01T00:10:00.000Z|0001|j9k0", // Much later than document latest
+				"2025-01-01T00:10:00.000Z|0001|a9b0", // Much later than document latest
 			),
 		},
 		tombstones: {},
@@ -631,7 +631,7 @@ test("mergeDocuments: updates newestEventstamp from merged resource with later t
 	const result = mergeDocuments(into, from, "2025-01-01T00:00:00.000Z|0000|a1b2");
 
 	// Document's latest should be updated to merged resource's timestamp
-	expect(result.latest).toBe("2025-01-01T00:10:00.000Z|0001|j9k0");
+	expect(result.latest).toBe("2025-01-01T00:10:00.000Z|0001|a9b0");
 	expect(result.changes.updated.size).toBe(1);
 });
 
@@ -650,8 +650,8 @@ test("mergeDocuments merges tombstones with LWW on eventstamps", () => {
 		type: "items",
 		resources: {},
 		tombstones: {
-			"doc-2": "2025-01-01T00:15:00.000Z|0001|g7h8", // Newer
-			"doc-3": "2025-01-01T00:12:00.000Z|0001|i9j0",
+			"doc-2": "2025-01-01T00:15:00.000Z|0001|a7b8", // Newer
+			"doc-3": "2025-01-01T00:12:00.000Z|0001|a9b0",
 		},
 	};
 
@@ -663,10 +663,10 @@ test("mergeDocuments merges tombstones with LWW on eventstamps", () => {
 		"2025-01-01T00:10:00.000Z|0001|e5f6",
 	);
 	expect(result.document.tombstones["doc-2"]).toBe(
-		"2025-01-01T00:15:00.000Z|0001|g7h8",
+		"2025-01-01T00:15:00.000Z|0001|a7b8",
 	); // Newer wins
 	expect(result.document.tombstones["doc-3"]).toBe(
-		"2025-01-01T00:12:00.000Z|0001|i9j0",
+		"2025-01-01T00:12:00.000Z|0001|a9b0",
 	);
 });
 
@@ -753,14 +753,14 @@ test("mergeDocuments tombstone eventstamps update document.latest", () => {
 		type: "items",
 		resources: {},
 		tombstones: {
-			"doc-2": "2025-01-01T00:20:00.000Z|0001|k1l2", // Newest eventstamp
+			"doc-2": "2025-01-01T00:20:00.000Z|0001|b1c2", // Newest eventstamp
 		},
 	};
 
 	const result = mergeDocuments(into, from, "2025-01-01T00:00:00.000Z|0000|a1b2");
 
 	// Document latest should be updated from tombstone eventstamp
-	expect(result.latest).toBe("2025-01-01T00:20:00.000Z|0001|k1l2");
+	expect(result.latest).toBe("2025-01-01T00:20:00.000Z|0001|b1c2");
 });
 
 test("mergeDocuments handles concurrent deletions (both have tombstone)", () => {
@@ -776,7 +776,7 @@ test("mergeDocuments handles concurrent deletions (both have tombstone)", () => 
 		type: "items",
 		resources: {},
 		tombstones: {
-			"doc-1": "2025-01-01T00:08:00.000Z|0001|g7h8", // Older
+			"doc-1": "2025-01-01T00:08:00.000Z|0001|a7b8", // Older
 		},
 	};
 

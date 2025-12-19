@@ -1,8 +1,5 @@
-import {
-	computeResourceLatest,
-	mergeResources,
-	type ResourceObject,
-} from "./resource";
+import { maxEventstamp } from "../clock/eventstamp";
+import { mergeResources, type ResourceObject } from "./resource";
 
 /**
  * Base constraint for all document data in Starling.
@@ -152,7 +149,7 @@ export function mergeDocuments<T extends AnyObject>(
 			// New resource - add it
 			mergedResources[id] = fromDoc;
 			added.set(id, fromDoc);
-			const resourceLatest = computeResourceLatest(fromDoc.eventstamps);
+			const resourceLatest = maxEventstamp(Object.values(fromDoc.eventstamps));
 			if (resourceLatest > newestEventstamp) {
 				newestEventstamp = resourceLatest;
 			}
@@ -165,7 +162,7 @@ export function mergeDocuments<T extends AnyObject>(
 			// Merge existing resource using field-level LWW
 			const mergedDoc = mergeResources(intoDoc, fromDoc);
 			mergedResources[id] = mergedDoc;
-			const resourceLatest = computeResourceLatest(mergedDoc.eventstamps);
+			const resourceLatest = maxEventstamp(Object.values(mergedDoc.eventstamps));
 			if (resourceLatest > newestEventstamp) {
 				newestEventstamp = resourceLatest;
 			}

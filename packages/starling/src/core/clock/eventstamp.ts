@@ -62,5 +62,5 @@ export function maxEventstamp(eventstamps: string[]): string {
 
 	return eventstamps
 		.filter((stamp) => isValidEventstamp(stamp))
-		.reduce((max, stamp) => (stamp > max ? stamp : max));
+		.reduce((max, stamp) => (stamp > max ? stamp : max), MIN_EVENTSTAMP);
 }
