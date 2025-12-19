@@ -117,7 +117,7 @@ Merged: { name: "Alice Smith", email: "alice@new.com" }
 { todos: { "id1": { text: "..." }, "id2": { text: "..." } } }  // Each todo merges independently
 ```
 
-**Deletions**: Soft-deleted via `deletedAt` eventstamp in the resource metadata. Deleted resources remain in the snapshot, enabling restoration by writing newer eventstamps to their fields. This also ensures deletion events propagate correctly during sync.
+**Deletions**: Deleted resources are removed from the `resources` map and tracked in the `tombstones` map with their deletion eventstamp. Deletion is final—tombstones prevent resurrection during merge. This provides true data deletion for privacy compliance while ensuring deletion events propagate correctly during sync.
 
 ### Document Format
 
@@ -128,14 +128,16 @@ export type StarlingDocument<T extends AnyObject> = {
   type: string;
   latest: string;
   resources: Record<string, ResourceObject<T>>;
+  tombstones: Record<string, string>;
 };
 ```
 
 **Design notes:**
 
 - **`type`**: Resource type identifier for this collection (e.g., "users", "todos", "posts")
-- **`latest`**: The highest eventstamp observed by the document. When merging documents, the clock forwards to the newest eventstamp to prevent collisions across sync boundaries
-- **`resources`**: Object mapping resource IDs to ResourceObjects, including soft-deleted items (those with `meta.deletedAt` set). This ensures deletion events propagate during sync
+- **`latest`**: The highest eventstamp observed by the document, including tombstone eventstamps. When merging documents, the clock forwards to the newest eventstamp to prevent collisions across sync boundaries
+- **`resources`**: Object mapping resource IDs to ResourceObjects. Only contains active (non-deleted) resources
+- **`tombstones`**: Object mapping deleted resource IDs to deletion eventstamps. Ensures deletion events propagate during sync and prevents resurrection of deleted resources
 
 Example document:
 
@@ -155,10 +157,12 @@ Example document:
           name: "2025-10-26T10:00:00.000Z|0001|a7f2",
           email: "2025-10-26T10:00:00.000Z|0001|a7f2"
         },
-        latest: "2025-10-26T10:00:00.000Z|0001|a7f2",
-        deletedAt: null
+        latest: "2025-10-26T10:00:00.000Z|0001|a7f2"
       }
     }
+  },
+  tombstones: {
+    "user-2": "2025-10-26T09:55:00.000Z|0001|b8c9"
   }
 }
 ```
@@ -174,7 +178,6 @@ export type ResourceObject<T extends AnyObject> = {
   meta: {
     eventstamps: Record<string, string>;
     latest: string;
-    deletedAt: string | null;
   };
 };
 ```
@@ -184,18 +187,21 @@ export type ResourceObject<T extends AnyObject> = {
 - **`id`**: Unique identifier for this resource
 - **`attributes`**: The resource's data as a nested object structure (plain values, not wrapped)
 - **`meta.eventstamps`**: Mirrored structure containing eventstamps for each attribute field
-- **`meta.latest`**: The greatest eventstamp in this resource (including deletedAt if applicable)
-- **`meta.deletedAt`**: Eventstamp when this resource was soft-deleted, or null if not deleted
+- **`meta.latest`**: The greatest eventstamp in this resource
 
-Note: The resource type is stored at the document level (`StarlingDocument.type`), not on individual resources.
+Note: The resource type is stored at the document level (`StarlingDocument.type`), not on individual resources. Deletion state is tracked separately in the document's `tombstones` map.
 
 ### Merging Documents
 
-The `mergeDocuments(into, from)` function handles document-level merging with automatic change detection:
+The `mergeDocuments(into, from)` function handles document-level merging with automatic change detection using a 4-phase process:
 
-1. **Field-level LWW**: Each resource pair merges using `mergeResources`, preserving the newest eventstamp for each field
-2. **Clock forwarding**: The resulting document's latest value is the maximum of both input eventstamps
-3. **Change tracking**: Returns categorized changes (added, updated, deleted) for event notifications
+1. **Merge tombstones**: Union both tombstone maps, using LWW on eventstamps for conflicts
+2. **Remove tombstoned resources**: Filter out resources that have tombstones from the base document
+3. **Merge active resources**: Each resource pair merges using `mergeResources`, preserving the newest eventstamp for each field. Resources with tombstones are skipped (deletion is final)
+4. **Forward clock**: The resulting document's latest value is the maximum of all resource eventstamps and tombstone eventstamps
+5. **Track changes**: Returns categorized changes (added, updated, deleted) for event notifications
+
+**Deletion finality**: Once a resource has a tombstone, it will not be resurrected during merge, even if a remote document contains an updated version of the resource. This ensures deleted data stays deleted.
 
 This design separates merge logic from higher-level store implementations, enabling independent testing and reuse of document operations.
 

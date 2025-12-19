@@ -139,3 +139,58 @@ Database-level sync may become limiting if:
 For these cases, per-collection sync could be reintroduced alongside store-level sync as an opt-in feature.
 
 ---
+
+## Decision 004 — Tombstone-Based Deletion
+
+**Context**
+
+Two deletion strategies were evaluated:
+1. Soft-delete: Resources remain in the `resources` map with `meta.deletedAt` eventstamp
+2. Tombstone: Resources removed from `resources`, tracked in separate `tombstones` map
+
+**Decision**
+
+Use tombstone-based deletion. Deleted resources are removed from the `resources` map and tracked in a `tombstones: Record<string, string>` map (ID → deletion eventstamp).
+
+**Rationale**
+
+Tombstone deletion provides better privacy and storage characteristics:
+
+- **True deletion**: Data actually removed from memory and snapshots (GDPR/privacy compliance)
+- **Smaller snapshots**: ~50 bytes per tombstone vs full resource data (significant for deletion-heavy workloads)
+- **No query filtering overhead**: Deleted items don't exist in the map, eliminating filter checks in `get()`, `getAll()`, `find()`
+- **Deletion is final**: Tombstones prevent resurrection during merge (no accidental data restoration)
+- **Similar complexity**: With "deletion is final" constraint, tombstone merge is comparable to soft-delete (4-phase merge vs field-level LWW)
+
+**Merge behavior:**
+
+1. Union tombstones from both documents (LWW on eventstamps for conflicts)
+2. Remove resources that have tombstones
+3. Merge non-tombstoned resources using field-level LWW
+4. Forward clock from tombstone eventstamps
+
+**Trade-offs**
+
+This design makes specific compromises:
+
+1. **No data recovery**: Deleted data is permanently removed (can't retrieve deleted items for audit/recovery)
+2. **Tombstone accumulation**: Tombstones grow unbounded over time (~50 bytes per deletion). For long-lived apps with 10,000+ deletions, this adds ~500KB
+3. **Slightly more complex merge**: 4-phase process vs 1-phase field-level LWW (though still simple)
+
+**Alternatives Considered**
+
+- **Soft-delete with `deletedAt`** — Simpler merge (just another field with LWW), enables data recovery, but:
+  - Deleted data persists forever (privacy concern)
+  - Larger snapshots (full resource data for deleted items)
+  - Query overhead (must filter `deletedAt` on every query)
+  - Not compliant with "right to be forgotten" regulations
+
+**When This Breaks Down**
+
+Tombstone accumulation may become problematic for:
+- Apps with millions of deletions (tombstone map becomes large)
+- Very long-lived databases (years of accumulated tombstones)
+
+Mitigation: Tombstone garbage collection could be added later (remove tombstones older than X days, with sync window considerations).
+
+---
