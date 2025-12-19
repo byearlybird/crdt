@@ -7,12 +7,8 @@ import {
 } from "./eventstamp";
 
 /**
- * A Hybrid Logical Clock that generates monotonically increasing eventstamps.
- * Combines wall-clock time with a counter for handling clock stalls and a
- * random nonce for tie-breaking.
- *
- * The clock automatically increments the counter when the wall clock doesn't
- * advance, ensuring eventstamps are always unique and monotonic.
+ * Generates unique, ordered timestamps. Each call to `now()` returns a
+ * timestamp that's guaranteed to be greater than the previous one.
  *
  * @example
  * ```typescript
@@ -21,37 +17,45 @@ import {
  * const stamp2 = clock.now();
  * ```
  */
-export type Clock = ReturnType<typeof createClock>;
+export type Clock = {
+	now: () => string;
+	latest: () => string;
+	forward: (eventstamp: string) => void;
+};
+
+export type ClockState = {
+	counter: number;
+	ms: number;
+	nonce: string;
+};
 
 /**
  * Create a new Clock instance.
  * @param initialState - Optional initial state for the clock
  */
-export function createClock(initialState?: {
-	counter: number;
-	lastMs: number;
-	lastNonce: string;
-}) {
-	let counter = initialState?.counter ?? 0;
-	let lastMs = initialState?.lastMs ?? Date.now();
-	let lastNonce = initialState?.lastNonce ?? generateNonce();
+export function createClock(initialState?: ClockState): Clock {
+	let state = initialState ?? {
+		counter: 0,
+		ms: Date.now(),
+		nonce: generateNonce(),
+	};
 
 	const now = (): string => {
 		const wallMs = Date.now();
 
-		if (wallMs > lastMs) {
-			lastMs = wallMs;
-			counter = 0;
-			lastNonce = generateNonce();
+		if (wallMs > state.ms) {
+			state.ms = wallMs;
+			state.counter = 0;
+			state.nonce = generateNonce();
 		} else {
-			counter++;
-			lastNonce = generateNonce();
+			state.counter++;
+			state.nonce = generateNonce();
 		}
 
-		return encodeEventstamp(lastMs, counter, lastNonce);
+		return encodeEventstamp(state);
 	};
 
-	const latest = (): string => encodeEventstamp(lastMs, counter, lastNonce);
+	const latest = (): string => encodeEventstamp(state);
 
 	const forward = (eventstamp: string): void => {
 		if (!isValidEventstamp(eventstamp)) {
@@ -60,10 +64,7 @@ export function createClock(initialState?: {
 
 		const current = latest();
 		if (eventstamp > current) {
-			const newer = decodeEventstamp(eventstamp);
-			lastMs = newer.timestampMs;
-			counter = newer.counter;
-			lastNonce = newer.nonce;
+			state = decodeEventstamp(eventstamp);
 		}
 	};
 
@@ -80,14 +81,6 @@ export function createClock(initialState?: {
  * @throws Error if eventstamp is invalid
  */
 export function createClockFromEventstamp(eventstamp: string): Clock {
-	if (!isValidEventstamp(eventstamp)) {
-		throw new Error(`Invalid eventstamp: "${eventstamp}"`);
-	}
-
 	const decoded = decodeEventstamp(eventstamp);
-	return createClock({
-		counter: decoded.counter,
-		lastMs: decoded.timestampMs,
-		lastNonce: decoded.nonce,
-	});
+	return createClock(decoded);
 }

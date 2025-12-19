@@ -10,36 +10,44 @@ import {
 
 test("decode() extracts timestamp and counter correctly", () => {
 	const nonce = generateNonce();
-	const eventstamp = encodeEventstamp(1234567890123, 42, nonce);
-	const { timestampMs, counter } = decodeEventstamp(eventstamp);
+	const eventstamp = encodeEventstamp({
+		ms: 1234567890123,
+		counter: 42,
+		nonce,
+	});
+	const { ms, counter } = decodeEventstamp(eventstamp);
 
-	expect(timestampMs).toBe(1234567890123);
+	expect(ms).toBe(1234567890123);
 	expect(counter).toBe(42);
 });
 
 test("encode() decode() handles large counters", () => {
 	const nonce = generateNonce();
-	const eventstamp = encodeEventstamp(Date.now(), 0xffffffff, nonce);
-	const { timestampMs, counter } = decodeEventstamp(eventstamp);
+	const eventstamp = encodeEventstamp({
+		ms: Date.now(),
+		counter: 0xffffffff,
+		nonce,
+	});
+	const { ms, counter } = decodeEventstamp(eventstamp);
 
 	expect(counter).toBe(0xffffffff);
-	expect(typeof timestampMs).toBe("number");
-	expect(timestampMs).toBeGreaterThan(0);
+	expect(typeof ms).toBe("number");
+	expect(ms).toBeGreaterThan(0);
 });
 
-test("encode() and decode() are inverses", () => {
-	const originalTimestampMs = Date.now();
+test("encode() and decode() round-trip correctly", () => {
+	const originalMs = Date.now();
 	const originalCounter = 12345;
 	const originalNonce = generateNonce();
 
-	const eventstamp = encodeEventstamp(
-		originalTimestampMs,
-		originalCounter,
-		originalNonce,
-	);
-	const { timestampMs, counter, nonce } = decodeEventstamp(eventstamp);
+	const eventstamp = encodeEventstamp({
+		ms: originalMs,
+		counter: originalCounter,
+		nonce: originalNonce,
+	});
+	const { ms, counter, nonce } = decodeEventstamp(eventstamp);
 
-	expect(timestampMs).toBe(originalTimestampMs);
+	expect(ms).toBe(originalMs);
 	expect(counter).toBe(originalCounter);
 	expect(nonce).toBe(originalNonce);
 });
@@ -50,12 +58,8 @@ test("encode() and decode() are inverses", () => {
 
 test("isValidEventstamp() returns true for standard format", () => {
 	const nonce = generateNonce();
-	const eventstamp = encodeEventstamp(Date.now(), 42, nonce);
+	const eventstamp = encodeEventstamp({ ms: Date.now(), counter: 42, nonce });
 	expect(isValidEventstamp(eventstamp)).toBe(true);
-});
-
-test("isValidEventstamp() returns true for 4-char counter", () => {
-	expect(isValidEventstamp("2025-01-01T00:00:00.000Z|0001|a1b2")).toBe(true);
 });
 
 test("isValidEventstamp() returns true for large counter (8 hex chars)", () => {
@@ -152,8 +156,4 @@ test("maxEventstamp() handles nonces correctly as tie-breaker", () => {
 
 test("decodeEventstamp() throws InvalidEventstampError for invalid input", () => {
 	expect(() => decodeEventstamp("invalid")).toThrow();
-});
-
-test("decodeEventstamp() throws for malformed eventstamp", () => {
-	expect(() => decodeEventstamp("2025-01-01|0001|a1b2")).toThrow();
 });

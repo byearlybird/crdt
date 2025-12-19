@@ -1,22 +1,18 @@
+import type { ClockState } from "./clock";
 import { InvalidEventstampError } from "./errors";
 
+/**
+ * Generates a random 4-character hex nonce
+ */
 export function generateNonce(): string {
-	// Generate a random 4-character hex nonce for tie-breaking
 	return Math.random().toString(16).slice(2, 6).padStart(4, "0");
 }
 
-export function encodeEventstamp(
-	timestampMs: number,
-	counter: number,
-	nonce: string,
-): string {
-	const isoString = new Date(timestampMs).toISOString();
-	const counterHex = counter.toString(16).padStart(4, "0");
-	return `${isoString}|${counterHex}|${nonce}`;
+export function encodeEventstamp(clockState: ClockState): string {
+	const isoString = new Date(clockState.ms).toISOString();
+	const counterHex = clockState.counter.toString(16).padStart(4, "0");
+	return `${isoString}|${counterHex}|${clockState.nonce}`;
 }
-
-const EVENTSTAMP_REGEX =
-	/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]{4,}\|[0-9a-f]{4}$/;
 
 /**
  * Validates whether a string is a properly formatted eventstamp.
@@ -25,14 +21,12 @@ const EVENTSTAMP_REGEX =
  * and HHHH represents exactly 4 hex characters for the nonce.
  */
 export function isValidEventstamp(stamp: string): boolean {
-	return EVENTSTAMP_REGEX.test(stamp);
+	return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f]{4,}\|[0-9a-f]{4}$/.test(
+		stamp,
+	);
 }
 
-export function decodeEventstamp(eventstamp: string): {
-	timestampMs: number;
-	counter: number;
-	nonce: string;
-} {
+export function decodeEventstamp(eventstamp: string): ClockState {
 	if (!isValidEventstamp(eventstamp)) {
 		throw new InvalidEventstampError(eventstamp);
 	}
@@ -43,13 +37,17 @@ export function decodeEventstamp(eventstamp: string): {
 	const nonce = parts[2] as string;
 
 	return {
-		timestampMs: new Date(isoString).getTime(),
+		ms: new Date(isoString).getTime(),
 		counter: parseInt(hexCounter, 16),
 		nonce,
 	};
 }
 
-export const MIN_EVENTSTAMP = encodeEventstamp(0, 0, "0000");
+export const MIN_EVENTSTAMP = encodeEventstamp({
+	ms: 0,
+	counter: 0,
+	nonce: "0000",
+});
 
 /**
  * Find the maximum eventstamp from an array of eventstamps.
@@ -61,5 +59,8 @@ export function maxEventstamp(eventstamps: string[]): string {
 	if (eventstamps.length === 0) {
 		return MIN_EVENTSTAMP;
 	}
-	return eventstamps.reduce((max, stamp) => (stamp > max ? stamp : max));
+
+	return eventstamps
+		.filter((stamp) => isValidEventstamp(stamp))
+		.reduce((max, stamp) => (stamp > max ? stamp : max));
 }
