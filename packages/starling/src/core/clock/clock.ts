@@ -7,22 +7,19 @@ import {
 } from "./eventstamp";
 
 /**
- * Generates unique, ordered timestamps. Each call to `now()` returns a
- * timestamp that's guaranteed to be greater than the previous one.
- *
- * @example
- * ```typescript
- * const clock = createClock();
- * const stamp1 = clock.now();
- * const stamp2 = clock.now();
- * ```
+ * Creates unique timestamps in order. Each time you call `now()`, you get a
+ * timestamp that is always larger than the one before it.
  */
 export type Clock = {
+	/** Create a new timestamp that is larger than all previous ones */
 	now: () => string;
+	/** Get the current timestamp without moving the clock forward */
 	latest: () => string;
+	/** Move the clock forward to match a newer timestamp from somewhere else */
 	forward: (eventstamp: string) => void;
 };
 
+/** The internal data of a clock. Used for saving and loading clock state. */
 export type ClockState = {
 	counter: number;
 	ms: number;
@@ -30,8 +27,9 @@ export type ClockState = {
 };
 
 /**
- * Create a new Clock instance.
- * @param initialState - Optional initial state for the clock
+ * Creates a clock that makes unique timestamps in order.
+ * @param initialState - Starting information. Use this to restore a saved clock.
+ * @returns A Clock object
  */
 export function createClock(initialState?: ClockState): Clock {
 	let state = initialState ?? {
@@ -42,15 +40,16 @@ export function createClock(initialState?: ClockState): Clock {
 
 	const now = (): string => {
 		const wallMs = Date.now();
+		const shouldAdvanceWallClock = wallMs > state.ms;
 
-		if (wallMs > state.ms) {
+		if (shouldAdvanceWallClock) {
 			state.ms = wallMs;
 			state.counter = 0;
-			state.nonce = generateNonce();
 		} else {
 			state.counter++;
-			state.nonce = generateNonce();
 		}
+
+		state.nonce = generateNonce();
 
 		return encodeEventstamp(state);
 	};
@@ -63,7 +62,9 @@ export function createClock(initialState?: ClockState): Clock {
 		}
 
 		const current = latest();
-		if (eventstamp > current) {
+		const isEventstampNewer = eventstamp > current;
+
+		if (isEventstampNewer) {
 			state = decodeEventstamp(eventstamp);
 		}
 	};
@@ -76,9 +77,10 @@ export function createClock(initialState?: ClockState): Clock {
 }
 
 /**
- * Create a Clock from an eventstamp string.
- * @param eventstamp - Eventstamp string to decode and initialize clock from
- * @throws Error if eventstamp is invalid
+ * Creates a clock that starts at a specific timestamp.
+ * @param eventstamp - The timestamp to start the clock at
+ * @returns A Clock object that begins at the given timestamp
+ * @throws {InvalidEventstampError} If the eventstamp format is wrong
  */
 export function createClockFromEventstamp(eventstamp: string): Clock {
 	const decoded = decodeEventstamp(eventstamp);
