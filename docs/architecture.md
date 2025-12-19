@@ -156,8 +156,7 @@ Example document:
         eventstamps: {
           name: "2025-10-26T10:00:00.000Z|0001|a7f2",
           email: "2025-10-26T10:00:00.000Z|0001|a7f2"
-        },
-        latest: "2025-10-26T10:00:00.000Z|0001|a7f2"
+        }
       }
     }
   },
@@ -177,7 +176,6 @@ export type ResourceObject<T extends AnyObject> = {
   attributes: T;
   meta: {
     eventstamps: Record<string, string>;
-    latest: string;
   };
 };
 ```
@@ -186,8 +184,7 @@ export type ResourceObject<T extends AnyObject> = {
 
 - **`id`**: Unique identifier for this resource
 - **`attributes`**: The resource's data as a nested object structure (plain values, not wrapped)
-- **`meta.eventstamps`**: Mirrored structure containing eventstamps for each attribute field
-- **`meta.latest`**: The greatest eventstamp in this resource
+- **`meta.eventstamps`**: Flat map of dot-separated paths to eventstamps for each attribute field
 
 Note: The resource type is stored at the document level (`StarlingDocument.type`), not on individual resources. Deletion state is tracked separately in the document's `tombstones` map.
 
