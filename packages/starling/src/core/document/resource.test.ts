@@ -1,12 +1,7 @@
 import { expect, test } from "bun:test";
-import {
-	deleteResource,
-	makeResource,
-	mergeResources,
-	type ResourceObject,
-} from "./resource";
+import { makeResource, mergeResources, type ResourceObject } from "./resource";
 
-test("makeResource creates EncodedDocument with null deletedAt", () => {
+test("makeResource creates resource with correct metadata", () => {
 	const result = makeResource(
 		"user-1",
 		{ name: "Alice", age: 30 },
@@ -14,8 +9,8 @@ test("makeResource creates EncodedDocument with null deletedAt", () => {
 	);
 
 	expect(result.id).toBe("user-1");
-	expect(result.meta.deletedAt).toBe(null);
 	expect(result.attributes).toBeDefined();
+	expect(result.meta.latest).toBe("2025-01-01T00:00:00.000Z|0000|a1b2");
 });
 
 test("makeResource with id", () => {
@@ -26,105 +21,8 @@ test("makeResource with id", () => {
 	);
 
 	expect(result.id).toBe("user-2");
-	expect(result.meta.deletedAt).toBe(null);
 	expect(result.attributes).toBeDefined();
-});
-
-test("mergeResources both deleted - keeps greater timestamp", () => {
-	const eventstamp1 = "2025-01-01T00:00:00.000Z|0000|a1b2";
-	const eventstamp2 = "2025-01-02T00:00:00.000Z|0000|c3d4";
-
-	const doc1 = makeResource("doc-1", { name: "Alice" }, eventstamp1);
-	doc1.meta.deletedAt = "2025-01-01T12:00:00.000Z|0001|g7h8";
-
-	const doc2 = makeResource("doc-1", { name: "Bob" }, eventstamp2);
-	doc2.meta.deletedAt = "2025-01-02T12:00:00.000Z|0002|i9j0";
-
-	const merged = mergeResources(doc1, doc2);
-
-	expect(merged.meta.deletedAt).toBe("2025-01-02T12:00:00.000Z|0002|i9j0");
-	expect(merged.meta.latest).toBe("2025-01-02T12:00:00.000Z|0002|i9j0");
-});
-
-test("mergeResources both deleted - keeps greater timestamp (reverse order)", () => {
-	const doc1 = makeResource(
-		"doc-1",
-		{ name: "Alice" },
-		"2025-01-01T00:00:00.000Z|0000|a1b2",
-	);
-	doc1.meta.deletedAt = "2025-01-02T12:00:00.000Z|0002|i9j0";
-
-	const doc2 = makeResource(
-		"doc-2",
-		{ name: "Bob" },
-		"2025-01-02T00:00:00.000Z|0000|c3d4",
-	);
-	doc2.meta.deletedAt = "2025-01-01T12:00:00.000Z|0001|g7h8";
-
-	const merged = mergeResources(doc1, doc2);
-
-	expect(merged.meta.deletedAt).toBe("2025-01-02T12:00:00.000Z|0002|i9j0");
-	expect(merged.meta.latest).toBe("2025-01-02T12:00:00.000Z|0002|i9j0");
-});
-
-test("mergeResources one deleted - keeps the deleted one", () => {
-	const doc1 = makeResource(
-		"doc-1",
-		{ name: "Alice" },
-		"2025-01-01T00:00:00.000Z|0000|a1b2",
-	);
-	doc1.meta.deletedAt = "2025-01-01T12:00:00.000Z|0001|g7h8";
-
-	const doc2 = makeResource(
-		"doc-2",
-		{ name: "Bob" },
-		"2025-01-02T00:00:00.000Z|0000|c3d4",
-	);
-	doc2.meta.deletedAt = null;
-
-	const merged = mergeResources(doc1, doc2);
-
-	expect(merged.meta.deletedAt).toBe("2025-01-01T12:00:00.000Z|0001|g7h8");
-	expect(merged.meta.latest).toBe("2025-01-02T00:00:00.000Z|0000|c3d4");
-});
-
-test("mergeResources one deleted (from) - keeps the deleted one", () => {
-	const doc1 = makeResource(
-		"doc-1",
-		{ name: "Alice" },
-		"2025-01-01T00:00:00.000Z|0000|a1b2",
-	);
-	doc1.meta.deletedAt = null;
-
-	const doc2 = makeResource(
-		"doc-2",
-		{ name: "Bob" },
-		"2025-01-02T00:00:00.000Z|0000|c3d4",
-	);
-	doc2.meta.deletedAt = "2025-01-02T12:00:00.000Z|0002|i9j0";
-
-	const merged = mergeResources(doc1, doc2);
-
-	expect(merged.meta.deletedAt).toBe("2025-01-02T12:00:00.000Z|0002|i9j0");
-	expect(merged.meta.latest).toBe("2025-01-02T12:00:00.000Z|0002|i9j0");
-});
-
-test("mergeResources neither deleted - returns null", () => {
-	const doc1 = makeResource(
-		"doc-1",
-		{ name: "Alice" },
-		"2025-01-01T00:00:00.000Z|0000|a1b2",
-	);
-	const doc2 = makeResource(
-		"doc-2",
-		{ name: "Bob" },
-		"2025-01-02T00:00:00.000Z|0000|c3d4",
-	);
-
-	const merged = mergeResources(doc1, doc2);
-
-	expect(merged.meta.deletedAt).toBe(null);
-	expect(merged.meta.latest).toBe("2025-01-02T00:00:00.000Z|0000|c3d4");
+	expect(result.meta.latest).toBe("2025-01-01T00:00:00.000Z|0000|a1b2");
 });
 
 test("mergeResources preserves id from into document", () => {
@@ -162,56 +60,6 @@ test("mergeResources merges attributes using object mergeRecords", () => {
 
 	expect(merged.attributes).toBeDefined();
 	expect(merged.meta.latest).toBe("2025-01-02T00:00:00.000Z|0000|c3d4");
-});
-
-test("deleteResource marks document as deleted with eventstamp", () => {
-	const eventstamp = "2025-01-01T00:00:00.000Z|0000|a1b2";
-	const doc = makeResource("user-1", { name: "Alice", age: 30 }, eventstamp);
-	const deleteEventstamp = "2025-01-02T00:00:00.000Z|1";
-
-	const deleted = deleteResource(doc, deleteEventstamp);
-
-	expect(deleted.meta.deletedAt).toBe(deleteEventstamp);
-	expect(deleted.id).toBe("user-1");
-	expect(deleted.attributes).toEqual(doc.attributes);
-});
-
-test("deleteResource preserves original document id and data", () => {
-	const doc = makeResource(
-		"doc-123",
-		{ status: "active" },
-		"2025-01-01T00:00:00.000Z|0000|a1b2",
-	);
-
-	const deleted = deleteResource(doc, "2025-01-02T00:00:00.000Z|1");
-
-	expect(deleted.id).toBe("doc-123");
-	expect(deleted.attributes).toBe(doc.attributes);
-});
-
-test("deleteResource can be called on already deleted document", () => {
-	const doc = makeResource(
-		"user-1",
-		{ name: "Bob" },
-		"2025-01-01T00:00:00.000Z|0000|a1b2",
-	);
-	doc.meta.deletedAt = "2025-01-02T00:00:00.000Z|1";
-
-	const redeleted = deleteResource(doc, "2025-01-03T00:00:00.000Z|0002|e5f6");
-
-	expect(redeleted.meta.deletedAt).toBe("2025-01-03T00:00:00.000Z|0002|e5f6");
-});
-
-test("deleteResource shows document is deleted", () => {
-	const doc = makeResource(
-		"user-1",
-		{ name: "Alice" },
-		"2025-01-01T00:00:00.000Z|0000|a1b2",
-	);
-	const deleted = deleteResource(doc, "2025-01-02T00:00:00.000Z|1");
-
-	expect(deleted.meta.deletedAt).toBe("2025-01-02T00:00:00.000Z|1");
-	expect(deleted.attributes).toEqual({ name: "Alice" });
 });
 
 test("mergeResources bubbles newest eventstamp from nested object fields", () => {
