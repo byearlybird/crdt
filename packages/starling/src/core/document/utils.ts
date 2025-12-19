@@ -15,39 +15,17 @@ export function documentToMap<T extends AnyObject>(
 
 /**
  * Convert a Map of resources into a StarlingDocument.
- * Computes the maximum eventstamp from resources, tombstones, and optional fallback.
  *
  * @param type - Resource type identifier for this collection
  * @param resources - Map of resource ID to ResourceObject
- * @param fallbackEventstamp - Eventstamp to include when computing the max (optional)
  * @param tombstones - Map of deleted resource IDs to deletion eventstamps (optional)
- * @returns Document and computed maximum eventstamp
+ * @returns StarlingDocument
  */
 export function mapToDocument<T extends AnyObject>(
 	type: string,
 	resources: Map<string, ResourceObject<T>>,
-	fallbackEventstamp?: string,
 	tombstones?: Map<string, string>,
-): { document: StarlingDocument<T>; latest: string } {
-	const resourceArray = Array.from(resources.values());
-	const eventstamps = resourceArray.map((r) =>
-		maxEventstamp(Object.values(r.eventstamps)),
-	);
-
-	// Include fallback eventstamp in the max calculation if provided
-	if (fallbackEventstamp) {
-		eventstamps.push(fallbackEventstamp);
-	}
-
-	// Include tombstone eventstamps in the max calculation
-	if (tombstones) {
-		for (const stamp of tombstones.values()) {
-			eventstamps.push(stamp);
-		}
-	}
-
-	const latest = maxEventstamp(eventstamps);
-
+): StarlingDocument<T> {
 	// Convert Map to Record
 	const resourcesRecord: Record<string, ResourceObject<T>> = {};
 	for (const [id, resource] of resources) {
@@ -63,11 +41,8 @@ export function mapToDocument<T extends AnyObject>(
 	}
 
 	return {
-		document: {
-			type,
-			resources: resourcesRecord,
-			tombstones: tombstonesRecord,
-		},
-		latest,
+		type,
+		resources: resourcesRecord,
+		tombstones: tombstonesRecord,
 	};
 }

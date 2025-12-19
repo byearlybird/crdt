@@ -6,10 +6,7 @@ import { documentToMap, mapToDocument } from "./utils";
 const USERS_TYPE = "users";
 
 test("documentToMap() converts document to map", () => {
-	const doc = makeDocument<{ name: string }>(
-		USERS_TYPE,
-		"2025-01-01T00:00:00.000Z|0001|a1b2",
-	);
+	const doc = makeDocument<{ name: string }>(USERS_TYPE);
 	doc.resources["user-1"] = makeResource(
 		"user-1",
 		{ name: "Alice" },
@@ -29,10 +26,7 @@ test("documentToMap() converts document to map", () => {
 });
 
 test("documentToMap() handles empty document", () => {
-	const doc = makeDocument<{ name: string }>(
-		USERS_TYPE,
-		"2025-01-01T00:00:00.000Z|0001|a1b2",
-	);
+	const doc = makeDocument<{ name: string }>(USERS_TYPE);
 
 	const map = documentToMap(doc);
 
@@ -58,16 +52,15 @@ test("mapToDocument() converts map to document", () => {
 		),
 	);
 
-	const {document: doc, latest} = mapToDocument(USERS_TYPE, map);
+	const doc = mapToDocument(USERS_TYPE, map);
 
 	expect(doc.type).toBe(USERS_TYPE);
-	expect(latest).toBe("2025-01-01T00:05:00.000Z|0001|c3d4");
 	expect(Object.keys(doc.resources)).toHaveLength(2);
 	expect(doc.resources["user-1"]?.id).toBe("user-1");
 	expect(doc.resources["user-2"]?.id).toBe("user-2");
 });
 
-test("mapToDocument() includes fallback eventstamp in max calculation", () => {
+test("mapToDocument() handles tombstones", () => {
 	const map = new Map<string, ReturnType<typeof makeResource>>();
 	map.set(
 		"user-1",
@@ -78,33 +71,19 @@ test("mapToDocument() includes fallback eventstamp in max calculation", () => {
 		),
 	);
 
-	const fallback = "2025-01-01T00:10:00.000Z|0001|f1f2";
-	const {document: doc, latest} = mapToDocument(USERS_TYPE, map, fallback);
+	const tombstones = new Map<string, string>();
+	tombstones.set("user-2", "2025-01-01T00:05:00.000Z|0001|c3d4");
 
-	expect(latest).toBe(fallback);
+	const doc = mapToDocument(USERS_TYPE, map, tombstones);
+
+	expect(doc.type).toBe(USERS_TYPE);
 	expect(Object.keys(doc.resources)).toHaveLength(1);
-});
-
-test("mapToDocument() uses fallback eventstamp for empty map", () => {
-	const fallback = "2025-01-01T00:10:00.000Z|0001|f1f2";
-	const {document: doc, latest} = mapToDocument(USERS_TYPE, new Map(), fallback);
-
-	expect(latest).toBe(fallback);
-	expect(Object.keys(doc.resources)).toHaveLength(0);
-});
-
-test("mapToDocument() uses MIN_EVENTSTAMP when no fallback provided", () => {
-	const {document: doc, latest} = mapToDocument(USERS_TYPE, new Map());
-
-	expect(latest).toBe("1970-01-01T00:00:00.000Z|0000|0000");
-	expect(Object.keys(doc.resources)).toHaveLength(0);
+	expect(Object.keys(doc.tombstones)).toHaveLength(1);
+	expect(doc.tombstones["user-2"]).toBe("2025-01-01T00:05:00.000Z|0001|c3d4");
 });
 
 test("documentToMap() and mapToDocument() are inverses", () => {
-	const originalDoc = makeDocument<{ name: string }>(
-		USERS_TYPE,
-		"2025-01-01T00:00:00.000Z|0001|a1b2",
-	);
+	const originalDoc = makeDocument<{ name: string }>(USERS_TYPE);
 	originalDoc.resources["user-1"] = makeResource(
 		"user-1",
 		{ name: "Alice" },
@@ -117,11 +96,9 @@ test("documentToMap() and mapToDocument() are inverses", () => {
 	);
 
 	const map = documentToMap(originalDoc);
-	const { document: reconstructedDoc, latest: reconstructedLatest } =
-		mapToDocument(USERS_TYPE, map);
+	const reconstructedDoc = mapToDocument(USERS_TYPE, map);
 
 	expect(reconstructedDoc.type).toBe(USERS_TYPE);
-	expect(reconstructedLatest).toBe("2025-01-01T00:05:00.000Z|0001|c3d4");
 	expect(Object.keys(reconstructedDoc.resources)).toHaveLength(
 		Object.keys(originalDoc.resources).length,
 	);
