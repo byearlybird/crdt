@@ -157,8 +157,8 @@ describe("Store", () => {
 			expect(snapshot.collections.users).toBeDefined();
 			expect(Object.keys(snapshot.collections.tasks.resources)).toHaveLength(0);
 			expect(Object.keys(snapshot.collections.users.resources)).toHaveLength(0);
-			expect(snapshot.collections.tasks.latest).toBeDefined();
-			expect(snapshot.collections.users.latest).toBeDefined();
+			expect(snapshot.collections.tasks.tombstones).toBeDefined();
+			expect(snapshot.collections.users.tombstones).toBeDefined();
 		});
 
 		test("includes tombstones in snapshot", () => {
@@ -183,21 +183,15 @@ describe("Store", () => {
 
 			const snapshot = store.toSnapshot();
 
-			// Verify eventstamps exist (format validation is core's responsibility)
+			// Verify store-level latest eventstamp exists
 			expect(snapshot.latest).toBeDefined();
 			expect(typeof snapshot.latest).toBe("string");
-			expect(snapshot.collections.tasks.latest).toBeDefined();
-			expect(typeof snapshot.collections.tasks.latest).toBe("string");
-			expect(snapshot.collections.users.latest).toBeDefined();
-			expect(typeof snapshot.collections.users.latest).toBe("string");
 
-			// Verify database latest is the max of collection latests
-			expect(
-				[
-					snapshot.collections.tasks.latest,
-					snapshot.collections.users.latest,
-				].includes(snapshot.latest),
-			).toBe(true);
+			// Verify collections exist with proper structure
+			expect(snapshot.collections.tasks).toBeDefined();
+			expect(snapshot.collections.users).toBeDefined();
+			expect(snapshot.collections.tasks.type).toBe("tasks");
+			expect(snapshot.collections.users.type).toBe("users");
 		});
 	});
 
