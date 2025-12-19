@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { makeResource, mergeResources, type ResourceObject } from "./resource";
+import {
+	computeResourceLatest,
+	makeResource,
+	mergeResources,
+	type ResourceObject,
+} from "./resource";
 
 test("makeResource creates resource with correct metadata", () => {
 	const result = makeResource(
@@ -10,7 +15,9 @@ test("makeResource creates resource with correct metadata", () => {
 
 	expect(result.id).toBe("user-1");
 	expect(result.attributes).toBeDefined();
-	expect(result.meta.latest).toBe("2025-01-01T00:00:00.000Z|0000|a1b2");
+	expect(computeResourceLatest(result.meta.eventstamps)).toBe(
+		"2025-01-01T00:00:00.000Z|0000|a1b2",
+	);
 });
 
 test("makeResource with id", () => {
@@ -22,7 +29,9 @@ test("makeResource with id", () => {
 
 	expect(result.id).toBe("user-2");
 	expect(result.attributes).toBeDefined();
-	expect(result.meta.latest).toBe("2025-01-01T00:00:00.000Z|0000|a1b2");
+	expect(computeResourceLatest(result.meta.eventstamps)).toBe(
+		"2025-01-01T00:00:00.000Z|0000|a1b2",
+	);
 });
 
 test("mergeResources preserves id from into document", () => {
@@ -59,7 +68,9 @@ test("mergeResources merges attributes using object mergeRecords", () => {
 	const merged = mergeResources(doc1, doc2);
 
 	expect(merged.attributes).toBeDefined();
-	expect(merged.meta.latest).toBe("2025-01-02T00:00:00.000Z|0000|c3d4");
+	expect(computeResourceLatest(merged.meta.eventstamps)).toBe(
+		"2025-01-02T00:00:00.000Z|0000|c3d4",
+	);
 });
 
 test("mergeResources bubbles newest eventstamp from nested object fields", () => {
@@ -76,8 +87,10 @@ test("mergeResources bubbles newest eventstamp from nested object fields", () =>
 
 	const merged = mergeResources(doc1, doc2);
 
-	// The newest eventstamp should bubble up to mergeResources
-	expect(merged.meta.latest).toBe("2025-01-05T00:00:00.000Z|0000|k1l2");
+	// The newest eventstamp should bubble up
+	expect(computeResourceLatest(merged.meta.eventstamps)).toBe(
+		"2025-01-05T00:00:00.000Z|0000|k1l2",
+	);
 	// And the merge should work correctly
 	const user = (merged.attributes as any).user;
 	expect(user.name).toBe("Alice");
@@ -109,7 +122,9 @@ test("mergeResources returns newest eventstamp even with multiple nested changes
 	const merged = mergeResources(doc1, doc2);
 
 	// Even with multiple nested changes, newest eventstamp bubbles up
-	expect(merged.meta.latest).toBe("2025-01-10T00:00:00.000Z|0000|o5p6");
+	expect(computeResourceLatest(merged.meta.eventstamps)).toBe(
+		"2025-01-10T00:00:00.000Z|0000|o5p6",
+	);
 });
 
 test("mergeResources returns newest eventstamp when adding new fields", () => {
@@ -132,7 +147,9 @@ test("mergeResources returns newest eventstamp when adding new fields", () => {
 
 	const merged = mergeResources(doc1, doc2);
 
-	expect(merged.meta.latest).toBe("2025-01-08T00:00:00.000Z|0000|m3n4");
+	expect(computeResourceLatest(merged.meta.eventstamps)).toBe(
+		"2025-01-08T00:00:00.000Z|0000|m3n4",
+	);
 });
 
 test("mergeResources handles schema changes (object replaced with primitive)", () => {

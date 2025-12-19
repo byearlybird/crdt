@@ -1,4 +1,8 @@
-import { mergeResources, type ResourceObject } from "./resource";
+import {
+	computeResourceLatest,
+	mergeResources,
+	type ResourceObject,
+} from "./resource";
 
 /**
  * Base constraint for all document data in Starling.
@@ -148,8 +152,9 @@ export function mergeDocuments<T extends AnyObject>(
 			// New resource - add it
 			mergedResources[id] = fromDoc;
 			added.set(id, fromDoc);
-			if (fromDoc.meta.latest > newestEventstamp) {
-				newestEventstamp = fromDoc.meta.latest;
+			const resourceLatest = computeResourceLatest(fromDoc.meta.eventstamps);
+			if (resourceLatest > newestEventstamp) {
+				newestEventstamp = resourceLatest;
 			}
 		} else {
 			// Skip merge if resources are identical (same reference)
@@ -160,12 +165,16 @@ export function mergeDocuments<T extends AnyObject>(
 			// Merge existing resource using field-level LWW
 			const mergedDoc = mergeResources(intoDoc, fromDoc);
 			mergedResources[id] = mergedDoc;
-			if (mergedDoc.meta.latest > newestEventstamp) {
-				newestEventstamp = mergedDoc.meta.latest;
+			const resourceLatest = computeResourceLatest(mergedDoc.meta.eventstamps);
+			if (resourceLatest > newestEventstamp) {
+				newestEventstamp = resourceLatest;
 			}
 
-			// Track update if eventstamps differ
-			if (intoDoc.meta.latest !== mergedDoc.meta.latest) {
+			// Track update if eventstamps changed
+			// Compare eventstamp maps to detect changes
+			const intoStamps = JSON.stringify(intoDoc.meta.eventstamps);
+			const mergedStamps = JSON.stringify(mergedDoc.meta.eventstamps);
+			if (intoStamps !== mergedStamps) {
 				updated.set(id, mergedDoc);
 			}
 		}

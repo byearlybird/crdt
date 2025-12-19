@@ -93,8 +93,6 @@ export type ResourceObject<T extends { [key: string]: unknown }> = {
 	meta: {
 		/** Flat map of dot-separated paths to eventstamps (e.g., "user.address.street": "2025-11-18...") */
 		eventstamps: Record<string, string>;
-		/** The greatest eventstamp in this resource */
-		latest: string;
 	};
 };
 
@@ -130,7 +128,6 @@ export function makeResource<T extends AnyObject>(
 		attributes: obj,
 		meta: {
 			eventstamps,
-			latest: eventstamp,
 		},
 	};
 }
@@ -189,17 +186,11 @@ export function mergeResources<T extends AnyObject>(
 		}
 	}
 
-	// Use the cached latest values from both records
-	const baseLatest =
-		into.meta.latest > from.meta.latest ? into.meta.latest : from.meta.latest;
-	const latest = computeResourceLatest(resultEventstamps, baseLatest);
-
 	return {
 		id: into.id,
 		attributes: resultAttributes as T,
 		meta: {
 			eventstamps: resultEventstamps,
-			latest,
 		},
 	};
 }
