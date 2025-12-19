@@ -1,4 +1,4 @@
-import type { Store, StorePlugin } from "../../store/store";
+import type { Store } from "../../store/store";
 import type { StoreSnapshot, SchemasMap } from "../../store/types";
 
 /**
@@ -30,9 +30,9 @@ export type ResponseHookResult =
 	| undefined; // Use original snapshot
 
 /**
- * Configuration for the HTTP plugin
+ * Configuration for the HTTP synchronizer
  */
-export type HttpPluginConfig = {
+export type HttpSynchronizerConfig = {
 	/**
 	 * Base URL for the HTTP server (e.g., "https://api.example.com")
 	 */
@@ -92,57 +92,64 @@ export type HttpPluginConfig = {
 };
 
 /**
- * Create an HTTP sync plugin for Starling stores.
+ * Create an HTTP synchronizer for Starling stores.
  *
- * The plugin:
+ * The synchronizer:
  * - Fetches store snapshot from the server on init (single attempt)
  * - Polls the server at regular intervals to fetch updates (with retry)
  * - Debounces local mutations and pushes them to the server (with retry)
  * - Supports request/response hooks for authentication, encryption, etc.
  * - Uses endpoint: GET/PATCH /database/:name
  *
- * @param config - HTTP plugin configuration
- * @returns A StorePlugin instance
+ * @param store - The Starling store to synchronize
+ * @param config - HTTP synchronizer configuration
+ * @returns A cleanup function to stop synchronization
  *
  * @example
  * ```typescript
- * const store = await createStore({
+ * const store = createStore({
  *   name: "my-app",
  *   schema: {
  *     tasks: { schema: taskSchema, getId: (task) => task.id },
  *   },
- * })
- *   .use(httpPlugin({
- *     baseUrl: "https://api.example.com",
- *     onRequest: () => ({
- *       headers: { Authorization: `Bearer ${token}` }
- *     })
- *   }))
- *   .init();
+ * });
+ *
+ * const cleanup = createHttpSynchronizer(store, {
+ *   baseUrl: "https://api.example.com",
+ *   onRequest: () => ({
+ *     headers: { Authorization: `Bearer ${token}` }
+ *   })
+ * });
+ *
+ * // Later, when done:
+ * cleanup();
  * ```
  *
  * @example With encryption
  * ```typescript
- * const store = await createStore({
+ * const store = createStore({
  *   name: "my-app",
  *   schema: {
  *     tasks: { schema: taskSchema, getId: (task) => task.id },
  *   },
- * })
- *   .use(httpPlugin({
- *     baseUrl: "https://api.example.com",
- *     onRequest: ({ snapshot }) => ({
- *       headers: { Authorization: `Bearer ${token}` },
- *       snapshot: snapshot ? encrypt(snapshot) : undefined
- *     }),
- *     onResponse: ({ snapshot }) => ({
- *       snapshot: decrypt(snapshot)
- *     })
- *   }))
- *   .init();
+ * });
+ *
+ * const cleanup = createHttpSynchronizer(store, {
+ *   baseUrl: "https://api.example.com",
+ *   onRequest: ({ snapshot }) => ({
+ *     headers: { Authorization: `Bearer ${token}` },
+ *     snapshot: snapshot ? encrypt(snapshot) : undefined
+ *   }),
+ *   onResponse: ({ snapshot }) => ({
+ *     snapshot: decrypt(snapshot)
+ *   })
+ * });
  * ```
  */
-export function httpPlugin(config: HttpPluginConfig): StorePlugin<any> {
+export function createHttpSynchronizer(
+	store: Store<any>,
+	config: HttpSynchronizerConfig,
+): () => void {
 	const {
 		baseUrl,
 		pollingInterval = 5000,
@@ -154,88 +161,85 @@ export function httpPlugin(config: HttpPluginConfig): StorePlugin<any> {
 
 	const { maxAttempts = 3, initialDelay = 1000, maxDelay = 30000 } = retry;
 
-	// Plugin state
+	// Synchronizer state
 	let pollingTimer: ReturnType<typeof setInterval> | null = null;
 	let unsubscribe: (() => void) | null = null;
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-	return {
-		handlers: {
-			async init(store: Store<any>) {
-				// Initial fetch (single attempt, no retry)
-				try {
-					await fetchStore(store, baseUrl, onRequest, onResponse, false);
-				} catch (error) {
-					// Log error but continue
-					console.error("Failed to fetch database during init:", error);
-				}
+	// Initial fetch (single attempt, no retry)
+	(async () => {
+		try {
+			await fetchStore(store, baseUrl, onRequest, onResponse, false);
+		} catch (error) {
+			// Log error but continue
+			console.error("Failed to fetch database during init:", error);
+		}
+	})();
 
-				// Set up polling
-				pollingTimer = setInterval(async () => {
-					try {
-						await fetchStore(
-							store,
-							baseUrl,
-							onRequest,
-							onResponse,
-							true, // Enable retry for polling
-							maxAttempts,
-							initialDelay,
-							maxDelay,
-						);
-					} catch (error) {
-						// Log error but continue polling
-						console.error("Failed to poll store:", error);
-					}
-				}, pollingInterval);
+	// Set up polling
+	pollingTimer = setInterval(async () => {
+		try {
+			await fetchStore(
+				store,
+				baseUrl,
+				onRequest,
+				onResponse,
+				true, // Enable retry for polling
+				maxAttempts,
+				initialDelay,
+				maxDelay,
+			);
+		} catch (error) {
+			// Log error but continue polling
+			console.error("Failed to poll database:", error);
+		}
+	}, pollingInterval);
 
-				// Subscribe to mutations for debounced push
-				unsubscribe = store.on("mutation", () => {
-					// Clear existing timer if any
-					if (debounceTimer) {
-						clearTimeout(debounceTimer);
-					}
+	// Subscribe to mutations for debounced push
+	unsubscribe = store.on("mutation", () => {
+		// Clear existing timer if any
+		if (debounceTimer) {
+			clearTimeout(debounceTimer);
+		}
 
-					// Schedule new push
-					debounceTimer = setTimeout(async () => {
-						debounceTimer = null;
-						try {
-							await pushStore(
-								store,
-								baseUrl,
-								onRequest,
-								onResponse,
-								maxAttempts,
-								initialDelay,
-								maxDelay,
-							);
-						} catch (error) {
-							console.error("Failed to push store:", error);
-						}
-					}, debounceDelay);
-				});
-			},
+		// Schedule new push
+		debounceTimer = setTimeout(async () => {
+			debounceTimer = null;
+			try {
+				await pushStore(
+					store,
+					baseUrl,
+					onRequest,
+					onResponse,
+					maxAttempts,
+					initialDelay,
+					maxDelay,
+				);
+			} catch (error) {
+				console.error("Failed to push database:", error);
+			}
+		}, debounceDelay);
+	});
 
-			async dispose(_store: Store<any>) {
-				// Clear polling timer
-				if (pollingTimer) {
-					clearInterval(pollingTimer);
-					pollingTimer = null;
-				}
+	// Return cleanup function
+	return () => {
+		// Clear polling timer
+		if (pollingTimer) {
+			clearInterval(pollingTimer);
+			pollingTimer = null;
+		}
 
-				// Clear debounce timer
-				if (debounceTimer) {
-					clearTimeout(debounceTimer);
-					debounceTimer = null;
-				}
+		// Clear debounce timer
+		if (debounceTimer) {
+			clearTimeout(debounceTimer);
+			debounceTimer = null;
+		}
 
-				// Unsubscribe from mutations
-				if (unsubscribe) {
-					unsubscribe();
-					unsubscribe = null;
-				}
-			},
-		},
+		// Unsubscribe from mutations
+		if (unsubscribe) {
+			unsubscribe();
+			unsubscribe = null;
+		}
 	};
 }
 

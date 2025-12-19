@@ -43,13 +43,6 @@ export type CollectionConfig<T extends AnyObjectSchema> = {
 	getId: (item: InferOutput<T>) => string;
 };
 
-export type StorePlugin<Schemas extends SchemasMap> = {
-	handlers: {
-		init?: (store: Store<Schemas>) => Promise<unknown> | unknown;
-		dispose?: (store: Store<Schemas>) => Promise<unknown> | unknown;
-	};
-};
-
 export type StoreConfig<Schemas extends SchemasMap> = {
 	name: string;
 	schema: CollectionConfigMap<Schemas>;
@@ -73,9 +66,6 @@ export type Store<Schemas extends SchemasMap> = Collections<Schemas> & {
 		event: "mutation",
 		handler: (payload: CollectionMutation<Schemas>) => unknown,
 	): () => void;
-	use(plugin: StorePlugin<Schemas>): Store<Schemas>;
-	init(): Promise<Store<Schemas>>;
-	dispose(): Promise<void>;
 	collectionKeys(): (keyof Schemas)[];
 };
 
@@ -89,14 +79,12 @@ export type Store<Schemas extends SchemasMap> = Collections<Schemas> & {
  *
  * @example
  * ```typescript
- * const store = await createStore({
+ * const store = createStore({
  *   name: "my-app",
  *   schema: {
  *     tasks: { schema: taskSchema, getId: (task) => task.id },
  *   },
- * })
- *   .use(idbPlugin())
- *   .init();
+ * });
  *
  * const task = store.tasks.add({ title: 'Learn Starling' });
  * ```
@@ -140,8 +128,6 @@ export function createStore<Schemas extends SchemasMap>(
 			}
 		});
 	}
-
-	const plugins: StorePlugin<Schemas>[] = [];
 
 	const store: Store<Schemas> = {
 		...publicCollections,
@@ -211,28 +197,6 @@ export function createStore<Schemas extends SchemasMap>(
 		},
 		on(event, handler) {
 			return storeEmitter.on(event, handler);
-		},
-		use(plugin: StorePlugin<Schemas>) {
-			plugins.push(plugin);
-			return store;
-		},
-		async init() {
-			// Execute all plugin init handlers sequentially
-			for (const plugin of plugins) {
-				if (plugin.handlers.init) {
-					await plugin.handlers.init(store);
-				}
-			}
-			return store;
-		},
-		async dispose() {
-			// Execute all plugin dispose handlers sequentially (in reverse order)
-			for (let i = plugins.length - 1; i >= 0; i--) {
-				const plugin = plugins[i];
-				if (plugin?.handlers.dispose) {
-					await plugin.handlers.dispose(store);
-				}
-			}
 		},
 		collectionKeys() {
 			return Object.keys(collections) as (keyof Schemas)[];

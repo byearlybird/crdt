@@ -17,15 +17,15 @@
 			"import": "./dist/core.js",
 			"default": "./dist/core.js"
 		},
-		"./plugin-idb": {
-			"types": "./dist/plugin-idb.d.ts",
-			"import": "./dist/plugin-idb.js",
-			"default": "./dist/plugin-idb.js"
+		"./persister-idb": {
+			"types": "./dist/persister-idb.d.ts",
+			"import": "./dist/persister-idb.js",
+			"default": "./dist/persister-idb.js"
 		},
-		"./plugin-http": {
-			"types": "./dist/plugin-http.d.ts",
-			"import": "./dist/plugin-http.js",
-			"default": "./dist/plugin-http.js"
+		"./synchronizer-http": {
+			"types": "./dist/synchronizer-http.d.ts",
+			"import": "./dist/synchronizer-http.js",
+			"default": "./dist/synchronizer-http.js"
 		}
 	},
 	"files": [
