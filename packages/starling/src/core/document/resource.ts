@@ -105,18 +105,6 @@ export function makeResource<T extends AnyObject>(
 	};
 }
 
-function copyFieldValue<T extends AnyObject>(
-	path: string,
-	resource: Resource<T>,
-	stamp: string,
-	targetAttrs: Record<string, unknown>,
-	targetStamps: Record<string, string>,
-): void {
-	const value = getValueAtPath(resource.attributes, path);
-	setValueAtPath(targetAttrs, path, value);
-	targetStamps[path] = stamp;
-}
-
 export function mergeResources<T extends AnyObject>(
 	into: Resource<T>,
 	from: Resource<T>,
@@ -135,19 +123,28 @@ export function mergeResources<T extends AnyObject>(
 		const stamp1 = into.eventstamps[path];
 		const stamp2 = from.eventstamps[path];
 
+		// Determine which resource wins
+		let winningResource: Resource<T>;
+		let winningStamp: string;
+
 		if (!stamp1) {
-			// Only in second resource
-			copyFieldValue(path, from, stamp2!, resultAttributes, resultEventstamps);
+			winningResource = from;
+			winningStamp = stamp2!;
 		} else if (!stamp2) {
-			// Only in first resource
-			copyFieldValue(path, into, stamp1, resultAttributes, resultEventstamps);
+			winningResource = into;
+			winningStamp = stamp1;
 		} else if (stamp1 > stamp2) {
-			// Both have it - first resource wins
-			copyFieldValue(path, into, stamp1, resultAttributes, resultEventstamps);
+			winningResource = into;
+			winningStamp = stamp1;
 		} else {
-			// Both have it - second resource wins
-			copyFieldValue(path, from, stamp2, resultAttributes, resultEventstamps);
+			winningResource = from;
+			winningStamp = stamp2;
 		}
+
+		// Copy the winning value
+		const value = getValueAtPath(winningResource.attributes, path);
+		setValueAtPath(resultAttributes, path, value);
+		resultEventstamps[path] = winningStamp;
 	}
 
 	return {
