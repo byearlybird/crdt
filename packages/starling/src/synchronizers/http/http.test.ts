@@ -7,14 +7,9 @@ import {
 	spyOn,
 	test,
 } from "bun:test";
-import { makeDocument, makeResource } from "../../core";
+import { makeDocument, makeResource } from "../../state";
 import { createStore } from "../../store/store";
-import {
-	makeTask,
-	type Task,
-	taskSchema,
-	userSchema,
-} from "../../store/test-helpers";
+import { makeTask, taskSchema } from "../../store/test-helpers";
 import type { StoreState } from "../../store/types";
 import { createHttpSynchronizer, type RequestContext } from "./index";
 
@@ -61,7 +56,7 @@ function makeTaskSnapshot(
 		id: string;
 		title: string;
 		completed: boolean;
-	}>("tasks", eventstamp);
+	}>("tasks");
 	for (const task of tasks) {
 		tasksDoc.resources[task.id] = makeResource(task.id, task, eventstamp);
 	}

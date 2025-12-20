@@ -115,7 +115,11 @@ test("maxEventstamp() returns the only eventstamp for single-element array", () 
 });
 
 test("maxEventstamp() returns the maximum eventstamp", () => {
-	const eventstamps = [VALID_EVENTSTAMP_A, VALID_EVENTSTAMP_B, VALID_EVENTSTAMP_C];
+	const eventstamps = [
+		VALID_EVENTSTAMP_A,
+		VALID_EVENTSTAMP_B,
+		VALID_EVENTSTAMP_C,
+	];
 
 	expect(maxEventstamp(eventstamps)).toBe(VALID_EVENTSTAMP_B);
 });

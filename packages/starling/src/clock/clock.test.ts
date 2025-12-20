@@ -38,7 +38,7 @@ test("counter increments when called multiple times in same millisecond", () => 
 		stamps.push(clock.now());
 	}
 
-	const firstTimestamp = stamps[0]!.slice(0, 12);
+	const firstTimestamp = stamps[0]?.slice(0, 12);
 	const counters = stamps.map((stamp) => {
 		const counterHex = stamp.slice(12, 18);
 		return Number.parseInt(counterHex, 16);

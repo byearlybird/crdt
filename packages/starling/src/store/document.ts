@@ -1,10 +1,10 @@
 import {
+	type DocumentState,
 	makeResource,
 	mapToDocument,
 	mergeDocuments,
 	mergeResources,
 	type Resource,
-	type DocumentState,
 } from "../core";
 import { createEmitter } from "./emitter";
 import { standardValidate } from "./standard-schema";
@@ -48,27 +48,21 @@ export type Document<T extends AnyObjectSchema> = {
 };
 
 /** Internal type that includes Symbol-keyed methods for transaction support */
-export type DocumentWithInternals<T extends AnyObjectSchema> =
-	Document<T> & {
-		merge(state: DocumentState<InferOutput<T>>): void;
-		toJSON(): DocumentState<InferOutput<T>>;
-		[DocumentInternals.data]: () => Map<
-			string,
-			Resource<InferOutput<T>>
-		>;
-		[DocumentInternals.getPendingMutations]: () => MutationBatch<
-			InferOutput<T>
-		>;
-		[DocumentInternals.emitMutations]: (
-			mutations: MutationBatch<InferOutput<T>>,
-		) => void;
-		[DocumentInternals.replaceData]: (
-			data: Map<string, Resource<InferOutput<T>>>,
-		) => void;
-		[DocumentInternals.onMutation]: (
-			handler: (batch: MutationBatch<InferOutput<T>>) => void,
-		) => () => void;
-	};
+export type DocumentWithInternals<T extends AnyObjectSchema> = Document<T> & {
+	merge(state: DocumentState<InferOutput<T>>): void;
+	toJSON(): DocumentState<InferOutput<T>>;
+	[DocumentInternals.data]: () => Map<string, Resource<InferOutput<T>>>;
+	[DocumentInternals.getPendingMutations]: () => MutationBatch<InferOutput<T>>;
+	[DocumentInternals.emitMutations]: (
+		mutations: MutationBatch<InferOutput<T>>,
+	) => void;
+	[DocumentInternals.replaceData]: (
+		data: Map<string, Resource<InferOutput<T>>>,
+	) => void;
+	[DocumentInternals.onMutation]: (
+		handler: (batch: MutationBatch<InferOutput<T>>) => void,
+	) => () => void;
+};
 
 export function createDocument<T extends AnyObjectSchema>(
 	name: string,

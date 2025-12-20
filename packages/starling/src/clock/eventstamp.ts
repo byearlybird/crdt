@@ -104,8 +104,6 @@ export function decodeEventstamp(eventstamp: string): ClockState {
 	};
 }
 
-
-
 /**
  * Finds the largest eventstamp from a list.
  *

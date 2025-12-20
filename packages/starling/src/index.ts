@@ -18,6 +18,8 @@ export {
 	DuplicateIdError,
 	IdNotFoundError,
 } from "./store/document";
+export type { QueryContext } from "./store/query";
+export type { StandardSchemaV1 } from "./store/standard-schema";
 export type {
 	DocumentConfig,
 	Store,
@@ -25,10 +27,8 @@ export type {
 } from "./store/store";
 // Store features
 export { createStore } from "./store/store";
-export type { QueryContext } from "./store/query";
-export type { StandardSchemaV1 } from "./store/standard-schema";
 export type {
-	TransactionDocumentHandle,
 	TransactionContext,
+	TransactionDocumentHandle,
 } from "./store/transaction";
 export type { StoreState } from "./store/types";

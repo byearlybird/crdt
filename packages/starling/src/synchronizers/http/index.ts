@@ -1,5 +1,5 @@
 import type { Store } from "../../store/store";
-import type { StoreState, SchemasMap } from "../../store/types";
+import type { SchemasMap, StoreState } from "../../store/types";
 
 /**
  * Context provided to the onRequest hook
@@ -251,9 +251,7 @@ async function fetchStore(
 	baseUrl: string,
 	onRequest: ((context: RequestContext) => RequestHookResult) | undefined,
 	onResponse:
-		| ((context: {
-				state: StoreState<SchemasMap>;
-		  }) => ResponseHookResult)
+		| ((context: { state: StoreState<SchemasMap> }) => ResponseHookResult)
 		| undefined,
 	enableRetry: boolean,
 	maxAttempts = 3,
@@ -328,9 +326,7 @@ async function pushStore(
 	baseUrl: string,
 	onRequest: ((context: RequestContext) => RequestHookResult) | undefined,
 	onResponse:
-		| ((context: {
-				state: StoreState<SchemasMap>;
-		  }) => ResponseHookResult)
+		| ((context: { state: StoreState<SchemasMap> }) => ResponseHookResult)
 		| undefined,
 	maxAttempts = 3,
 	initialDelay = 1000,
@@ -360,9 +356,7 @@ async function pushStore(
 			: undefined;
 
 	const requestState =
-		requestResult && "state" in requestResult
-			? requestResult.state
-			: state;
+		requestResult && "state" in requestResult ? requestResult.state : state;
 
 	// Execute fetch with retry
 	const executeRequest = async (): Promise<void> => {
@@ -379,8 +373,7 @@ async function pushStore(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const responseState =
-			(await response.json()) as StoreState<SchemasMap>;
+		const responseState = (await response.json()) as StoreState<SchemasMap>;
 
 		// Call onResponse hook
 		const responseResult = onResponse?.({ state: responseState });

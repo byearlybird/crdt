@@ -1,10 +1,10 @@
 import type { Resource } from "../core";
 import {
+	createDocument,
 	type Document,
 	DocumentInternals,
 	type DocumentWithInternals,
 	type MutationBatch,
-	createDocument,
 } from "./document";
 import type { DocumentConfigMap } from "./store";
 import type { AnyObjectSchema, SchemasMap } from "./types";
@@ -66,7 +66,9 @@ export function executeTransaction<
 		const original = documents[name];
 		const config = configs[name];
 
-		const getData = original[DocumentInternals.data] as (() => Map<string, Resource<any>>) | undefined;
+		const getData = original[DocumentInternals.data] as
+			| (() => Map<string, Resource<any>>)
+			| undefined;
 		if (!getData) continue;
 
 		clonedDocuments[name] = createDocument(
@@ -103,10 +105,18 @@ export function executeTransaction<
 				name
 			] as DocumentWithInternals<AnyObjectSchema>;
 
-			const getPendingMutations = cloned[DocumentInternals.getPendingMutations] as (() => MutationBatch<any>) | undefined;
-			const replaceData = original[DocumentInternals.replaceData] as ((data: Map<string, Resource<any>>) => void) | undefined;
-			const emitMutations = original[DocumentInternals.emitMutations] as ((mutations: MutationBatch<any>) => void) | undefined;
-			const getData = cloned[DocumentInternals.data] as (() => Map<string, Resource<any>>) | undefined;
+			const getPendingMutations = cloned[
+				DocumentInternals.getPendingMutations
+			] as (() => MutationBatch<any>) | undefined;
+			const replaceData = original[DocumentInternals.replaceData] as
+				| ((data: Map<string, Resource<any>>) => void)
+				| undefined;
+			const emitMutations = original[DocumentInternals.emitMutations] as
+				| ((mutations: MutationBatch<any>) => void)
+				| undefined;
+			const getData = cloned[DocumentInternals.data] as
+				| (() => Map<string, Resource<any>>)
+				| undefined;
 
 			if (!getPendingMutations || !replaceData || !emitMutations || !getData) {
 				continue;

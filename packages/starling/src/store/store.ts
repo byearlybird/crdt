@@ -1,9 +1,10 @@
-import { createClock, type DocumentState, type AnyObject } from "../core";
+import { createClock } from "../clock";
+import type { AnyObject, DocumentState } from "../state";
 import {
+	createDocument,
 	type Document,
 	DocumentInternals,
 	type DocumentWithInternals,
-	createDocument,
 	type MutationBatch,
 } from "./document";
 import { createEmitter } from "./emitter";
@@ -11,9 +12,9 @@ import { executeQuery, type QueryContext } from "./query";
 import { executeTransaction, type TransactionContext } from "./transaction";
 import type {
 	AnyObjectSchema,
-	StoreState,
 	InferOutput,
 	SchemasMap,
+	StoreState,
 } from "./types";
 
 export type Documents<Schemas extends SchemasMap> = {
@@ -108,9 +109,11 @@ export function createStore<Schemas extends SchemasMap>(
 		const document = documents[documentName];
 
 		// Type assertion needed for Symbol-keyed method access
-		const docWithInternals = document as unknown as DocumentWithInternals<AnyObjectSchema>;
-		const onMutationMethod: ((handler: (batch: MutationBatch<AnyObject>) => void) => () => void) | undefined =
-			docWithInternals[DocumentInternals.onMutation] as any;
+		const docWithInternals =
+			document as unknown as DocumentWithInternals<AnyObjectSchema>;
+		const onMutationMethod:
+			| ((handler: (batch: MutationBatch<AnyObject>) => void) => () => void)
+			| undefined = docWithInternals[DocumentInternals.onMutation] as any;
 
 		if (onMutationMethod) {
 			onMutationMethod((mutations) => {
@@ -158,11 +161,8 @@ export function createStore<Schemas extends SchemasMap>(
 				[K in keyof Schemas]: DocumentState<InferOutput<Schemas[K]>>;
 			};
 
-			for (const documentName of Object.keys(
-				documents,
-			) as (keyof Schemas)[]) {
-				documentStates[documentName] =
-					documents[documentName].toJSON();
+			for (const documentName of Object.keys(documents) as (keyof Schemas)[]) {
+				documentStates[documentName] = documents[documentName].toJSON();
 			}
 
 			// Use current clock value as latest

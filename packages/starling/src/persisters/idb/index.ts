@@ -169,9 +169,7 @@ function openDatabase(dbName: string, version: number): Promise<IDBDatabase> {
 /**
  * Load store snapshot from IndexedDB
  */
-async function loadSnapshot(
-	db: IDBDatabase,
-): Promise<StoreState<any> | null> {
+async function loadSnapshot(db: IDBDatabase): Promise<StoreState<any> | null> {
 	return getFromStore<StoreState<any>>(db, "snapshot", "current");
 }
 

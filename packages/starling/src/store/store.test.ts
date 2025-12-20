@@ -125,7 +125,11 @@ describe("Store", () => {
 			const store = createMultiDocumentStore();
 			store.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
 			store.tasks.add({ id: "task-2", title: "Walk dog", completed: true });
-			store.users.add({ id: "user-1", name: "Alice", email: "alice@example.com" });
+			store.users.add({
+				id: "user-1",
+				name: "Alice",
+				email: "alice@example.com",
+			});
 
 			const state = store.toJSON();
 
@@ -171,15 +175,17 @@ describe("Store", () => {
 			// Resource should be removed, tombstone should exist
 			expect(Object.keys(state.documents.tasks.resources)).toHaveLength(0);
 			expect(state.documents.tasks.tombstones["task-1"]).toBeDefined();
-			expect(typeof state.documents.tasks.tombstones["task-1"]).toBe(
-				"string",
-			);
+			expect(typeof state.documents.tasks.tombstones["task-1"]).toBe("string");
 		});
 
 		test("includes correct latest eventstamps", () => {
 			const store = createMultiDocumentStore();
 			store.tasks.add({ id: "task-1", title: "Buy milk", completed: false });
-			store.users.add({ id: "user-1", name: "Alice", email: "alice@example.com" });
+			store.users.add({
+				id: "user-1",
+				name: "Alice",
+				email: "alice@example.com",
+			});
 
 			const state = store.toJSON();
 
@@ -194,5 +200,4 @@ describe("Store", () => {
 			expect(state.documents.users.type).toBe("users");
 		});
 	});
-
 });
