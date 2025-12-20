@@ -105,6 +105,18 @@ export function makeResource<T extends AnyObject>(
 	};
 }
 
+function copyFieldValue<T extends AnyObject>(
+	path: string,
+	resource: Resource<T>,
+	stamp: string,
+	targetAttrs: Record<string, unknown>,
+	targetStamps: Record<string, string>,
+): void {
+	const value = getValueAtPath(resource.attributes, path);
+	setValueAtPath(targetAttrs, path, value);
+	targetStamps[path] = stamp;
+}
+
 export function mergeResources<T extends AnyObject>(
 	into: Resource<T>,
 	from: Resource<T>,
@@ -118,44 +130,23 @@ export function mergeResources<T extends AnyObject>(
 		...Object.keys(from.eventstamps),
 	]);
 
-	// Simple iteration: for each path, pick the winner based on eventstamp
+	// For each path, pick the winner based on eventstamp
 	for (const path of allPaths) {
 		const stamp1 = into.eventstamps[path];
 		const stamp2 = from.eventstamps[path];
 
-		if (stamp1 && stamp2) {
-			// Both have this path - compare eventstamps
-			if (stamp1 > stamp2) {
-				setValueAtPath(
-					resultAttributes,
-					path,
-					getValueAtPath(into.attributes, path),
-				);
-				resultEventstamps[path] = stamp1;
-			} else {
-				setValueAtPath(
-					resultAttributes,
-					path,
-					getValueAtPath(from.attributes, path),
-				);
-				resultEventstamps[path] = stamp2;
-			}
-		} else if (stamp1) {
-			// Only in first record
-			setValueAtPath(
-				resultAttributes,
-				path,
-				getValueAtPath(into.attributes, path),
-			);
-			resultEventstamps[path] = stamp1;
-		} else if (stamp2) {
-			// Only in second record
-			setValueAtPath(
-				resultAttributes,
-				path,
-				getValueAtPath(from.attributes, path),
-			);
-			resultEventstamps[path] = stamp2;
+		if (!stamp1) {
+			// Only in second resource
+			copyFieldValue(path, from, stamp2!, resultAttributes, resultEventstamps);
+		} else if (!stamp2) {
+			// Only in first resource
+			copyFieldValue(path, into, stamp1, resultAttributes, resultEventstamps);
+		} else if (stamp1 > stamp2) {
+			// Both have it - first resource wins
+			copyFieldValue(path, into, stamp1, resultAttributes, resultEventstamps);
+		} else {
+			// Both have it - second resource wins
+			copyFieldValue(path, from, stamp2, resultAttributes, resultEventstamps);
 		}
 	}
 

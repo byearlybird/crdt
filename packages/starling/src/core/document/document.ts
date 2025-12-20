@@ -56,6 +56,55 @@ export type MergeDocumentsResult<T extends AnyObject> = {
 };
 
 /**
+ * Checks if two eventstamp maps are different.
+ */
+function eventstampsChanged(
+	before: Record<string, string>,
+	after: Record<string, string>,
+): boolean {
+	const beforeKeys = Object.keys(before);
+	const afterKeys = Object.keys(after);
+
+	if (beforeKeys.length !== afterKeys.length) {
+		return true;
+	}
+
+	for (const key of beforeKeys) {
+		if (before[key] !== after[key]) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * Merges tombstone maps, keeping the newer eventstamp for each ID.
+ */
+function mergeTombstones(
+	into: Record<string, string>,
+	from: Record<string, string>,
+): Record<string, string> {
+	const merged = { ...into };
+
+	for (const [id, fromStamp] of Object.entries(from)) {
+		const intoStamp = merged[id];
+		if (!intoStamp || fromStamp > intoStamp) {
+			merged[id] = fromStamp;
+		}
+	}
+
+	return merged;
+}
+
+/**
+ * Updates the latest eventstamp if the given stamp is newer.
+ */
+function updateLatest(current: string, candidate: string): string {
+	return candidate > current ? candidate : current;
+}
+
+/**
  * Merges two documents using field-level Last-Write-Wins semantics.
  *
  * The merge operation:
@@ -100,87 +149,65 @@ export function mergeDocuments<T extends AnyObject>(
 	from: DocumentState<T>,
 	currentClock: string,
 ): MergeDocumentsResult<T> {
-	// Track changes for hook notifications
 	const added = new Map<string, Resource<T>>();
 	const updated = new Map<string, Resource<T>>();
 	const deleted = new Set<string>();
 
-	// Step 1: Merge tombstones (union, keeping newer eventstamp)
-	const mergedTombstones: Record<string, string> = { ...into.tombstones };
-	for (const [id, fromStamp] of Object.entries(from.tombstones)) {
-		const intoStamp = mergedTombstones[id];
-		if (!intoStamp || fromStamp > intoStamp) {
-			mergedTombstones[id] = fromStamp;
-		}
-	}
+	// Step 1: Merge tombstones
+	const mergedTombstones = mergeTombstones(into.tombstones, from.tombstones);
 
-	// Step 2: Start with base resources, removing tombstoned ones
+	// Step 2: Filter out tombstoned resources from base document
 	const mergedResources: Record<string, Resource<T>> = {};
 	for (const [id, resource] of Object.entries(into.resources)) {
-		if (!mergedTombstones[id]) {
-			mergedResources[id] = resource;
-		} else {
-			// Resource exists in 'into' but has a tombstone - mark as deleted
+		if (mergedTombstones[id]) {
+			// Resource was deleted
 			if (!into.tombstones[id]) {
-				// Newly tombstoned (from remote)
 				deleted.add(id);
 			}
+		} else {
+			mergedResources[id] = resource;
 		}
 	}
 
 	let newestEventstamp = currentClock;
 
-	// Step 3: Process each source resource (skip tombstoned ones)
-	for (const [id, fromDoc] of Object.entries(from.resources)) {
-		// Skip if tombstoned (deletion is final)
+	// Step 3: Merge resources from source document
+	for (const [id, fromResource] of Object.entries(from.resources)) {
+		// Skip tombstoned resources
 		if (mergedTombstones[id]) {
-			const intoDoc = into.resources[id];
-			if (intoDoc && !into.tombstones[id]) {
-				// Newly tombstoned
+			if (into.resources[id] && !into.tombstones[id]) {
 				deleted.add(id);
 			}
 			continue;
 		}
 
-		const intoDoc = mergedResources[id];
+		const intoResource = mergedResources[id];
 
-		if (!intoDoc) {
-			// New resource - add it
-			mergedResources[id] = fromDoc;
-			added.set(id, fromDoc);
-			const resourceLatest = maxEventstamp(Object.values(fromDoc.eventstamps));
-			if (resourceLatest > newestEventstamp) {
-				newestEventstamp = resourceLatest;
-			}
-		} else {
-			// Skip merge if resources are identical (same reference)
-			if (intoDoc === fromDoc) {
-				continue;
-			}
+		if (!intoResource) {
+			// New resource
+			mergedResources[id] = fromResource;
+			added.set(id, fromResource);
 
-			// Merge existing resource using field-level LWW
-			const mergedDoc = mergeResources(intoDoc, fromDoc);
-			mergedResources[id] = mergedDoc;
-			const resourceLatest = maxEventstamp(Object.values(mergedDoc.eventstamps));
-			if (resourceLatest > newestEventstamp) {
-				newestEventstamp = resourceLatest;
-			}
+			const resourceLatest = maxEventstamp(Object.values(fromResource.eventstamps));
+			newestEventstamp = updateLatest(newestEventstamp, resourceLatest);
+		} else if (intoResource !== fromResource) {
+			// Merge existing resource
+			const mergedResource = mergeResources(intoResource, fromResource);
+			mergedResources[id] = mergedResource;
+
+			const resourceLatest = maxEventstamp(Object.values(mergedResource.eventstamps));
+			newestEventstamp = updateLatest(newestEventstamp, resourceLatest);
 
 			// Track update if eventstamps changed
-			// Compare eventstamp maps to detect changes
-			const intoStamps = JSON.stringify(intoDoc.eventstamps);
-			const mergedStamps = JSON.stringify(mergedDoc.eventstamps);
-			if (intoStamps !== mergedStamps) {
-				updated.set(id, mergedDoc);
+			if (eventstampsChanged(intoResource.eventstamps, mergedResource.eventstamps)) {
+				updated.set(id, mergedResource);
 			}
 		}
 	}
 
-	// Step 4: Update newestEventstamp from tombstones
+	// Step 4: Update latest from tombstones
 	for (const stamp of Object.values(mergedTombstones)) {
-		if (stamp > newestEventstamp) {
-			newestEventstamp = stamp;
-		}
+		newestEventstamp = updateLatest(newestEventstamp, stamp);
 	}
 
 	return {
@@ -189,11 +216,7 @@ export function mergeDocuments<T extends AnyObject>(
 			resources: mergedResources,
 			tombstones: mergedTombstones,
 		},
-		changes: {
-			added,
-			updated,
-			deleted,
-		},
+		changes: { added, updated, deleted },
 		latest: newestEventstamp,
 	};
 }
