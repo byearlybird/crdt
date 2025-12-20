@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DuplicateIdError, IdNotFoundError } from "./document";
+import { DuplicateIdError, IdNotFoundError } from "./doc-handle";
 import { createTestStore, makeTask, subscribeToDocument } from "./test-helpers";
 
 describe("Collection", () => {
@@ -254,7 +254,7 @@ describe("Collection", () => {
 			const store = createTestStore();
 			const events: any[] = [];
 			const unsubscribe = store.on("mutation", (e) => {
-				if (e.document === "tasks") {
+				if (e.docHandle === "tasks") {
 					events.push({
 						added: e.added,
 						updated: e.updated,

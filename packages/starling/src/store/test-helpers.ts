@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { makeDocument, makeResource } from "../core";
+import { makeDocument, makeResource } from "../state";
 import { createStore } from "./store";
 
 // Shared schemas
@@ -69,7 +69,7 @@ export function makeTaskDocument(
 	return doc;
 }
 
-// Subscription helper for testing document mutations
+// Subscription helper for testing doc handle mutations
 export function subscribeToDocument(
 	store: ReturnType<typeof createTestStore | typeof createMultiDocumentStore>,
 	documentName: string,
@@ -80,7 +80,7 @@ export function subscribeToDocument(
 	}) => void,
 ): () => void {
 	return store.on("mutation", (e) => {
-		if (e.document === documentName) {
+		if (e.docHandle === documentName) {
 			handler({ added: e.added, updated: e.updated, removed: e.removed });
 		}
 	});

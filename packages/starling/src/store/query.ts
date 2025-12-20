@@ -1,16 +1,16 @@
-import type { Document, DocumentWithInternals } from "./document";
+import type { DocHandle, DocHandleWithInternals } from "./doc-handle";
 import type { SchemasMap } from "./types";
 
 /**
- * Query context providing read-only access to specified documents.
- * Only documents declared in the documents array are accessible.
+ * Query context providing read-only access to specified doc handles.
+ * Only doc handles declared in the docHandles array are accessible.
  */
 export type QueryContext<
 	Schemas extends SchemasMap,
 	Keys extends ReadonlyArray<keyof Schemas>,
 > = Pick<
 	{
-		[K in keyof Schemas]: Document<Schemas[K]>;
+		[K in keyof Schemas]: DocHandle<Schemas[K]>;
 	},
 	Keys[number]
 >;
@@ -18,31 +18,23 @@ export type QueryContext<
 /**
  * Execute a read-only query with explicit dependencies.
  *
- * @param documents - Active document instances
- * @param documentNames - Array of document names to include in query
- * @param callback - Query callback with read-only context
- * @returns The return value from the callback
- *
- * @remarks
- * - No cloning needed - provides direct read-only access
- * - Documents are accessed in their current state
- * - TypeScript enforces that only declared documents are accessible
- * - Mutations inside queries are NOT recommended (use transactions instead)
+ * No cloning - provides direct read access to current state.
+ * For mutations, use transact() instead.
  */
 export function executeQuery<
 	Schemas extends SchemasMap,
 	Keys extends ReadonlyArray<keyof Schemas>,
 	R,
 >(
-	documents: { [K in keyof Schemas]: DocumentWithInternals<Schemas[K]> },
-	documentNames: Keys,
+	docHandles: { [K in keyof Schemas]: DocHandleWithInternals<Schemas[K]> },
+	handleNames: Keys,
 	callback: (q: QueryContext<Schemas, Keys>) => R,
 ): R {
-	// Build query context with only specified documents
+	// Build query context with only specified doc handles
 	const queryContext = {} as QueryContext<Schemas, Keys>;
 
-	for (const name of documentNames) {
-		queryContext[name] = documents[name] as Document<Schemas[typeof name]>;
+	for (const name of handleNames) {
+		queryContext[name] = docHandles[name] as DocHandle<Schemas[typeof name]>;
 	}
 
 	return callback(queryContext);

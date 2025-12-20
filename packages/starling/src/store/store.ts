@@ -1,12 +1,12 @@
 import { createClock } from "../clock";
 import type { AnyObject, DocumentState } from "../state";
 import {
-	createDocument,
-	type Document,
-	DocumentInternals,
-	type DocumentWithInternals,
+	createDocHandle,
+	type DocHandle,
+	DocHandleInternals,
+	type DocHandleWithInternals,
 	type MutationBatch,
-} from "./document";
+} from "./doc-handle";
 import { createEmitter } from "./emitter";
 import { executeQuery, type QueryContext } from "./query";
 import { executeTransaction, type TransactionContext } from "./transaction";
@@ -17,66 +17,84 @@ import type {
 	StoreState,
 } from "./types";
 
-export type Documents<Schemas extends SchemasMap> = {
-	[K in keyof Schemas]: Document<Schemas[K]>;
+export type DocHandles<Schemas extends SchemasMap> = {
+	[K in keyof Schemas]: DocHandle<Schemas[K]>;
 };
 
-export type DocumentConfigMap<Schemas extends SchemasMap> = {
-	[K in keyof Schemas]: DocumentConfig<Schemas[K]>;
+export type DocHandleConfigMap<Schemas extends SchemasMap> = {
+	[K in keyof Schemas]: DocHandleConfig<Schemas[K]>;
 };
 
-type DocumentInstances<Schemas extends SchemasMap> = {
-	[K in keyof Schemas]: DocumentWithInternals<Schemas[K]>;
+type DocHandleInstances<Schemas extends SchemasMap> = {
+	[K in keyof Schemas]: DocHandleWithInternals<Schemas[K]>;
 };
 
-export type DocumentMutation<Schemas extends SchemasMap> = {
+export type DocHandleMutation<Schemas extends SchemasMap> = {
 	[K in keyof Schemas]: {
-		document: K;
+		docHandle: K;
 	} & MutationBatch<InferOutput<Schemas[K]>>;
 }[keyof Schemas];
 
 export type StoreEvents<Schemas extends SchemasMap> = {
-	mutation: DocumentMutation<Schemas>;
+	mutation: DocHandleMutation<Schemas>;
 };
 
-export type DocumentConfig<T extends AnyObjectSchema> = {
+export type DocHandleConfig<T extends AnyObjectSchema> = {
 	schema: T;
 	getId: (item: InferOutput<T>) => string;
 };
 
 export type StoreConfig<Schemas extends SchemasMap> = {
 	name: string;
-	schema: DocumentConfigMap<Schemas>;
+	schema: DocHandleConfigMap<Schemas>;
 	version?: number;
 };
 
-export type Store<Schemas extends SchemasMap> = Documents<Schemas> & {
+export type Store<Schemas extends SchemasMap> = DocHandles<Schemas> & {
 	name: string;
 	version: number;
 	transact<Keys extends ReadonlyArray<keyof Schemas>, R>(
-		documents: Keys,
+		docHandles: Keys,
 		callback: (tx: TransactionContext<Schemas, Keys>) => R,
 	): R;
 	query<Keys extends ReadonlyArray<keyof Schemas>, R>(
-		documents: Keys,
+		docHandles: Keys,
 		callback: (q: QueryContext<Schemas, Keys>) => R,
 	): R;
 	toJSON(): StoreState<Schemas>;
 	mergeState(state: StoreState<Schemas>): void;
 	on(
 		event: "mutation",
-		handler: (payload: DocumentMutation<Schemas>) => unknown,
+		handler: (payload: DocHandleMutation<Schemas>) => unknown,
 	): () => void;
-	documentKeys(): (keyof Schemas)[];
 };
 
+function makeDocHandles<Schemas extends SchemasMap>(
+	configs: DocHandleConfigMap<Schemas>,
+	getEventstamp: () => string,
+): DocHandleInstances<Schemas> {
+	const docHandles = {} as DocHandleInstances<Schemas>;
+
+	for (const name of Object.keys(configs) as (keyof Schemas)[]) {
+		const config = configs[name];
+		docHandles[name] = createDocHandle(
+			name as string,
+			config.schema,
+			config.getId,
+			getEventstamp,
+		);
+	}
+
+	return docHandles;
+}
+
 /**
- * Create a typed store instance with document access.
+ * Create a typed store instance with doc handle access.
  * @param config - Store configuration
  * @param config.name - Store name used for persistence and routing
- * @param config.schema - Document schema definitions
+ * @param config.schema - Doc handle schema definitions
  * @param config.version - Optional store version, defaults to 1
- * @returns A store instance with typed document properties
+ * @returns A store instance with typed doc handle properties
  *
  * @example
  * ```typescript
@@ -87,7 +105,7 @@ export type Store<Schemas extends SchemasMap> = Documents<Schemas> & {
  *   },
  * });
  *
- * const task = store.tasks.add({ title: 'Learn Starling' });
+ * store.tasks.add({ title: 'Learn Starling' });
  * ```
  */
 export function createStore<Schemas extends SchemasMap>(
@@ -96,24 +114,21 @@ export function createStore<Schemas extends SchemasMap>(
 	const { name, schema, version = 1 } = config;
 	const clock = createClock();
 	const getEventstamp = () => clock.now();
-	const documents = makeDocuments(schema, getEventstamp);
+	const docHandles = makeDocHandles(schema, getEventstamp);
 
-	// Cast to public Document type (hides Symbol-keyed internals)
-	const publicDocuments = documents as unknown as Documents<Schemas>;
+	// Cast to public DocHandle type (hides Symbol-keyed internals)
+	const publicDocHandles = docHandles as unknown as DocHandles<Schemas>;
 
-	// Store-level emitter
 	const storeEmitter = createEmitter<StoreEvents<Schemas>>();
-
-	// Subscribe to all document events and re-emit at store level
-	for (const documentName of Object.keys(documents) as (keyof Schemas)[]) {
-		const document = documents[documentName];
+	for (const handleName of Object.keys(docHandles) as (keyof Schemas)[]) {
+		const handle = docHandles[handleName];
 
 		// Type assertion needed for Symbol-keyed method access
-		const docWithInternals =
-			document as unknown as DocumentWithInternals<AnyObjectSchema>;
+		const handleWithInternals =
+			handle as unknown as DocHandleWithInternals<AnyObjectSchema>;
 		const onMutationMethod:
 			| ((handler: (batch: MutationBatch<AnyObject>) => void) => () => void)
-			| undefined = docWithInternals[DocumentInternals.onMutation] as any;
+			| undefined = handleWithInternals[DocHandleInternals.onMutation] as any;
 
 		if (onMutationMethod) {
 			onMutationMethod((mutations) => {
@@ -124,48 +139,47 @@ export function createStore<Schemas extends SchemasMap>(
 					mutations.removed.length > 0
 				) {
 					storeEmitter.emit("mutation", {
-						document: documentName,
+						docHandle: handleName,
 						added: mutations.added,
 						updated: mutations.updated,
 						removed: mutations.removed,
-					} as DocumentMutation<Schemas>);
+					} as DocHandleMutation<Schemas>);
 				}
 			});
 		}
 	}
 
 	const store: Store<Schemas> = {
-		...publicDocuments,
+		...publicDocHandles,
 		name,
 		version,
 		transact<Keys extends ReadonlyArray<keyof Schemas>, R>(
-			documentNames: Keys,
+			handleNames: Keys,
 			callback: (tx: TransactionContext<Schemas, Keys>) => R,
 		): R {
 			return executeTransaction(
 				schema,
-				documents,
+				docHandles,
 				getEventstamp,
-				documentNames,
+				handleNames,
 				callback,
 			);
 		},
 		query<Keys extends ReadonlyArray<keyof Schemas>, R>(
-			documentNames: Keys,
+			handleNames: Keys,
 			callback: (q: QueryContext<Schemas, Keys>) => R,
 		): R {
-			return executeQuery(documents, documentNames, callback);
+			return executeQuery(docHandles, handleNames, callback);
 		},
 		toJSON(): StoreState<Schemas> {
 			const documentStates = {} as {
 				[K in keyof Schemas]: DocumentState<InferOutput<Schemas[K]>>;
 			};
 
-			for (const documentName of Object.keys(documents) as (keyof Schemas)[]) {
-				documentStates[documentName] = documents[documentName].toJSON();
+			for (const handleName of Object.keys(docHandles) as (keyof Schemas)[]) {
+				documentStates[handleName] = docHandles[handleName].toJSON();
 			}
 
-			// Use current clock value as latest
 			const latest = clock.latest();
 
 			return {
@@ -176,19 +190,17 @@ export function createStore<Schemas extends SchemasMap>(
 			};
 		},
 		mergeState(state: StoreState<Schemas>): void {
-			// Validate version compatibility
 			if (state.version !== "1.0") {
 				throw new Error(`Unsupported state version: ${state.version}`);
 			}
 
-			// Merge each document
-			for (const documentName of Object.keys(
+			for (const handleName of Object.keys(
 				state.documents,
 			) as (keyof Schemas)[]) {
-				const document = documents[documentName];
-				const documentState = state.documents[documentName];
-				if (document && documentState) {
-					document.merge(documentState);
+				const handle = docHandles[handleName];
+				const documentState = state.documents[handleName];
+				if (handle && documentState) {
+					handle.merge(documentState);
 				}
 			}
 
@@ -198,29 +210,7 @@ export function createStore<Schemas extends SchemasMap>(
 		on(event, handler) {
 			return storeEmitter.on(event, handler);
 		},
-		documentKeys() {
-			return Object.keys(documents) as (keyof Schemas)[];
-		},
 	};
 
 	return store;
-}
-
-function makeDocuments<Schemas extends SchemasMap>(
-	configs: DocumentConfigMap<Schemas>,
-	getEventstamp: () => string,
-): DocumentInstances<Schemas> {
-	const documents = {} as DocumentInstances<Schemas>;
-
-	for (const name of Object.keys(configs) as (keyof Schemas)[]) {
-		const config = configs[name];
-		documents[name] = createDocument(
-			name as string,
-			config.schema,
-			config.getId,
-			getEventstamp,
-		);
-	}
-
-	return documents;
 }

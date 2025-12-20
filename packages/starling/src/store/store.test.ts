@@ -80,7 +80,7 @@ describe("Store", () => {
 			store.tasks.add({ id: "1", title: "Task 1", completed: false });
 
 			expect(storeEvents).toHaveLength(1);
-			expect(storeEvents[0].document).toBe("tasks");
+			expect(storeEvents[0].docHandle).toBe("tasks");
 			expect(storeEvents[0].added).toHaveLength(1);
 		});
 
@@ -96,10 +96,10 @@ describe("Store", () => {
 
 			expect(storeEvents).toHaveLength(2);
 
-			const tasksEvent = storeEvents.find((e) => e.document === "tasks");
+			const tasksEvent = storeEvents.find((e) => e.docHandle === "tasks");
 			expect(tasksEvent.added).toHaveLength(1);
 
-			const usersEvent = storeEvents.find((e) => e.document === "users");
+			const usersEvent = storeEvents.find((e) => e.docHandle === "users");
 			expect(usersEvent.added).toHaveLength(1);
 		});
 

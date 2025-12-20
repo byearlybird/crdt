@@ -1,4 +1,4 @@
-import type { AnyObject, DocumentState } from "../core";
+import type { AnyObject, DocumentState } from "../state";
 import type { StandardSchemaV1 } from "./standard-schema";
 
 export type AnyObjectSchema<T extends AnyObject = AnyObject> =

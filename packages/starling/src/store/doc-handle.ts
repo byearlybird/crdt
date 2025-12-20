@@ -5,16 +5,33 @@ import {
 	mergeDocuments,
 	mergeResources,
 	type Resource,
-} from "../core";
+} from "../state";
 import { createEmitter } from "./emitter";
 import { standardValidate } from "./standard-schema";
 import type { AnyObjectSchema, InferInput, InferOutput } from "./types";
 
 /**
- * Symbols for internal document methods used by transactions.
- * These are not part of the public Document type.
+ * Error classes
  */
-export const DocumentInternals = {
+export class IdNotFoundError extends Error {
+	constructor(id: string) {
+		super(`Resource with id ${id} not found`);
+		this.name = "IdNotFoundError";
+	}
+}
+
+export class DuplicateIdError extends Error {
+	constructor(id: string) {
+		super(`Resource with id ${id} already exists`);
+		this.name = "DuplicateIdError";
+	}
+}
+
+/**
+ * Symbols for internal doc handle methods used by transactions.
+ * These are not part of the public DocHandle type.
+ */
+export const DocHandleInternals = {
 	getPendingMutations: Symbol("getPendingMutations"),
 	emitMutations: Symbol("emitMutations"),
 	replaceData: Symbol("replaceData"),
@@ -28,11 +45,11 @@ export type MutationBatch<T> = {
 	removed: Array<{ id: string; item: T }>;
 };
 
-export type DocumentEvents<T> = {
+export type DocHandleEvents<T> = {
 	mutation: MutationBatch<T>;
 };
 
-export type Document<T extends AnyObjectSchema> = {
+export type DocHandle<T extends AnyObjectSchema> = {
 	get(id: string): InferOutput<T> | null;
 	getAll(): InferOutput<T>[];
 	find<U = InferOutput<T>>(
@@ -48,35 +65,35 @@ export type Document<T extends AnyObjectSchema> = {
 };
 
 /** Internal type that includes Symbol-keyed methods for transaction support */
-export type DocumentWithInternals<T extends AnyObjectSchema> = Document<T> & {
+export type DocHandleWithInternals<T extends AnyObjectSchema> = DocHandle<T> & {
 	merge(state: DocumentState<InferOutput<T>>): void;
 	toJSON(): DocumentState<InferOutput<T>>;
-	[DocumentInternals.data]: () => Map<string, Resource<InferOutput<T>>>;
-	[DocumentInternals.getPendingMutations]: () => MutationBatch<InferOutput<T>>;
-	[DocumentInternals.emitMutations]: (
+	[DocHandleInternals.data]: () => Map<string, Resource<InferOutput<T>>>;
+	[DocHandleInternals.getPendingMutations]: () => MutationBatch<InferOutput<T>>;
+	[DocHandleInternals.emitMutations]: (
 		mutations: MutationBatch<InferOutput<T>>,
 	) => void;
-	[DocumentInternals.replaceData]: (
+	[DocHandleInternals.replaceData]: (
 		data: Map<string, Resource<InferOutput<T>>>,
 	) => void;
-	[DocumentInternals.onMutation]: (
+	[DocHandleInternals.onMutation]: (
 		handler: (batch: MutationBatch<InferOutput<T>>) => void,
 	) => () => void;
 };
 
-export function createDocument<T extends AnyObjectSchema>(
+export function createDocHandle<T extends AnyObjectSchema>(
 	name: string,
 	schema: T,
 	getId: (item: InferOutput<T>) => string,
 	getEventstamp: () => string,
 	initialData?: Map<string, Resource<InferOutput<T>>>,
 	options?: { autoFlush?: boolean },
-): DocumentWithInternals<T> {
+): DocHandleWithInternals<T> {
 	const autoFlush = options?.autoFlush ?? true;
 	const data = initialData ?? new Map<string, Resource<InferOutput<T>>>();
 	const tombstones = new Map<string, string>();
 
-	const emitter = createEmitter<DocumentEvents<InferOutput<T>>>();
+	const emitter = createEmitter<DocHandleEvents<InferOutput<T>>>();
 
 	// Pending mutations buffer
 	const pendingMutations: MutationBatch<InferOutput<T>> = {
@@ -97,7 +114,6 @@ export function createDocument<T extends AnyObjectSchema>(
 				removed: [...pendingMutations.removed],
 			});
 
-			// Clear the buffer
 			pendingMutations.added = [];
 			pendingMutations.updated = [];
 			pendingMutations.removed = [];
@@ -156,7 +172,6 @@ export function createDocument<T extends AnyObjectSchema>(
 			const resource = makeResource(id, validated, getEventstamp());
 			data.set(id, resource);
 
-			// Buffer the add mutation
 			pendingMutations.added.push({ id, item: validated });
 
 			// Flush immediately for non-transaction operations
@@ -174,7 +189,6 @@ export function createDocument<T extends AnyObjectSchema>(
 				throw new IdNotFoundError(id);
 			}
 
-			// Capture the before state
 			const before = existing.attributes;
 
 			const merged = mergeResources(
@@ -186,7 +200,6 @@ export function createDocument<T extends AnyObjectSchema>(
 
 			data.set(id, merged);
 
-			// Buffer the update mutation
 			pendingMutations.updated.push({
 				id,
 				before,
@@ -205,16 +218,12 @@ export function createDocument<T extends AnyObjectSchema>(
 				throw new IdNotFoundError(id);
 			}
 
-			// Capture the item before deletion
 			const item = existing.attributes;
 
-			// Actually delete from map
 			data.delete(id);
 
-			// Track tombstone
 			tombstones.set(id, getEventstamp());
 
-			// Buffer the remove mutation
 			pendingMutations.removed.push({ id, item });
 
 			// Flush immediately for non-transaction operations
@@ -224,7 +233,6 @@ export function createDocument<T extends AnyObjectSchema>(
 		},
 
 		merge(state: DocumentState<InferOutput<T>>): void {
-			// Capture before state for update/delete event tracking
 			const beforeState = new Map<string, InferOutput<T>>();
 			for (const [id, resource] of data.entries()) {
 				beforeState.set(id, resource.attributes);
@@ -233,22 +241,18 @@ export function createDocument<T extends AnyObjectSchema>(
 			// Build current document from state including tombstones
 			const currentDoc = mapToDocument(name, data, tombstones);
 
-			// Merge using core mergeDocuments with current clock
 			const result = mergeDocuments(currentDoc, state, getEventstamp());
 
-			// Replace document data with merged result
 			data.clear();
 			for (const [id, resource] of Object.entries(result.document.resources)) {
 				data.set(id, resource);
 			}
 
-			// Update tombstones
 			tombstones.clear();
 			for (const [id, stamp] of Object.entries(result.document.tombstones)) {
 				tombstones.set(id, stamp);
 			}
 
-			// Emit events for changes
 			for (const [id, resource] of result.changes.added) {
 				standardValidate(schema, resource.attributes);
 				pendingMutations.added.push({ id, item: resource.attributes });
@@ -284,11 +288,11 @@ export function createDocument<T extends AnyObjectSchema>(
 		},
 
 		// Symbol-keyed internal methods for transaction support
-		[DocumentInternals.data]() {
+		[DocHandleInternals.data]() {
 			return new Map(data);
 		},
 
-		[DocumentInternals.getPendingMutations]() {
+		[DocHandleInternals.getPendingMutations]() {
 			return {
 				added: [...pendingMutations.added],
 				updated: [...pendingMutations.updated],
@@ -296,7 +300,7 @@ export function createDocument<T extends AnyObjectSchema>(
 			};
 		},
 
-		[DocumentInternals.emitMutations](
+		[DocHandleInternals.emitMutations](
 			mutations: MutationBatch<InferOutput<T>>,
 		) {
 			if (
@@ -308,7 +312,7 @@ export function createDocument<T extends AnyObjectSchema>(
 			}
 		},
 
-		[DocumentInternals.replaceData](
+		[DocHandleInternals.replaceData](
 			newData: Map<string, Resource<InferOutput<T>>>,
 		) {
 			data.clear();
@@ -317,24 +321,10 @@ export function createDocument<T extends AnyObjectSchema>(
 			}
 		},
 
-		[DocumentInternals.onMutation](
+		[DocHandleInternals.onMutation](
 			handler: (batch: MutationBatch<InferOutput<T>>) => void,
 		) {
 			return emitter.on("mutation", handler);
 		},
 	};
-}
-
-export class IdNotFoundError extends Error {
-	constructor(id: string) {
-		super(`Resource with id ${id} not found`);
-		this.name = "IdNotFoundError";
-	}
-}
-
-export class DuplicateIdError extends Error {
-	constructor(id: string) {
-		super(`Resource with id ${id} already exists`);
-		this.name = "DuplicateIdError";
-	}
 }

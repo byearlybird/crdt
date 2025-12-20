@@ -11,17 +11,17 @@
  */
 
 // Re-export commonly needed core types
-export type { AnyObject, DocumentState } from "./core";
+export type { AnyObject, DocumentState } from "./state";
 export {
-	type Document,
-	DocumentInternals,
+	type DocHandle,
+	DocHandleInternals,
 	DuplicateIdError,
 	IdNotFoundError,
-} from "./store/document";
+} from "./store/doc-handle";
 export type { QueryContext } from "./store/query";
 export type { StandardSchemaV1 } from "./store/standard-schema";
 export type {
-	DocumentConfig,
+	DocHandleConfig,
 	Store,
 	StoreConfig,
 } from "./store/store";
@@ -29,6 +29,6 @@ export type {
 export { createStore } from "./store/store";
 export type {
 	TransactionContext,
-	TransactionDocumentHandle,
+	TransactionDocHandle,
 } from "./store/transaction";
 export type { StoreState } from "./store/types";

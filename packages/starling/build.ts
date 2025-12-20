@@ -3,7 +3,7 @@ import { build } from "tsdown";
 export default build({
 	entry: {
 		index: "src/index.ts",
-		core: "src/core/index.ts",
+		core: "src/state/index.ts",
 		"persister-idb": "src/persisters/idb/index.ts",
 		"synchronizer-http": "src/synchronizers/http/index.ts",
 	},

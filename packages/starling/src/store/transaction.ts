@@ -1,77 +1,75 @@
-import type { Resource } from "../core";
+import type { Resource } from "../state";
 import {
-	createDocument,
-	type Document,
-	DocumentInternals,
-	type DocumentWithInternals,
+	createDocHandle,
+	type DocHandle,
+	DocHandleInternals,
+	type DocHandleWithInternals,
 	type MutationBatch,
-} from "./document";
-import type { DocumentConfigMap } from "./store";
+} from "./doc-handle";
+import type { DocHandleConfigMap } from "./store";
 import type { AnyObjectSchema, SchemasMap } from "./types";
 
-/** Transaction-safe document handle that excludes serialization */
-export type TransactionDocumentHandle<T extends AnyObjectSchema> = Omit<
-	Document<T>,
+/** Transaction-safe doc handle that excludes serialization */
+export type TransactionDocHandle<T extends AnyObjectSchema> = Omit<
+	DocHandle<T>,
 	"toJSON"
 >;
 
-type TransactionDocumentHandles<Schemas extends SchemasMap> = {
-	[K in keyof Schemas]: TransactionDocumentHandle<Schemas[K]>;
+type TransactionDocHandles<Schemas extends SchemasMap> = {
+	[K in keyof Schemas]: TransactionDocHandle<Schemas[K]>;
 };
 
 /**
- * Transaction context providing access to specified documents.
- * Only documents declared in the documents array are accessible.
+ * Transaction context providing access to specified doc handles.
+ * Only doc handles declared in the docHandles array are accessible.
  */
 export type TransactionContext<
 	Schemas extends SchemasMap,
 	Keys extends ReadonlyArray<keyof Schemas>,
-> = Pick<TransactionDocumentHandles<Schemas>, Keys[number]> & {
+> = Pick<TransactionDocHandles<Schemas>, Keys[number]> & {
 	rollback(): void;
 };
 
 /**
- * Execute a transaction with snapshot isolation and explicit dependencies.
+ * Execute a transaction with snapshot isolation.
  *
- * @param configs - Document configurations for creating new instances
- * @param documents - Active document instances (mutable reference)
- * @param getEventstamp - Function to generate eventstamps
- * @param documentNames - Array of document names to include in transaction
- * @param callback - Transaction callback with tx context
- * @returns The return value from the callback
+ * Only specified doc handles are cloned for efficiency.
+ * Call tx.rollback() to abort, or throw to rollback automatically.
  *
- * @remarks
- * - Only specified documents are cloned (lazy cloning for performance)
- * - Provides snapshot isolation: tx sees consistent data from transaction start
- * - Explicit rollback via tx.rollback() or implicit on exception
- * - TypeScript enforces that only declared documents are accessible
+ * @example
+ * ```typescript
+ * store.transact(["tasks", "users"], (tx) => {
+ *   const task = tx.tasks.add({ title: "Write code" });
+ *   tx.users.update(userId, { lastActivity: Date.now() });
+ * });
+ * ```
  */
 export function executeTransaction<
 	Schemas extends SchemasMap,
 	Keys extends ReadonlyArray<keyof Schemas>,
 	R,
 >(
-	configs: DocumentConfigMap<Schemas>,
-	documents: { [K in keyof Schemas]: DocumentWithInternals<Schemas[K]> },
+	configs: DocHandleConfigMap<Schemas>,
+	docHandles: { [K in keyof Schemas]: DocHandleWithInternals<Schemas[K]> },
 	getEventstamp: () => string,
-	documentNames: Keys,
+	handleNames: Keys,
 	callback: (tx: TransactionContext<Schemas, Keys>) => R,
 ): R {
-	// Clone ONLY specified documents (efficient)
-	const clonedDocuments = {} as {
-		[K in keyof Schemas]: DocumentWithInternals<Schemas[K]>;
+	// Clone ONLY specified doc handles (efficient)
+	const clonedDocHandles = {} as {
+		[K in keyof Schemas]: DocHandleWithInternals<Schemas[K]>;
 	};
 
-	for (const name of documentNames) {
-		const original = documents[name];
+	for (const name of handleNames) {
+		const original = docHandles[name];
 		const config = configs[name];
 
-		const getData = original[DocumentInternals.data] as
+		const getData = original[DocHandleInternals.data] as
 			| (() => Map<string, Resource<any>>)
 			| undefined;
 		if (!getData) continue;
 
-		clonedDocuments[name] = createDocument(
+		clonedDocHandles[name] = createDocHandle(
 			name as string,
 			config.schema,
 			config.getId,
@@ -85,7 +83,7 @@ export function executeTransaction<
 	let shouldRollback = false;
 
 	const tx = {
-		...clonedDocuments,
+		...clonedDocHandles,
 		rollback() {
 			shouldRollback = true;
 		},
@@ -96,25 +94,25 @@ export function executeTransaction<
 
 	// Commit only if not rolled back
 	if (!shouldRollback) {
-		// Commit only the documents that were cloned
-		for (const name of documentNames) {
-			const original = documents[
+		// Commit only the doc handles that were cloned
+		for (const name of handleNames) {
+			const original = docHandles[
 				name
-			] as DocumentWithInternals<AnyObjectSchema>;
-			const cloned = clonedDocuments[
+			] as DocHandleWithInternals<AnyObjectSchema>;
+			const cloned = clonedDocHandles[
 				name
-			] as DocumentWithInternals<AnyObjectSchema>;
+			] as DocHandleWithInternals<AnyObjectSchema>;
 
 			const getPendingMutations = cloned[
-				DocumentInternals.getPendingMutations
+				DocHandleInternals.getPendingMutations
 			] as (() => MutationBatch<any>) | undefined;
-			const replaceData = original[DocumentInternals.replaceData] as
+			const replaceData = original[DocHandleInternals.replaceData] as
 				| ((data: Map<string, Resource<any>>) => void)
 				| undefined;
-			const emitMutations = original[DocumentInternals.emitMutations] as
+			const emitMutations = original[DocHandleInternals.emitMutations] as
 				| ((mutations: MutationBatch<any>) => void)
 				| undefined;
-			const getData = cloned[DocumentInternals.data] as
+			const getData = cloned[DocHandleInternals.data] as
 				| (() => Map<string, Resource<any>>)
 				| undefined;
 
