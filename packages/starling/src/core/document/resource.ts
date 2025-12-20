@@ -10,7 +10,15 @@ function isObject(value: unknown): boolean {
 }
 
 /**
+ * Type guard to check if a value is a record (plain object).
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
  * Get a value from a nested object using a dot-separated path.
+ * Returns undefined if the path doesn't exist or traverses through a non-object.
  * @internal
  */
 function getValueAtPath(obj: Record<string, unknown>, path: string): unknown {
@@ -18,8 +26,8 @@ function getValueAtPath(obj: Record<string, unknown>, path: string): unknown {
 	let current: unknown = obj;
 
 	for (const part of parts) {
-		if (current == null || typeof current !== "object") return undefined;
-		current = (current as Record<string, unknown>)[part];
+		if (!isRecord(current)) return undefined;
+		current = current[part];
 	}
 
 	return current;
@@ -36,11 +44,10 @@ function setValueAtPath(
 	value: unknown,
 ): void {
 	const parts = path.split(".");
-	let current: Record<string, unknown> = obj;
+	let current = obj;
 
 	for (let i = 0; i < parts.length - 1; i++) {
-		const part = parts[i];
-		if (part === undefined) continue;
+		const part = parts[i]!;
 
 		if (!current[part] || typeof current[part] !== "object") {
 			current[part] = {};
@@ -48,29 +55,26 @@ function setValueAtPath(
 		current = current[part] as Record<string, unknown>;
 	}
 
-	const lastPart = parts[parts.length - 1];
-	if (lastPart !== undefined) {
-		current[lastPart] = value;
-	}
+	const lastPart = parts[parts.length - 1]!;
+	current[lastPart] = value;
 }
 
 /**
- * Resource structure representing a single stored entity.
- * Resources are the primary unit of storage and synchronization in Starling.
- *
- * Each resource has a unique identifier, attributes containing the data,
- * and a flat map of eventstamps for tracking field-level changes.
- * The resource type is stored at the document level.
+ * A single data record with change tracking.
+ * @see docs/architecture.md#resource-object-format
  */
 export type Resource<T extends { [key: string]: unknown }> = {
-	/** Unique identifier for this resource */
+	/** Unique identifier */
 	id: string;
-	/** The resource's data as a nested object structure */
+	/** The record's data */
 	attributes: T;
-	/** Flat map of dot-separated paths to eventstamps (e.g., "user.address.street": "2025-11-18...") */
+	/** Maps field paths to timestamps (e.g., "name": "2025-11-18...") */
 	eventstamps: Record<string, string>;
 };
 
+/**
+ * Creates a resource from an object. All fields get the same timestamp.
+ */
 export function makeResource<T extends AnyObject>(
 	id: string,
 	obj: T,
@@ -78,7 +82,7 @@ export function makeResource<T extends AnyObject>(
 ): Resource<T> {
 	const eventstamps: Record<string, string> = {};
 
-	// Traverse the object and build flat paths
+	// Walk through object and build field paths
 	const traverse = (input: Record<string, unknown>, path: string = "") => {
 		for (const key in input) {
 			if (!Object.hasOwn(input, key)) continue;
@@ -87,10 +91,10 @@ export function makeResource<T extends AnyObject>(
 			const fieldPath = path ? `${path}.${key}` : key;
 
 			if (isObject(value)) {
-				// Nested object - recurse to build deeper paths
+				// Nested object - go deeper
 				traverse(value as Record<string, unknown>, fieldPath);
 			} else {
-				// Leaf value - store path -> eventstamp
+				// Final value - store timestamp
 				eventstamps[fieldPath] = eventstamp;
 			}
 		}
@@ -105,6 +109,43 @@ export function makeResource<T extends AnyObject>(
 	};
 }
 
+/**
+ * Picks the winning resource and eventstamp for a given field path.
+ */
+function pickWinner<T extends AnyObject>(
+	path: string,
+	into: Resource<T>,
+	from: Resource<T>,
+): { resource: Resource<T>; stamp: string } {
+	const intoStamp = into.eventstamps[path];
+	const fromStamp = from.eventstamps[path];
+
+	if (!intoStamp && !fromStamp) {
+		// Shouldn't happen if allPaths is correct, but handle it
+		return { resource: into, stamp: "" };
+	}
+
+	if (!intoStamp && fromStamp) {
+		return { resource: from, stamp: fromStamp };
+	}
+
+	if (!fromStamp && intoStamp) {
+		return { resource: into, stamp: intoStamp };
+	}
+
+	if (intoStamp && fromStamp) {
+		return intoStamp > fromStamp
+			? { resource: into, stamp: intoStamp }
+			: { resource: from, stamp: fromStamp };
+	}
+
+	// Should never reach here, but satisfy TypeScript
+	return { resource: into, stamp: intoStamp || fromStamp || "" };
+}
+
+/**
+ * Merges two resources, keeping the newest value for each field.
+ */
 export function mergeResources<T extends AnyObject>(
 	into: Resource<T>,
 	from: Resource<T>,
@@ -112,36 +153,20 @@ export function mergeResources<T extends AnyObject>(
 	const resultAttributes: Record<string, unknown> = {};
 	const resultEventstamps: Record<string, string> = {};
 
-	// Collect all paths from both eventstamp maps
+	// Get all field paths from both resources
 	const allPaths = new Set([
 		...Object.keys(into.eventstamps),
 		...Object.keys(from.eventstamps),
 	]);
 
-	// For each path, pick the winner based on eventstamp
+	// For each field, pick the newer value
 	for (const path of allPaths) {
-		const stamp1 = into.eventstamps[path];
-		const stamp2 = from.eventstamps[path];
+		const { resource: winningResource, stamp: winningStamp } = pickWinner(
+			path,
+			into,
+			from,
+		);
 
-		// Determine which resource wins
-		let winningResource: Resource<T>;
-		let winningStamp: string;
-
-		if (!stamp1) {
-			winningResource = from;
-			winningStamp = stamp2!;
-		} else if (!stamp2) {
-			winningResource = into;
-			winningStamp = stamp1;
-		} else if (stamp1 > stamp2) {
-			winningResource = into;
-			winningStamp = stamp1;
-		} else {
-			winningResource = from;
-			winningStamp = stamp2;
-		}
-
-		// Copy the winning value
 		const value = getValueAtPath(winningResource.attributes, path);
 		setValueAtPath(resultAttributes, path, value);
 		resultEventstamps[path] = winningStamp;

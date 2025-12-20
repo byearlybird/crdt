@@ -69,13 +69,7 @@ function eventstampsChanged(
 		return true;
 	}
 
-	for (const key of beforeKeys) {
-		if (before[key] !== after[key]) {
-			return true;
-		}
-	}
-
-	return false;
+	return beforeKeys.some(key => before[key] !== after[key]);
 }
 
 /**
@@ -98,10 +92,142 @@ function mergeTombstones(
 }
 
 /**
- * Updates the latest eventstamp if the given stamp is newer.
+ * Finds resources that are newly deleted in this merge.
+ * A resource is newly deleted if it exists in resources and appears in the new
+ * tombstones but not in the old tombstones.
  */
-function updateLatest(current: string, candidate: string): string {
-	return candidate > current ? candidate : current;
+function findNewDeletions<T extends AnyObject>(
+	intoResources: Record<string, Resource<T>>,
+	fromResources: Record<string, Resource<T>>,
+	oldTombstones: Record<string, string>,
+	newTombstones: Record<string, string>,
+): Set<string> {
+	const deleted = new Set<string>();
+	const allResourceIds = new Set([
+		...Object.keys(intoResources),
+		...Object.keys(fromResources),
+	]);
+
+	for (const id of allResourceIds) {
+		const wasDeleted = oldTombstones[id] !== undefined;
+		const isDeleted = newTombstones[id] !== undefined;
+
+		if (isDeleted && !wasDeleted) {
+			deleted.add(id);
+		}
+	}
+
+	return deleted;
+}
+
+/**
+ * Gets the maximum eventstamp from a resource's eventstamps.
+ */
+function getResourceLatestStamp<T extends AnyObject>(resource: Resource<T>): string {
+	return maxEventstamp(Object.values(resource.eventstamps));
+}
+
+/**
+ * Filters out tombstoned resources from a resource map.
+ * Returns only resources that are not marked as deleted.
+ */
+function filterTombstonedResources<T extends AnyObject>(
+	resources: Record<string, Resource<T>>,
+	tombstones: Record<string, string>,
+): Record<string, Resource<T>> {
+	const filtered: Record<string, Resource<T>> = {};
+
+	for (const [id, resource] of Object.entries(resources)) {
+		if (!tombstones[id]) {
+			filtered[id] = resource;
+		}
+	}
+
+	return filtered;
+}
+
+/**
+ * Result of merging source resources into base resources.
+ */
+type MergeResourcesResult<T extends AnyObject> = {
+	/** The merged resources map */
+	resources: Record<string, Resource<T>>;
+	/** Resources that were added */
+	added: Map<string, Resource<T>>;
+	/** Resources that were updated */
+	updated: Map<string, Resource<T>>;
+	/** The latest eventstamp found during merge */
+	newestEventstamp: string;
+};
+
+/**
+ * Merges source resources into base resources, skipping tombstoned resources.
+ * Tracks which resources were added or updated and finds the newest eventstamp.
+ */
+function mergeSourceResources<T extends AnyObject>(
+	baseResources: Record<string, Resource<T>>,
+	sourceResources: Record<string, Resource<T>>,
+	tombstones: Record<string, string>,
+	currentClock: string,
+): MergeResourcesResult<T> {
+	const resources = { ...baseResources };
+	const added = new Map<string, Resource<T>>();
+	const updated = new Map<string, Resource<T>>();
+	let newestEventstamp = currentClock;
+
+	for (const [id, fromResource] of Object.entries(sourceResources)) {
+		// Skip tombstoned resources
+		if (tombstones[id]) {
+			continue;
+		}
+
+		const intoResource = resources[id];
+
+		if (!intoResource) {
+			// New resource
+			resources[id] = fromResource;
+			added.set(id, fromResource);
+
+			const resourceLatest = getResourceLatestStamp(fromResource);
+			if (resourceLatest > newestEventstamp) {
+				newestEventstamp = resourceLatest;
+			}
+		} else if (intoResource !== fromResource) {
+			// Merge existing resource
+			const mergedResource = mergeResources(intoResource, fromResource);
+			resources[id] = mergedResource;
+
+			const resourceLatest = getResourceLatestStamp(mergedResource);
+			if (resourceLatest > newestEventstamp) {
+				newestEventstamp = resourceLatest;
+			}
+
+			// Track update if eventstamps changed
+			if (eventstampsChanged(intoResource.eventstamps, mergedResource.eventstamps)) {
+				updated.set(id, mergedResource);
+			}
+		}
+	}
+
+	return { resources, added, updated, newestEventstamp };
+}
+
+/**
+ * Finds the maximum eventstamp from tombstones, comparing against a current value.
+ */
+function maxEventstampFromTombstones(
+	tombstones: Record<string, string>,
+	current: string,
+): string {
+	let newest = current;
+
+	for (const stamp of Object.values(tombstones)) {
+		if (stamp > newest) {
+			newest = stamp;
+		}
+	}
+
+	return newest;
 }
 
 /**
@@ -149,66 +275,26 @@ export function mergeDocuments<T extends AnyObject>(
 	from: DocumentState<T>,
 	currentClock: string,
 ): MergeDocumentsResult<T> {
-	const added = new Map<string, Resource<T>>();
-	const updated = new Map<string, Resource<T>>();
-	const deleted = new Set<string>();
-
 	// Step 1: Merge tombstones
 	const mergedTombstones = mergeTombstones(into.tombstones, from.tombstones);
 
-	// Step 2: Filter out tombstoned resources from base document
-	const mergedResources: Record<string, Resource<T>> = {};
-	for (const [id, resource] of Object.entries(into.resources)) {
-		if (mergedTombstones[id]) {
-			// Resource was deleted
-			if (!into.tombstones[id]) {
-				deleted.add(id);
-			}
-		} else {
-			mergedResources[id] = resource;
-		}
-	}
+	// Step 2: Find newly deleted resources
+	const deleted = findNewDeletions(
+		into.resources,
+		from.resources,
+		into.tombstones,
+		mergedTombstones,
+	);
 
-	let newestEventstamp = currentClock;
+	// Step 3: Filter out tombstoned resources from base document
+	const filteredResources = filterTombstonedResources(into.resources, mergedTombstones);
 
-	// Step 3: Merge resources from source document
-	for (const [id, fromResource] of Object.entries(from.resources)) {
-		// Skip tombstoned resources
-		if (mergedTombstones[id]) {
-			if (into.resources[id] && !into.tombstones[id]) {
-				deleted.add(id);
-			}
-			continue;
-		}
+	// Step 4: Merge resources from source document
+	const { resources: mergedResources, added, updated, newestEventstamp: resourcesLatest } =
+		mergeSourceResources(filteredResources, from.resources, mergedTombstones, currentClock);
 
-		const intoResource = mergedResources[id];
-
-		if (!intoResource) {
-			// New resource
-			mergedResources[id] = fromResource;
-			added.set(id, fromResource);
-
-			const resourceLatest = maxEventstamp(Object.values(fromResource.eventstamps));
-			newestEventstamp = updateLatest(newestEventstamp, resourceLatest);
-		} else if (intoResource !== fromResource) {
-			// Merge existing resource
-			const mergedResource = mergeResources(intoResource, fromResource);
-			mergedResources[id] = mergedResource;
-
-			const resourceLatest = maxEventstamp(Object.values(mergedResource.eventstamps));
-			newestEventstamp = updateLatest(newestEventstamp, resourceLatest);
-
-			// Track update if eventstamps changed
-			if (eventstampsChanged(intoResource.eventstamps, mergedResource.eventstamps)) {
-				updated.set(id, mergedResource);
-			}
-		}
-	}
-
-	// Step 4: Update latest from tombstones
-	for (const stamp of Object.values(mergedTombstones)) {
-		newestEventstamp = updateLatest(newestEventstamp, stamp);
-	}
+	// Step 5: Update latest from tombstones
+	const newestEventstamp = maxEventstampFromTombstones(mergedTombstones, resourcesLatest);
 
 	return {
 		document: {

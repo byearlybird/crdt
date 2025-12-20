@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import {
 	type AnyObject,
+	type DocumentState,
 	makeDocument,
 	mergeDocuments,
-	type StarlingDocument,
 } from "./document";
 import { makeResource } from "./resource";
 
@@ -60,14 +60,14 @@ test("mergeDocuments adds new document from source", () => {
 		"items",
 		"01941f297c00000000a1b2c3",
 	);
-	const from: StarlingDocument<AnyObject> = {
+	const from: DocumentState<AnyObject> = {
 		type: "items",
 		resources: {
 			"doc-1": makeResource(
 				"doc-1",
 				{ name: "Alice" },
-				"01941f2e0fe0000001c3d4e5",
-			),
+				"000192e85b8c000001a1b2c3",
+			), // Earlier timestamp
 		},
 		tombstones: {},
 	};
@@ -304,23 +304,24 @@ test("mergeDocuments preserves documents only in base collection", () => {
 });
 
 test("mergeDocuments does not mark unchanged documents as updated", () => {
-	const doc = makeResource(
+	const resource = makeResource(
 		"doc-1",
 		{ name: "Alice" },
-		"01941f297c00000000a1b2c3",
+		"000192e85b8c000001a1b2c3",
 	);
 
-	const into: StarlingDocument<AnyObject> = {
+	const into: DocumentState<AnyObject> = {
 		type: "items",
 		resources: {
-			"doc-1": doc,
+			"doc-1": resource,
 		},
 		tombstones: {},
 	};
-	const from: StarlingDocument<AnyObject> = {
+
+	const from: DocumentState<AnyObject> = {
 		type: "items",
 		resources: {
-			"doc-1": doc,
+			"doc-1": resource, // Same reference
 		},
 		tombstones: {},
 	};
@@ -575,13 +576,14 @@ test("mergeDocuments: document meta.latest with multiple resources at different 
 test("mergeDocuments: updates newestEventstamp from new resource with later timestamp than document meta", () => {
 	// Edge case: document latest is older than a resource's latest
 	// This can happen with inconsistent document construction
-	const into: StarlingDocument<AnyObject> = {
+	const into: DocumentState<AnyObject> = {
 		type: "items",
 		resources: {},
+		tombstones: {},
 	};
 
 	// Resource has a later timestamp than the document's latest
-	const from: StarlingDocument<AnyObject> = {
+	const from: DocumentState<AnyObject> = {
 		type: "items",
 		resources: {
 			"doc-1": makeResource(
