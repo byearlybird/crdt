@@ -118,45 +118,33 @@ export function mergeResources<T extends AnyObject>(
 		...Object.keys(from.eventstamps),
 	]);
 
-	// Simple iteration: for each path, pick the winner based on eventstamp
+	// For each path, pick the winner based on eventstamp
 	for (const path of allPaths) {
 		const stamp1 = into.eventstamps[path];
 		const stamp2 = from.eventstamps[path];
 
-		if (stamp1 && stamp2) {
-			// Both have this path - compare eventstamps
-			if (stamp1 > stamp2) {
-				setValueAtPath(
-					resultAttributes,
-					path,
-					getValueAtPath(into.attributes, path),
-				);
-				resultEventstamps[path] = stamp1;
-			} else {
-				setValueAtPath(
-					resultAttributes,
-					path,
-					getValueAtPath(from.attributes, path),
-				);
-				resultEventstamps[path] = stamp2;
-			}
-		} else if (stamp1) {
-			// Only in first record
-			setValueAtPath(
-				resultAttributes,
-				path,
-				getValueAtPath(into.attributes, path),
-			);
-			resultEventstamps[path] = stamp1;
-		} else if (stamp2) {
-			// Only in second record
-			setValueAtPath(
-				resultAttributes,
-				path,
-				getValueAtPath(from.attributes, path),
-			);
-			resultEventstamps[path] = stamp2;
+		// Determine which resource wins
+		let winningResource: Resource<T>;
+		let winningStamp: string;
+
+		if (!stamp1) {
+			winningResource = from;
+			winningStamp = stamp2!;
+		} else if (!stamp2) {
+			winningResource = into;
+			winningStamp = stamp1;
+		} else if (stamp1 > stamp2) {
+			winningResource = into;
+			winningStamp = stamp1;
+		} else {
+			winningResource = from;
+			winningStamp = stamp2;
 		}
+
+		// Copy the winning value
+		const value = getValueAtPath(winningResource.attributes, path);
+		setValueAtPath(resultAttributes, path, value);
+		resultEventstamps[path] = winningStamp;
 	}
 
 	return {

@@ -40,9 +40,9 @@ export function createClock(initialState?: ClockState): Clock {
 
 	const now = (): string => {
 		const wallMs = Date.now();
-		const shouldAdvanceWallClock = wallMs > state.ms;
+		const clockMovedForward = wallMs > state.ms;
 
-		if (shouldAdvanceWallClock) {
+		if (clockMovedForward) {
 			state.ms = wallMs;
 			state.counter = 0;
 		} else {
@@ -61,12 +61,11 @@ export function createClock(initialState?: ClockState): Clock {
 			throw new InvalidEventstampError(eventstamp);
 		}
 
-		const current = latest();
-		const isEventstampNewer = eventstamp > current;
-
-		if (isEventstampNewer) {
-			state = decodeEventstamp(eventstamp);
+		if (eventstamp <= latest()) {
+			return;
 		}
+
+		state = decodeEventstamp(eventstamp);
 	};
 
 	return {

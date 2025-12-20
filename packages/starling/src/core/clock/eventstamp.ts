@@ -8,16 +8,16 @@ import { InvalidEventstampError } from "./errors";
  * This format makes sure every eventstamp is unique and can be sorted in order.
  */
 const EVENTSTAMP_FORMAT = {
-	TIME_HEX_LENGTH: 12, // Stores time in milliseconds (works for thousands of years)
-	COUNTER_HEX_LENGTH: 6, // Counts up to 16 million events per millisecond
-	NONCE_HEX_LENGTH: 6, // Random value to prevent duplicates
-	NONCE_BYTE_LENGTH: 3, // 3 bytes = 6 hexadecimal characters
+	TIMESTAMP_CHARS: 12, // 48 bits = 12 hex chars (281 trillion milliseconds)
+	COUNTER_CHARS: 6, // 24 bits = 6 hex chars (16M events per millisecond)
+	NONCE_CHARS: 6, // 24 bits = 6 hex chars (16M unique values)
+	NONCE_BYTES: 3, // 3 bytes = 6 hexadecimal characters
 } as const;
 
 const TOTAL_EVENTSTAMP_LENGTH =
-	EVENTSTAMP_FORMAT.TIME_HEX_LENGTH +
-	EVENTSTAMP_FORMAT.COUNTER_HEX_LENGTH +
-	EVENTSTAMP_FORMAT.NONCE_HEX_LENGTH;
+	EVENTSTAMP_FORMAT.TIMESTAMP_CHARS +
+	EVENTSTAMP_FORMAT.COUNTER_CHARS +
+	EVENTSTAMP_FORMAT.NONCE_CHARS;
 
 const HEX_RADIX = 16;
 const HEX_CHARS_PER_BYTE = 2;
@@ -40,7 +40,7 @@ export const MIN_EVENTSTAMP = encodeEventstamp({
  * @returns A 6-character hexadecimal string
  */
 export function generateNonce(): string {
-	const bytes = new Uint8Array(EVENTSTAMP_FORMAT.NONCE_BYTE_LENGTH);
+	const bytes = new Uint8Array(EVENTSTAMP_FORMAT.NONCE_BYTES);
 	crypto.getRandomValues(bytes);
 	return Array.from(bytes)
 		.map((byte) =>
@@ -58,10 +58,10 @@ export function generateNonce(): string {
 export function encodeEventstamp(clockState: ClockState): string {
 	const timeHex = clockState.ms
 		.toString(HEX_RADIX)
-		.padStart(EVENTSTAMP_FORMAT.TIME_HEX_LENGTH, PADDING_CHAR);
+		.padStart(EVENTSTAMP_FORMAT.TIMESTAMP_CHARS, PADDING_CHAR);
 	const counterHex = clockState.counter
 		.toString(HEX_RADIX)
-		.padStart(EVENTSTAMP_FORMAT.COUNTER_HEX_LENGTH, PADDING_CHAR);
+		.padStart(EVENTSTAMP_FORMAT.COUNTER_CHARS, PADDING_CHAR);
 	const nonceHex = clockState.nonce;
 
 	return `${timeHex}${counterHex}${nonceHex}`.toLowerCase();
@@ -90,8 +90,8 @@ export function decodeEventstamp(eventstamp: string): ClockState {
 		throw new InvalidEventstampError(eventstamp);
 	}
 
-	const timeEnd = EVENTSTAMP_FORMAT.TIME_HEX_LENGTH;
-	const counterEnd = timeEnd + EVENTSTAMP_FORMAT.COUNTER_HEX_LENGTH;
+	const timeEnd = EVENTSTAMP_FORMAT.TIMESTAMP_CHARS;
+	const counterEnd = timeEnd + EVENTSTAMP_FORMAT.COUNTER_CHARS;
 
 	const timeHex = eventstamp.slice(0, timeEnd);
 	const counterHex = eventstamp.slice(timeEnd, counterEnd);
@@ -113,11 +113,13 @@ export function decodeEventstamp(eventstamp: string): ClockState {
  * @returns The largest valid eventstamp, or MIN_EVENTSTAMP if the list is empty
  */
 export function maxEventstamp(eventstamps: string[]): string {
-	if (eventstamps.length === 0) {
-		return MIN_EVENTSTAMP;
+	let max = MIN_EVENTSTAMP;
+
+	for (const stamp of eventstamps) {
+		if (isValidEventstamp(stamp) && stamp > max) {
+			max = stamp;
+		}
 	}
 
-	return eventstamps
-		.filter((stamp) => isValidEventstamp(stamp))
-		.reduce((max, stamp) => (stamp > max ? stamp : max), MIN_EVENTSTAMP);
+	return max;
 }
