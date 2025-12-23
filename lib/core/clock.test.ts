@@ -1,5 +1,40 @@
 import { describe, test, expect } from "bun:test";
-import { makeStamp, parseStamp } from "./stamp";
+import { advanceClock, makeStamp, parseStamp } from "./clock";
+
+describe("advanceClock", () => {
+  test("with greater ms updates ms and resets seq", () => {
+    const current = { ms: 1000, seq: 5 };
+    const next = { ms: 2000, seq: 3 };
+    const result = advanceClock(current, next);
+
+    expect(result).toEqual({ ms: 2000, seq: 3 });
+  });
+
+  test("with same ms advances seq", () => {
+    const current = { ms: 1000, seq: 5 };
+    let result = advanceClock(current, { ms: 1000, seq: 3 });
+    expect(result).toEqual({ ms: 1000, seq: 6 }); // max(5, 3) + 1
+
+    result = advanceClock(result, { ms: 1000, seq: 10 });
+    expect(result).toEqual({ ms: 1000, seq: 11 }); // max(6, 10) + 1
+  });
+
+  test("with smaller ms handles clock skew by incrementing seq", () => {
+    const current = { ms: 1000, seq: 5 };
+    const next = { ms: 500, seq: 10 }; // Clock went backward
+    const result = advanceClock(current, next);
+
+    expect(result).toEqual({ ms: 1000, seq: 6 }); // ms unchanged, seq incremented
+  });
+
+  test("handles zero initial state", () => {
+    const current = { ms: 0, seq: 0 };
+    const next = { ms: 1000, seq: 5 };
+    const result = advanceClock(current, next);
+
+    expect(result).toEqual({ ms: 1000, seq: 5 });
+  });
+});
 
 describe("makeStamp", () => {
   test("generates stamp with correct length", () => {

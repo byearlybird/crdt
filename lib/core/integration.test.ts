@@ -1,7 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { makeStamp, parseStamp } from "./stamp";
-import { makeDocument, parseDocument } from "./document";
-import { mergeDocuments } from "./merge";
+import { makeStamp, parseStamp } from "./clock";
+import { makeDocument, parseDocument, mergeDocuments } from "./document";
 
 describe("Integration: Full Document Lifecycle", () => {
   test("complete workflow: create, merge, and parse documents", () => {
