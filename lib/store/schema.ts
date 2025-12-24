@@ -1,9 +1,5 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
-/**
- * Validates input data against a schema and returns the validated output.
- * Throws an error if validation fails or if the schema is asynchronous.
- */
 export function validate<T extends StandardSchemaV1>(
   schema: T,
   input: StandardSchemaV1.InferInput<T>,
@@ -13,7 +9,6 @@ export function validate<T extends StandardSchemaV1>(
     throw new TypeError("Schema validation must be synchronous");
   }
 
-  // if the `issues` field exists, the validation failed
   if (result.issues) {
     throw new Error(JSON.stringify(result.issues, null, 2));
   }
@@ -22,7 +17,17 @@ export function validate<T extends StandardSchemaV1>(
 }
 
 /**
- * Base type constraint for any standard schema object.
- * This represents a schema that validates to a Record<string, any>.
+ * Base type constraint for any standard schema object
  */
-export type AnyStandardObject = StandardSchemaV1<Record<string, any>>;
+export type AnyObject = StandardSchemaV1<Record<string, any>>;
+
+export type SchemaWithId<T extends AnyObject> =
+  StandardSchemaV1.InferOutput<T> extends {
+    id: any;
+  }
+    ? T
+    : never;
+
+export type Output<T extends AnyObject> = StandardSchemaV1.InferOutput<T>;
+
+export type Input<T extends AnyObject> = StandardSchemaV1.InferInput<T>;

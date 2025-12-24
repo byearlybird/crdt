@@ -1,130 +1,205 @@
-import { atom, batched, map, type ReadableAtom } from "nanostores";
-import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { atom, computed, type ReadableAtom } from "nanostores";
 import { validate } from "./schema";
 import {
-  type Clock,
   makeDocument,
   parseDocument,
   mergeDocuments,
   mergeCollections,
-  type CollectionSnapshot,
+  type Collection,
   type DocumentId,
 } from "../core";
-import type { AnyStandardObject } from "./schema";
+import type { AnyObject, SchemaWithId, Output, Input } from "./schema";
+import type { ClockAPI } from "./clock";
 
-export type CollectionData<T extends AnyStandardObject> = ReadonlyMap<
-  DocumentId,
-  StandardSchemaV1.InferOutput<T>
->;
-
-/**
- * Helper type that checks if a schema's output type has an 'id' property.
- */
-type SchemaWithId<T extends AnyStandardObject> =
-  StandardSchemaV1.InferOutput<T> extends {
-    id: any;
-  }
-    ? T
-    : never;
-
-export type CollectionConfig<T extends AnyStandardObject> =
+export type CollectionConfig<T extends AnyObject> =
   | {
       schema: T;
-      getId: (data: StandardSchemaV1.InferOutput<T>) => DocumentId;
+      getId: (data: Output<T>) => DocumentId;
     }
   | {
       schema: SchemaWithId<T>;
     };
 
-export type CollectionAPI<T extends AnyStandardObject> = {
-  // Store access for listeners
-  $data: ReadableAtom<CollectionData<T>>;
-  $snapshot: ReadableAtom<CollectionSnapshot>;
+export type CollectionApi<T extends AnyObject> = {
+  $data: ReadableAtom<ReadonlyMap<DocumentId, Output<T>>>;
+  $snapshot: ReadableAtom<Collection>;
+  add(data: Input<T>): void;
+  remove(id: DocumentId): void;
+  update(id: DocumentId, document: Partial<Input<T>>): void;
+  merge(snapshot: Collection): void;
+} & Pick<
+  ReadonlyMap<DocumentId, Output<T>>,
+  "get" | "has" | "keys" | "values" | "entries" | "forEach" | "size"
+>;
+
+type TickFunction = () => string;
+
+// Internal state atom that holds both documents and tombstones
+// This allows us to update both atomically with a single notification
+type CollectionState = {
+  documents: Collection["documents"];
+  tombstones: Collection["tombstones"];
 };
 
-// Helper functions for collection mutations (used by Store)
-export type TickFunction = () => string;
-
-export function addDocument<T extends AnyStandardObject>(
-  $documents: ReturnType<typeof map<CollectionSnapshot["documents"]>>,
+export function addDocument<T extends AnyObject>(
+  $state: ReturnType<typeof atom<CollectionState>>,
   config: CollectionConfig<T>,
   tick: TickFunction,
-  data: StandardSchemaV1.InferInput<T>,
+  data: Input<T>,
 ): void {
   const getId = defineGetId(config);
   const valid = validate(config.schema, data);
   const doc = makeDocument(valid, tick());
   const id = getId(valid);
-  $documents.setKey(id, doc);
+  const current = $state.get();
+  $state.set({
+    ...current,
+    documents: { ...current.documents, [id]: doc },
+  });
 }
 
 export function removeDocument(
-  $documents: ReturnType<typeof map<CollectionSnapshot["documents"]>>,
-  $tombstones: ReturnType<typeof map<CollectionSnapshot["tombstones"]>>,
+  $state: ReturnType<typeof atom<CollectionState>>,
   tick: TickFunction,
   id: DocumentId,
 ): void {
-  $tombstones.setKey(id, tick());
-  $documents.setKey(id, undefined);
+  const current = $state.get();
+  const { [id]: _removed, ...remainingDocs } = current.documents;
+  $state.set({
+    documents: remainingDocs,
+    tombstones: { ...current.tombstones, [id]: tick() },
+  });
 }
 
-export function updateDocument<T extends AnyStandardObject>(
-  $documents: ReturnType<typeof map<CollectionSnapshot["documents"]>>,
+export function updateDocument<T extends AnyObject>(
+  $state: ReturnType<typeof atom<CollectionState>>,
   config: CollectionConfig<T>,
   tick: TickFunction,
   id: DocumentId,
-  document: Partial<StandardSchemaV1.InferInput<T>>,
+  document: Partial<Input<T>>,
 ): void {
-  const current = $documents.get()[id];
-  if (!current) return;
+  const current = $state.get();
+  const currentDoc = current.documents[id];
+  if (!currentDoc) return;
 
   const newAttrs = makeDocument(document, tick());
-  const doc = mergeDocuments(current, newAttrs);
+  const doc = mergeDocuments(currentDoc, newAttrs);
 
   validate(config.schema, parseDocument(doc));
 
-  $documents.setKey(id, doc);
+  $state.set({
+    ...current,
+    documents: { ...current.documents, [id]: doc },
+  });
 }
 
 export function mergeCollectionSnapshot(
-  $clock: ReturnType<typeof atom<Clock>>,
-  $documents: ReturnType<typeof map<CollectionSnapshot["documents"]>>,
-  $tombstones: ReturnType<typeof map<CollectionSnapshot["tombstones"]>>,
-  currentSnapshot: CollectionSnapshot,
-  incomingSnapshot: CollectionSnapshot,
+  $state: ReturnType<typeof atom<CollectionState>>,
+  currentSnapshot: Collection,
+  incomingSnapshot: Collection,
 ): void {
   const merged = mergeCollections(currentSnapshot, incomingSnapshot);
-  $clock.set(merged.clock);
-  $documents.set(merged.documents);
-  $tombstones.set(merged.tombstones);
+  $state.set({
+    documents: merged.documents,
+    tombstones: merged.tombstones,
+  });
 }
 
-// Internal helper to create a collection (used by Store)
-// Collections share the store's clock - they don't have their own
-export function createCollectionInternal<T extends AnyStandardObject>(
-  $clock: ReturnType<typeof atom<Clock>>,
-): CollectionAPI<T> & {
-  $documents: ReturnType<typeof map<CollectionSnapshot["documents"]>>;
-  $tombstones: ReturnType<typeof map<CollectionSnapshot["tombstones"]>>;
-} {
-  const $documents = map<CollectionSnapshot["documents"]>({});
-  const $tombstones = map<CollectionSnapshot["tombstones"]>({});
-  const $snapshot = batched([$clock, $documents, $tombstones], parseSnapshot);
-  const $data = batched([$documents, $tombstones], parseCollection<T>);
+export function createCollection<T extends AnyObject>(
+  config: CollectionConfig<T>,
+  clock: ClockAPI,
+): CollectionApi<T> {
+  const { $data, $snapshot, $state } = createCollectionState<T>();
 
   return {
     $data,
     $snapshot,
-    $documents,
-    $tombstones,
+    get(key: DocumentId) {
+      return $data.get().get(key);
+    },
+    has(key: DocumentId) {
+      return $data.get().has(key);
+    },
+    keys() {
+      return $data.get().keys();
+    },
+    values() {
+      return $data.get().values();
+    },
+    entries() {
+      return $data.get().entries();
+    },
+    forEach(
+      callbackfn: (
+        value: Output<T>,
+        key: DocumentId,
+        map: ReadonlyMap<DocumentId, Output<T>>,
+      ) => void,
+      thisArg?: any,
+    ) {
+      return $data.get().forEach(callbackfn, thisArg);
+    },
+    get size() {
+      return $data.get().size;
+    },
+    add(data: Input<T>) {
+      addDocument($state, config, clock.tick, data);
+    },
+    remove(id: DocumentId) {
+      removeDocument($state, clock.tick, id);
+    },
+    update(id: DocumentId, document: Partial<Input<T>>) {
+      updateDocument($state, config, clock.tick, id, document);
+    },
+    merge(snapshot: Collection) {
+      const currentSnapshot = $snapshot.get();
+      mergeCollectionSnapshot($state, currentSnapshot, snapshot);
+    },
   };
 }
 
-function parseCollection<T extends AnyStandardObject>(
-  documents: CollectionSnapshot["documents"],
-  tombstones: CollectionSnapshot["tombstones"],
-): CollectionData<T> {
-  const result = new Map<DocumentId, StandardSchemaV1.InferOutput<T>>();
+function createCollectionState<T extends AnyObject>(): {
+  $data: ReadableAtom<ReadonlyMap<DocumentId, Output<T>>>;
+  $snapshot: ReadableAtom<Collection>;
+  $state: ReturnType<typeof atom<CollectionState>>;
+} {
+  // Single atom holding both documents and tombstones for atomic updates
+  const $state = atom<CollectionState>({
+    documents: {},
+    tombstones: {},
+  });
+
+  const $snapshot = computed($state, (state) => {
+    return parseSnapshot(state.documents, state.tombstones);
+  });
+
+  const $data = computed($state, (state) => {
+    return parseCollection<T>(state.documents, state.tombstones);
+  });
+
+  return {
+    $data,
+    $snapshot,
+    $state,
+  };
+}
+
+function hasIdProperty<T extends AnyObject>(
+  data: Output<T>,
+): data is { id: DocumentId } {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "id" in data &&
+    typeof (data as any).id === "string"
+  );
+}
+
+function parseCollection<T extends AnyObject>(
+  documents: Collection["documents"],
+  tombstones: Collection["tombstones"],
+): ReadonlyMap<DocumentId, Output<T>> {
+  const result = new Map<DocumentId, Output<T>>();
   for (const [id, doc] of Object.entries(documents)) {
     if (!tombstones[id] && doc) {
       result.set(id, parseDocument(doc));
@@ -134,32 +209,33 @@ function parseCollection<T extends AnyStandardObject>(
 }
 
 function parseSnapshot(
-  clock: Clock,
-  documents: CollectionSnapshot["documents"],
-  tombstones: CollectionSnapshot["tombstones"],
-): CollectionSnapshot {
+  documents: Collection["documents"],
+  tombstones: Collection["tombstones"],
+): Collection {
   return {
-    clock,
     documents,
     tombstones,
   };
 }
 
-export function nowClock(): Clock {
-  return { ms: Date.now(), seq: 0 };
-}
-
-function defineGetId<T extends AnyStandardObject>(
+function hasGetId<T extends AnyObject>(
   config: CollectionConfig<T>,
-): (data: StandardSchemaV1.InferOutput<T>) => DocumentId {
-  return "getId" in config && config.getId ? config.getId : defaultGetId;
+): config is {
+  schema: T;
+  getId: (data: Output<T>) => DocumentId;
+} {
+  return "getId" in config && typeof config.getId === "function";
 }
 
-function defaultGetId<T extends AnyStandardObject>(
-  data: StandardSchemaV1.InferOutput<T>,
-): DocumentId {
-  if (typeof data === "object" && data !== null && "id" in data) {
-    return (data as { id: DocumentId }).id;
+function defineGetId<T extends AnyObject>(
+  config: CollectionConfig<T>,
+): (data: Output<T>) => DocumentId {
+  return hasGetId(config) ? config.getId : defaultGetId;
+}
+
+function defaultGetId<T extends AnyObject>(data: Output<T>): DocumentId {
+  if (hasIdProperty(data)) {
+    return data.id;
   }
   throw new Error(
     "Schema must have an 'id' property when getId is not provided",

@@ -1,3 +1,2 @@
-export * from "./collection";
 export * from "./store";
-export * from "./schema";
+export type { AnyObject } from "./schema";

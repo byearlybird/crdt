@@ -1,191 +1,139 @@
-import { atom, computed, type ReadableAtom } from "nanostores";
+import { computed, type ReadableAtom } from "nanostores";
+import { createCollection } from "./collection";
+import { createClock, type ClockAPI } from "./clock";
+import type { CollectionConfig, CollectionApi } from "./collection";
 import type { Clock } from "../core/clock";
-import { advanceClock, makeStamp } from "../core/clock";
-import { nowClock } from "./collection";
-import type {
-  CollectionConfig,
-  CollectionAPI,
-  TickFunction,
-} from "./collection";
-import {
-  createCollectionInternal,
-  addDocument,
-  removeDocument,
-  updateDocument,
-  mergeCollectionSnapshot,
-} from "./collection";
-import type { CollectionSnapshot, DocumentId } from "../core";
-import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { Collection } from "../core/collection";
 
-// Placeholder types for future implementation
-export type Synchronizer = {
-  // TODO: Define synchronizer interface
+export type StoreSnapshot = {
+  clock: Clock;
+  collections: Record<string, Collection>;
 };
 
-export type Persister = {
-  // TODO: Define persister interface
-};
-
-export type StoreConfig = {
-  collections: Record<string, CollectionConfig<any>>;
-  synchronizer?: Synchronizer;
-  persister?: Persister;
-};
-
-// Collection with mutation methods bound to store
-type CollectionWithMutations<T extends StandardSchemaV1<any>> =
-  CollectionAPI<T> & {
-    // ReadonlyMap methods
-    get(key: DocumentId): StandardSchemaV1.InferOutput<T> | undefined;
-    has(key: DocumentId): boolean;
-    keys(): IterableIterator<DocumentId>;
-    values(): IterableIterator<StandardSchemaV1.InferOutput<T>>;
-    entries(): IterableIterator<[DocumentId, StandardSchemaV1.InferOutput<T>]>;
-    forEach(
-      callbackfn: (
-        value: StandardSchemaV1.InferOutput<T>,
-        key: DocumentId,
-        map: ReadonlyMap<DocumentId, StandardSchemaV1.InferOutput<T>>,
-      ) => void,
-      thisArg?: any,
-    ): void;
-    readonly size: number;
-    // Mutation methods
-    add(data: any): void;
-    remove(id: DocumentId): void;
-    update(id: DocumentId, document: Partial<any>): void;
-    merge(snapshot: CollectionSnapshot): void;
+export type StoreCollections<T extends Record<string, CollectionConfig<any>>> =
+  {
+    [K in keyof T]: T[K] extends CollectionConfig<infer S>
+      ? CollectionApi<S>
+      : never;
   };
 
-type StoreCollections<T extends Record<string, CollectionConfig<any>>> = {
-  [K in keyof T]: T[K] extends CollectionConfig<infer S>
-    ? CollectionWithMutations<S>
-    : never;
-};
-
-// Helper type to extract collection data type from a collection
-type ExtractCollectionData<T> = T extends { $data: ReadableAtom<infer D> }
-  ? D
-  : never;
-
-// Type helper to create query collections object - data directly exposed
-type QueryCollections<
+export type QueryCollections<
   TCollections extends StoreCollections<any>,
   TKeys extends readonly (keyof TCollections)[],
 > = {
-  [K in TKeys[number]]: ExtractCollectionData<TCollections[K]>;
+  [K in TKeys[number]]: TCollections[K] extends { $data: ReadableAtom<infer D> }
+    ? D
+    : never;
 };
 
 export type StoreAPI<T extends Record<string, CollectionConfig<any>>> =
   StoreCollections<T> & {
+    $snapshot: ReadableAtom<StoreSnapshot>;
     query<TKeys extends readonly (keyof StoreCollections<T>)[], TResult>(
       collections: TKeys,
       callback: (
         collections: QueryCollections<StoreCollections<T>, TKeys>,
       ) => TResult,
     ): ReadableAtom<TResult>;
+    merge(snapshot: StoreSnapshot): void;
   };
 
-export function createStore<T extends Record<string, CollectionConfig<any>>>(
-  config: StoreConfig & { collections: T },
-): StoreAPI<T> {
-  // Create shared clock for the store
-  const $clock = atom<Clock>(nowClock());
+export function createStore<
+  T extends Record<string, CollectionConfig<any>>,
+>(config: { collections: T }): StoreAPI<T> {
+  const clock = createClock();
+  const collections = initCollections(config.collections, clock);
+  const $snapshot = parseCollections(collections, clock.$state);
 
-  // Create tick function that advances the store's clock
-  const tick: TickFunction = () => {
-    const next = advanceClock($clock.get(), nowClock());
-    $clock.set(next);
-    return makeStamp(next.ms, next.seq);
-  };
-
-  // Create collections and bind mutation methods
-  const collections: any = {};
-
-  for (const [name, collectionConfig] of Object.entries(config.collections)) {
-    const { $data, $snapshot, $documents, $tombstones } =
-      createCollectionInternal($clock);
-
-    // Create collection with mutation methods
-    collections[name] = {
-      $data,
-      $snapshot,
-      // ReadonlyMap methods
-      get(key: DocumentId) {
-        return $data.get().get(key);
-      },
-      has(key: DocumentId) {
-        return $data.get().has(key);
-      },
-      keys() {
-        return $data.get().keys();
-      },
-      values() {
-        return $data.get().values();
-      },
-      entries() {
-        return $data.get().entries();
-      },
-      get size() {
-        return $data.get().size;
-      },
-      // Mutation methods
-      add(data: any) {
-        addDocument($documents, collectionConfig, tick, data);
-      },
-      remove(id: DocumentId) {
-        removeDocument($documents, $tombstones, tick, id);
-      },
-      update(id: DocumentId, document: Partial<any>) {
-        updateDocument($documents, collectionConfig, tick, id, document);
-      },
-      merge(snapshot: CollectionSnapshot) {
-        // Merge snapshot clock into store clock
-        const currentSnapshot = $snapshot.get();
-        mergeCollectionSnapshot(
-          $clock,
-          $documents,
-          $tombstones,
-          currentSnapshot,
-          snapshot,
-        );
-      },
-    };
+  function getCollectionDataStores(
+    collectionNames: readonly (keyof StoreCollections<T>)[],
+  ): ReadableAtom<any>[] {
+    return collectionNames.map((name) => collections[name]!.$data);
   }
 
-  const store = collections as StoreAPI<T>;
+  return {
+    ...collections,
+    $snapshot,
+    query: <TKeys extends readonly (keyof StoreCollections<T>)[], TResult>(
+      collectionNames: TKeys,
+      callback: (
+        collections: QueryCollections<StoreCollections<T>, TKeys>,
+      ) => TResult,
+    ) => {
+      const atoms = getCollectionDataStores(collectionNames);
 
-  // Add query method
-  store.query = function <
-    TKeys extends readonly (keyof StoreCollections<T>)[],
-    TResult,
-  >(
-    collectionNames: TKeys,
-    callback: (
-      collections: QueryCollections<StoreCollections<T>, TKeys>,
-    ) => TResult,
-  ): ReadableAtom<TResult> {
-    // Get the $data atoms for the specified collections
-    const atoms = collectionNames.map(
-      (name) => store[name].$data,
-    ) as ReadableAtom<any>[];
-
-    // Create computed atom - values are the data objects directly
-    return computed(atoms, (...values) => {
-      // Build the query collections object - data directly exposed
-      const queryCollections: any = {};
-
-      for (let i = 0; i < collectionNames.length; i++) {
-        const name = collectionNames[i]!;
-        const data = values[i];
-        queryCollections[name] = data;
-      }
-
-      return callback(
-        queryCollections as QueryCollections<StoreCollections<T>, TKeys>,
-      );
-    });
+      return computed(atoms, (...values) => {
+        const entries = collectionNames.map((name, i) => [name, values[i]]);
+        return callback(
+          Object.fromEntries(entries) as QueryCollections<
+            StoreCollections<T>,
+            TKeys
+          >,
+        );
+      });
+    },
+    merge: (snapshot) => {
+      clock.advance(snapshot.clock.ms, snapshot.clock.seq);
+      mergeCollections(collections, snapshot.collections);
+    },
   };
+}
 
-  return store;
+function initCollections<T extends Record<string, CollectionConfig<any>>>(
+  collectionsConfig: T,
+  clock: ClockAPI,
+): StoreCollections<T> {
+  return Object.fromEntries(
+    Object.entries(collectionsConfig).map(([name, config]) => [
+      name,
+      createCollection(config, clock),
+    ]),
+  ) as StoreCollections<T>;
+}
+
+function parseCollections<T extends Record<string, CollectionConfig<any>>>(
+  collections: StoreCollections<T>,
+  clockState: ReadableAtom<Clock>,
+): ReadableAtom<StoreSnapshot> {
+  const collectionNames = Object.keys(collections);
+  const collectionSnapshotAtoms: ReadableAtom<Collection>[] = [];
+
+  for (const name of collectionNames) {
+    const collection = collections[name];
+    if (collection) {
+      collectionSnapshotAtoms.push(collection.$snapshot);
+    }
+  }
+
+  // Note: We don't include clockState in the dependency array because the clock
+  // is always updated together with collection changes (via tick()). Including it
+  // would cause double notifications. Instead, we read it synchronously inside.
+  return computed(collectionSnapshotAtoms, (...snapshots) => {
+    const clock = clockState.get();
+    const collectionsSnapshot: Record<string, Collection> = {};
+    for (let i = 0; i < collectionNames.length; i++) {
+      const name = collectionNames[i];
+      const snapshot = snapshots[i];
+      if (name && snapshot !== undefined) {
+        collectionsSnapshot[name] = snapshot;
+      }
+    }
+
+    return {
+      clock,
+      collections: collectionsSnapshot,
+    };
+  });
+}
+
+function mergeCollections(
+  target: Record<string, CollectionApi<any>>,
+  source: Record<string, Collection>,
+) {
+  for (const [collectionName, collectionSnapshot] of Object.entries(source)) {
+    const collection = target[collectionName];
+    if (collection) {
+      collection.merge(collectionSnapshot);
+    }
+  }
 }
