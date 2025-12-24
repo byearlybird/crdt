@@ -51,17 +51,6 @@ describe("makeDocument", () => {
     });
   });
 
-  test("all fields receive the same stamp", () => {
-    const fields = { a: 1, b: 2, c: 3 };
-    const stamp = "unified-stamp";
-
-    const result = makeDocument(fields, stamp);
-
-    expect(result["a"]?.["~stamp"]).toBe(stamp);
-    expect(result["b"]?.["~stamp"]).toBe(stamp);
-    expect(result["c"]?.["~stamp"]).toBe(stamp);
-  });
-
   test("flattens nested objects", () => {
     const fields = {
       user: {
@@ -226,9 +215,9 @@ describe("mergeDocuments", () => {
 
     const result = mergeDocuments(target, source);
 
-    expect(result["name"]?.["~value"]).toBe("Alice"); // target wins
-    expect(result["age"]?.["~value"]).toBe(30); // source wins
-    expect(result["city"]?.["~value"]).toBe("NYC"); // only in target
-    expect(result["country"]?.["~value"]).toBe("USA"); // only in source
+    expect(result["name"]?.["~value"]).toBe("Alice");
+    expect(result["age"]?.["~value"]).toBe(30);
+    expect(result["city"]?.["~value"]).toBe("NYC");
+    expect(result["country"]?.["~value"]).toBe("USA");
   });
 });

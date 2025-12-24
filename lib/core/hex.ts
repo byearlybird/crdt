@@ -9,4 +9,3 @@ export function nonce(length: number): string {
     .map((b) => toHex(b, 2))
     .join("");
 }
-

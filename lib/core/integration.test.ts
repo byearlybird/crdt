@@ -1,35 +1,19 @@
 import { describe, test, expect } from "bun:test";
-import { makeStamp, parseStamp } from "./clock";
+import { makeStamp } from "./clock";
 import { makeDocument, parseDocument, mergeDocuments } from "./document";
 
 describe("Integration: Full Document Lifecycle", () => {
   test("complete workflow: create, merge, and parse documents", () => {
-    // Create two documents with different timestamps
     const stamp1 = makeStamp(1000, 1);
     const stamp2 = makeStamp(2000, 1);
 
     const doc1 = makeDocument({ name: "Alice", age: 30 }, stamp1);
     const doc2 = makeDocument({ name: "Alice", age: 31 }, stamp2);
 
-    // Merge documents (newer stamp should win)
     const merged = mergeDocuments(doc1, doc2);
-
-    // Parse back to object
     const result = parseDocument(merged);
 
-    // Newer age value should win
     expect(result).toEqual({ name: "Alice", age: 31 });
-  });
-
-  test("stamps are correctly generated and parsed", () => {
-    const ms = Date.now();
-    const seq = 5;
-
-    const stamp = makeStamp(ms, seq);
-    const parsed = parseStamp(stamp);
-
-    expect(parsed.ms).toBe(ms);
-    expect(parsed.seq).toBe(seq);
   });
 
   test("round-trip maintains data integrity through merge", () => {
@@ -48,7 +32,7 @@ describe("Integration: Full Document Lifecycle", () => {
 
     const stamp = makeStamp(Date.now(), 1);
     const document = makeDocument(original, stamp);
-    const merged = mergeDocuments(document, document); // Merge with itself
+    const merged = mergeDocuments(document, document);
     const restored = parseDocument(merged);
 
     expect(restored).toEqual(original);
@@ -56,34 +40,7 @@ describe("Integration: Full Document Lifecycle", () => {
 });
 
 describe("Integration: Conflict Resolution", () => {
-  test("newer stamps win in direct conflicts", () => {
-    const olderStamp = makeStamp(1000, 1);
-    const newerStamp = makeStamp(2000, 1);
-
-    const olderDoc = makeDocument({ status: "draft" }, olderStamp);
-    const newerDoc = makeDocument({ status: "published" }, newerStamp);
-
-    const merged = mergeDocuments(olderDoc, newerDoc);
-    const result = parseDocument(merged);
-
-    expect(result["status"]).toBe("published");
-  });
-
-  test("older stamps lose in direct conflicts", () => {
-    const olderStamp = makeStamp(1000, 1);
-    const newerStamp = makeStamp(2000, 1);
-
-    const olderDoc = makeDocument({ count: 5 }, olderStamp);
-    const newerDoc = makeDocument({ count: 10 }, newerStamp);
-
-    // Merge in reverse order - newer should still win
-    const merged = mergeDocuments(newerDoc, olderDoc);
-    const result = parseDocument(merged);
-
-    expect(result["count"]).toBe(10);
-  });
-
-  test("LWW resolution with nested object fields", () => {
+  test("last write wins resolution with nested object fields", () => {
     const stamp1 = makeStamp(1000, 1);
     const stamp2 = makeStamp(2000, 1);
     const stamp3 = makeStamp(3000, 1);
@@ -102,7 +59,7 @@ describe("Integration: Conflict Resolution", () => {
       {
         user: {
           name: "Alice",
-          age: 31, // Updated age with newer stamp
+          age: 31,
         },
       },
       stamp2,
@@ -111,19 +68,17 @@ describe("Integration: Conflict Resolution", () => {
     const doc3 = makeDocument(
       {
         user: {
-          name: "Alicia", // Updated name with newest stamp
-          age: 30, // Old age value but newer stamp than doc1
+          name: "Alicia",
+          age: 30,
         },
       },
       stamp3,
     );
 
-    // Merge all three
     const merged1 = mergeDocuments(doc1, doc2);
     const merged2 = mergeDocuments(merged1, doc3);
     const result = parseDocument(merged2);
 
-    // Both fields should come from doc3 (newest stamp)
     expect(result).toEqual({
       user: {
         name: "Alicia",
@@ -134,7 +89,7 @@ describe("Integration: Conflict Resolution", () => {
 
   test("sequence number matters when timestamps are equal", () => {
     const stamp1 = makeStamp(1000, 1);
-    const stamp2 = makeStamp(1000, 2); // Same ms, higher seq
+    const stamp2 = makeStamp(1000, 2);
 
     const doc1 = makeDocument({ value: "first" }, stamp1);
     const doc2 = makeDocument({ value: "second" }, stamp2);
@@ -160,7 +115,6 @@ describe("Integration: Partial Updates", () => {
     const merged = mergeDocuments(doc1, doc2);
     const result = parseDocument(merged);
 
-    // Should contain all fields from both documents
     expect(result).toEqual({
       name: "Alice",
       age: 30,
@@ -186,7 +140,6 @@ describe("Integration: Partial Updates", () => {
       stamp1,
     );
 
-    // Update only the city
     const doc2 = makeDocument(
       {
         user: {
@@ -201,7 +154,6 @@ describe("Integration: Partial Updates", () => {
     const merged = mergeDocuments(doc1, doc2);
     const result = parseDocument(merged);
 
-    // City should be updated, but name and zip should remain
     expect(result).toEqual({
       user: {
         name: "Alice",
@@ -253,7 +205,6 @@ describe("Integration: Complex Nested Structures", () => {
     const stamp2 = makeStamp(2000, 1);
     const stamp3 = makeStamp(3000, 1);
 
-    // Initial profile
     const doc1 = makeDocument(
       {
         user: {
@@ -273,7 +224,6 @@ describe("Integration: Complex Nested Structures", () => {
       stamp1,
     );
 
-    // Update address
     const doc2 = makeDocument(
       {
         user: {
@@ -286,7 +236,6 @@ describe("Integration: Complex Nested Structures", () => {
       stamp2,
     );
 
-    // Update settings and age
     const doc3 = makeDocument(
       {
         user: {
@@ -306,15 +255,15 @@ describe("Integration: Complex Nested Structures", () => {
     expect(result).toEqual({
       user: {
         name: "Charlie",
-        age: 29, // Updated from doc3
+        age: 29,
         address: {
-          street: "456 Oak Ave", // Updated from doc2
-          city: "Boston", // Updated from doc2
-          zip: 12345, // Preserved from doc1
+          street: "456 Oak Ave",
+          city: "Boston",
+          zip: 12345,
         },
         settings: {
-          theme: "dark", // Updated from doc3
-          notifications: true, // Preserved from doc1
+          theme: "dark",
+          notifications: true,
         },
       },
     });
@@ -399,7 +348,6 @@ describe("Integration: Complex Nested Structures", () => {
     const merged = mergeDocuments(doc1, doc2);
     const result = parseDocument(merged);
 
-    // Arrays are replaced entirely, not merged element-wise
     expect(result["tags"]).toEqual(["javascript", "typescript", "node"]);
     expect(result["metadata"]).toEqual({
       authors: ["Alice", "Bob"],

@@ -114,4 +114,3 @@ describe("flatten + unflatten round-trip", () => {
     expect(restored).toEqual(original);
   });
 });
-

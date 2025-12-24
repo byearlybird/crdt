@@ -37,4 +37,3 @@ describe("nonce", () => {
     expect(n).toMatch(/^[0-9a-f]+$/);
   });
 });
-

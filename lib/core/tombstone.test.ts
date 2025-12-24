@@ -52,54 +52,31 @@ describe("mergeTombstones", () => {
 
   test("merges multiple keys with mixed scenarios", () => {
     const target: Tombstones = {
-      "1": "000000000000000002000000", // target wins
-      "2": "000000000000000001000000", // source wins
-      "3": "000000000000000001000000", // only in target
+      "1": "000000000000000002000000",
+      "2": "000000000000000001000000",
+      "3": "000000000000000001000000",
     };
     const source: Tombstones = {
       "1": "000000000000000001000000",
       "2": "000000000000000002000000",
-      "4": "000000000000000001000000", // only in source
+      "4": "000000000000000001000000",
     };
 
     const result = mergeTombstones(target, source);
 
-    expect(result["1"]).toBe("000000000000000002000000"); // target wins
-    expect(result["2"]).toBe("000000000000000002000000"); // source wins
-    expect(result["3"]).toBe("000000000000000001000000"); // only in target
-    expect(result["4"]).toBe("000000000000000001000000"); // only in source
+    expect(result["1"]).toBe("000000000000000002000000");
+    expect(result["2"]).toBe("000000000000000002000000");
+    expect(result["3"]).toBe("000000000000000001000000");
+    expect(result["4"]).toBe("000000000000000001000000");
   });
 
-  test("handles empty target", () => {
-    const target: Tombstones = {};
-    const source: Tombstones = {
+  test("handles empty inputs", () => {
+    expect(mergeTombstones({}, {})).toEqual({});
+    expect(mergeTombstones({}, { "1": "000000000000000001000000" })).toEqual({
       "1": "000000000000000001000000",
-      "2": "000000000000000002000000",
-    };
-
-    const result = mergeTombstones(target, source);
-
-    expect(result).toEqual(source);
-  });
-
-  test("handles empty source", () => {
-    const target: Tombstones = {
+    });
+    expect(mergeTombstones({ "1": "000000000000000001000000" }, {})).toEqual({
       "1": "000000000000000001000000",
-      "2": "000000000000000002000000",
-    };
-    const source: Tombstones = {};
-
-    const result = mergeTombstones(target, source);
-
-    expect(result).toEqual(target);
-  });
-
-  test("handles both empty", () => {
-    const target: Tombstones = {};
-    const source: Tombstones = {};
-
-    const result = mergeTombstones(target, source);
-
-    expect(result).toEqual({});
+    });
   });
 });

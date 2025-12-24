@@ -11,13 +11,10 @@ export type Clock = {
 
 export function advanceClock(current: Clock, next: Clock): Clock {
   if (next.ms > current.ms) {
-    // Physical time advanced: update ms and reset seq
     return { ms: next.ms, seq: next.seq };
   } else if (next.ms === current.ms) {
-    // Same physical time: advance seq to ensure monotonicity
     return { ms: current.ms, seq: Math.max(current.seq, next.seq) + 1 };
   } else {
-    // Physical time went backward (clock skew): increment seq to maintain monotonicity
     return { ms: current.ms, seq: current.seq + 1 };
   }
 }
