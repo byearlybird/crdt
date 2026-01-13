@@ -1,9 +1,11 @@
-import { computed, type ReadableAtom } from "nanostores";
-import { createCollection } from "./collection";
-import { createClock, type ClockAPI } from "./clock";
+import {
+  createCollection,
+  type CollectionChangeEvent,
+} from "./collection";
 import type { CollectionConfig, CollectionApi } from "./collection";
 import type { Clock } from "../core/clock";
 import type { Collection } from "../core/collection";
+import { advanceClock, makeStamp } from "../core/clock";
 
 export type StoreSnapshot = {
   clock: Clock;
@@ -17,123 +19,90 @@ export type StoreCollections<T extends Record<string, CollectionConfig<any>>> =
       : never;
   };
 
-export type QueryCollections<
-  TCollections extends StoreCollections<any>,
-  TKeys extends readonly (keyof TCollections)[],
-> = {
-  [K in TKeys[number]]: TCollections[K] extends { $data: ReadableAtom<infer D> }
-    ? D
-    : never;
+export type StoreChangeEvent = {
+  collection: string;
+  event: CollectionChangeEvent;
 };
 
 export type StoreAPI<T extends Record<string, CollectionConfig<any>>> =
   StoreCollections<T> & {
-    $snapshot: ReadableAtom<StoreSnapshot>;
-    query<TKeys extends readonly (keyof StoreCollections<T>)[], TResult>(
-      collections: TKeys,
-      callback: (
-        collections: QueryCollections<StoreCollections<T>, TKeys>,
-      ) => TResult,
-    ): ReadableAtom<TResult>;
+    getSnapshot(): StoreSnapshot;
     merge(snapshot: StoreSnapshot): void;
+    onChange(listener: (event: StoreChangeEvent) => void): () => void;
   };
 
-export function createStore<
-  T extends Record<string, CollectionConfig<any>>,
->(config: { collections: T }): StoreAPI<T> {
-  const clock = createClock();
-  const collections = initCollections(config.collections, clock);
-  const $snapshot = parseCollections(collections, clock.$state);
+export function createStore<T extends Record<string, CollectionConfig<any>>>(
+  config: { collections: T },
+): StoreAPI<T> {
+  // Internal clock state
+  let clock: Clock = { ms: Date.now(), seq: 0 };
 
-  function getCollectionDataStores(
-    collectionNames: readonly (keyof StoreCollections<T>)[],
-  ): ReadableAtom<any>[] {
-    return collectionNames.map((name) => collections[name]!.$data);
+  const tick = (): string => {
+    const next = advanceClock(clock, { ms: Date.now(), seq: 0 });
+    clock = next;
+    return makeStamp(next.ms, next.seq);
+  };
+
+  const advance = (ms: number, seq: number): void => {
+    clock = advanceClock(clock, { ms, seq });
+  };
+
+  // Create collections
+  const collections = initCollections(config.collections, tick);
+
+  // Store-level change listeners
+  const storeListeners = new Set<(event: StoreChangeEvent) => void>();
+
+  // Subscribe to each collection and bubble up events
+  for (const [name, collection] of Object.entries(collections)) {
+    collection.onChange((event) => {
+      storeListeners.forEach((listener) =>
+        listener({ collection: name, event }),
+      );
+    });
   }
 
   return {
     ...collections,
-    $snapshot,
-    query: <TKeys extends readonly (keyof StoreCollections<T>)[], TResult>(
-      collectionNames: TKeys,
-      callback: (
-        collections: QueryCollections<StoreCollections<T>, TKeys>,
-      ) => TResult,
-    ) => {
-      const atoms = getCollectionDataStores(collectionNames);
 
-      return computed(atoms, (...values) => {
-        const entries = collectionNames.map((name, i) => [name, values[i]]);
-        return callback(
-          Object.fromEntries(entries) as QueryCollections<
-            StoreCollections<T>,
-            TKeys
-          >,
-        );
-      });
+    getSnapshot(): StoreSnapshot {
+      const collectionsSnapshot: Record<string, Collection> = {};
+      for (const [name, collection] of Object.entries(collections)) {
+        collectionsSnapshot[name] = collection.getSnapshot();
+      }
+      return {
+        clock,
+        collections: collectionsSnapshot,
+      };
     },
-    merge: (snapshot) => {
-      clock.advance(snapshot.clock.ms, snapshot.clock.seq);
-      mergeCollections(collections, snapshot.collections);
+
+    merge(snapshot: StoreSnapshot): void {
+      advance(snapshot.clock.ms, snapshot.clock.seq);
+      for (const [name, collectionSnapshot] of Object.entries(
+        snapshot.collections,
+      )) {
+        const collection = collections[name];
+        if (collection) {
+          collection.merge(collectionSnapshot);
+        }
+      }
+    },
+
+    onChange(listener: (event: StoreChangeEvent) => void): () => void {
+      storeListeners.add(listener);
+      return () => storeListeners.delete(listener);
     },
   };
 }
 
 function initCollections<T extends Record<string, CollectionConfig<any>>>(
   collectionsConfig: T,
-  clock: ClockAPI,
+  tick: () => string,
 ): StoreCollections<T> {
   return Object.fromEntries(
     Object.entries(collectionsConfig).map(([name, config]) => [
       name,
-      createCollection(config, clock),
+      createCollection(config, tick),
     ]),
   ) as StoreCollections<T>;
-}
-
-function parseCollections<T extends Record<string, CollectionConfig<any>>>(
-  collections: StoreCollections<T>,
-  clockState: ReadableAtom<Clock>,
-): ReadableAtom<StoreSnapshot> {
-  const collectionNames = Object.keys(collections);
-  const collectionSnapshotAtoms: ReadableAtom<Collection>[] = [];
-
-  for (const name of collectionNames) {
-    const collection = collections[name];
-    if (collection) {
-      collectionSnapshotAtoms.push(collection.$snapshot);
-    }
-  }
-
-  // Note: We don't include clockState in the dependency array because the clock
-  // is always updated together with collection changes (via tick()). Including it
-  // would cause double notifications. Instead, we read it synchronously inside.
-  return computed(collectionSnapshotAtoms, (...snapshots) => {
-    const clock = clockState.get();
-    const collectionsSnapshot: Record<string, Collection> = {};
-    for (let i = 0; i < collectionNames.length; i++) {
-      const name = collectionNames[i];
-      const snapshot = snapshots[i];
-      if (name && snapshot !== undefined) {
-        collectionsSnapshot[name] = snapshot;
-      }
-    }
-
-    return {
-      clock,
-      collections: collectionsSnapshot,
-    };
-  });
-}
-
-function mergeCollections(
-  target: Record<string, CollectionApi<any>>,
-  source: Record<string, Collection>,
-) {
-  for (const [collectionName, collectionSnapshot] of Object.entries(source)) {
-    const collection = target[collectionName];
-    if (collection) {
-      collection.merge(collectionSnapshot);
-    }
-  }
 }
