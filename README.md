@@ -1,8 +1,8 @@
 # Starling
 
-A mergable data store for building local-first apps that sync.
+Conflict-free replicated state for JavaScript. Bring your own reactivity.
 
-Starling lets you store data in memory with a fast, synchronous API. The merge system is fully built and ready—persistence and sync features are coming soon. When you need to sync with other devices or users, it automatically merges changes and resolves conflicts.
+Starling is a CRDT (conflict-free replicated data type) library that provides automatic conflict resolution for distributed data. It manages state with Last-Write-Wins semantics using hybrid logical clocks, giving you a solid foundation for building local-first, collaborative applications.
 
 ## Installation
 
@@ -37,13 +37,13 @@ const user = store.users.get("1"); // { id: "1", name: "Alice" }
 
 ## Features
 
-- **In-memory and fast**: All operations are synchronous for maximum performance
-- **Built for local-first**: API is ready for persistence and sync (coming soon)
-- **Works with any standard schema library**: Zod, Valibot, ArkType, and more
-- **Automatic conflict resolution**: When merging changes, conflicts are resolved automatically
-- **Reactive updates**: Data changes trigger updates automatically
+- **CRDT-based**: Automatic conflict resolution with Last-Write-Wins semantics
+- **Fast and synchronous**: All operations are in-memory and synchronous
+- **Framework agnostic**: Works with React, Vue, Svelte, or vanilla JS
 - **Type-safe**: Full TypeScript support with type inference
+- **Schema validation**: Works with Zod, Valibot, ArkType, and more
 - **Merge snapshots**: Sync data between devices or users easily
+- **Change events**: Listen to data changes and integrate with your reactive system
 
 ## Basic Usage
 
@@ -106,7 +106,7 @@ store.users.remove("1");
 
 ### Reading Data
 
-Collections work like maps. You can read data in several ways:
+Collections provide simple getter methods:
 
 ```typescript
 // Get a single item
@@ -117,55 +117,49 @@ if (store.users.has("1")) {
   // ...
 }
 
-// Get all items
-for (const [id, user] of store.users.entries()) {
-  console.log(id, user);
-}
+// Get all items as an array
+const allUsers = store.users.values();
 
-// Query data reactively (recommended)
-const $userCount = store.query(["users"], (collections) => {
-  return collections.users.size;
-});
+// Get all keys
+const userIds = store.users.keys();
 
-// Get current value
-console.log($userCount.get()); // 5
+// Get entries
+const entries = store.users.entries();
 
-// Subscribe to updates
-$userCount.subscribe((count) => {
-  console.log("User count:", count);
-});
+// Check size
+console.log(store.users.size);
 ```
 
-### Reactive Queries
+### Listening to Changes
 
-For reactive updates, use the `query()` method. It lets you combine data from multiple collections and automatically updates when any of them change:
+Subscribe to changes with `onChange()`:
 
 ```typescript
-// Query multiple collections
-const $stats = store.query(["users", "notes"], (collections) => {
-  return {
-    totalUsers: collections.users.size,
-    totalNotes: collections.notes.size,
-    firstUser: collections.users.get("1"),
-  };
+// Listen to all store changes
+store.onChange((event) => {
+  console.log(`${event.collection} changed:`, event.event.type);
+  // Invalidate queries, update UI, etc.
 });
 
-// Subscribe to changes
-$stats.subscribe((stats) => {
-  console.log("Stats updated:", stats);
+// Listen to specific collection changes
+store.users.onChange((event) => {
+  console.log("User change:", event.type, event.id);
+  if (event.type === "add") {
+    console.log("New user:", event.data);
+  }
 });
 ```
 
 ## Merging Data
 
-Starling's merge system is fully built and ready to use. When you add persistence and sync (coming soon), you'll use snapshots to sync data. A snapshot is a copy of all your data at a point in time.
+Starling's core feature is conflict-free merging. When data changes in multiple places, Starling automatically resolves conflicts using timestamps.
 
 ### Getting a Snapshot
 
 Get the current state of your store:
 
 ```typescript
-const snapshot = store.$snapshot.get();
+const snapshot = store.getSnapshot();
 // { clock: { ms: ..., seq: ... }, collections: { ... } }
 ```
 
@@ -174,14 +168,14 @@ const snapshot = store.$snapshot.get();
 Merge a snapshot from another device or user:
 
 ```typescript
-// Get snapshot from another device (when you add sync)
-const otherSnapshot = getSnapshotFromServer();
+// Get snapshot from another device
+const otherSnapshot = await fetchFromServer();
 
 // Merge it into your store
 store.merge(otherSnapshot);
 ```
 
-Starling automatically resolves conflicts. If the same item was changed in both places, it keeps the change with the newer timestamp. The merge API is ready now—just add your persistence and sync layer on top.
+Starling automatically resolves conflicts. If the same field was changed in both places, it keeps the change with the newer timestamp (Last-Write-Wins).
 
 ### Syncing Between Two Stores
 
@@ -195,11 +189,67 @@ const store2 = createStore({ collections: { users: { schema: userSchema } } });
 store1.users.add({ id: "1", name: "Alice" });
 
 // Sync to store2
-const snapshot = store1.$snapshot.get();
+const snapshot = store1.getSnapshot();
 store2.merge(snapshot);
 
 // Now store2 has the same data
 console.log(store2.users.get("1")); // { id: "1", name: "Alice" }
+```
+
+## Reactivity Integration
+
+Starling is framework-agnostic. Use `onChange()` to integrate with your reactive system:
+
+### React with TanStack Query
+
+```typescript
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+function useUsers() {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    return store.users.onChange(() => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    });
+  }, []);
+
+  return useQuery({
+    queryKey: ["users"],
+    queryFn: () => store.users.values(),
+  });
+}
+```
+
+### React with useSyncExternalStore
+
+```typescript
+import { useSyncExternalStore } from "react";
+
+function useUsers() {
+  return useSyncExternalStore(
+    (callback) => store.users.onChange(callback),
+    () => store.users.values(),
+  );
+}
+```
+
+### Svelte
+
+```typescript
+import { writable } from "svelte/store";
+
+const users = writable(store.users.values());
+store.users.onChange(() => users.set(store.users.values()));
+```
+
+### Vue
+
+```typescript
+import { ref } from "vue";
+
+const users = ref(store.users.values());
+store.users.onChange(() => (users.value = store.users.values()));
 ```
 
 ## Schema Support
@@ -240,20 +290,21 @@ Each collection in your store has these methods:
 - `add(data)` - Add a new document
 - `update(id, data)` - Update an existing document
 - `remove(id)` - Remove a document
-- `merge(snapshot)` - Merge a collection snapshot
 - `get(id)` - Get a document by ID
 - `has(id)` - Check if a document exists
-- `keys()` - Get all document IDs
-- `values()` - Get all documents
-- `entries()` - Get all [id, document] pairs
-- `forEach(callback)` - Iterate over documents
+- `keys()` - Get all document IDs as an array
+- `values()` - Get all documents as an array
+- `entries()` - Get all [id, document] pairs as an array
 - `size` - Number of documents
+- `getSnapshot()` - Get the collection snapshot for syncing
+- `merge(snapshot)` - Merge a collection snapshot
+- `onChange(listener)` - Subscribe to changes
 
 ### Store Methods
 
-- `$snapshot` - Reactive atom containing the full store snapshot
+- `getSnapshot()` - Get the full store snapshot for syncing
 - `merge(snapshot)` - Merge a store snapshot
-- `query(collections, callback)` - Query multiple collections reactively (recommended for reactive code)
+- `onChange(listener)` - Subscribe to all collection changes
 
 For full type definitions, see the TypeScript types exported from the package.
 
