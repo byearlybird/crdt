@@ -22,9 +22,11 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
         notes: {
           schema: noteSchema,
+          keyPath: "id",
         },
       },
     });
@@ -44,6 +46,7 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
       },
     });
@@ -67,6 +70,7 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
       },
     });
@@ -76,7 +80,7 @@ describe("createStore", () => {
       name: "Alice",
       profile: {},
     });
-    
+
     store.add("users", {
       id: "2",
       name: "Bob",
@@ -98,6 +102,7 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
       },
     });
@@ -120,12 +125,12 @@ describe("createStore", () => {
     });
   });
 
-  test("works with custom getId function", () => {
+  test("works with keyPath property", () => {
     const store = createStore({
       collections: {
         users: {
           schema: userSchema,
-          getId: (data) => `user-${data.id}`,
+          keyPath: "id",
         },
       },
     });
@@ -136,12 +141,11 @@ describe("createStore", () => {
       profile: {},
     });
 
-    expect(store.get("users", "user-1")).toEqual({
+    expect(store.get("users", "1")).toEqual({
       id: "1",
       name: "Alice",
       profile: {},
     });
-    expect(store.get("users", "1")).toBeUndefined();
   });
 
   test("collection methods work correctly", () => {
@@ -149,6 +153,7 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
       },
     });
@@ -188,9 +193,11 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
         notes: {
           schema: noteSchema,
+          keyPath: "id",
         },
       },
     });
@@ -241,9 +248,11 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
         notes: {
           schema: noteSchema,
+          keyPath: "id",
         },
       },
     });
@@ -268,6 +277,7 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
       },
     });
@@ -291,9 +301,11 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
         notes: {
           schema: noteSchema,
+          keyPath: "id",
         },
       },
     });
@@ -307,39 +319,36 @@ describe("createStore", () => {
     store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
     expect(events).toHaveLength(1);
     expect(events[0]).toEqual({
+      type: "add",
       collection: "users",
-      event: {
-        type: "add",
-        id: "1",
-        data: { id: "1", name: "Alice", profile: { age: 30 } },
-      },
+      id: "1",
+      data: { id: "1", name: "Alice", profile: { age: 30 } },
     });
 
     // Add a note - should trigger onChange
     store.add("notes", { id: "note-1", content: "First note" });
     expect(events).toHaveLength(2);
     expect(events[1]).toEqual({
+      type: "add",
       collection: "notes",
-      event: {
-        type: "add",
-        id: "note-1",
-        data: { id: "note-1", content: "First note" },
-      },
+      id: "note-1",
+      data: { id: "note-1", content: "First note" },
     });
 
     // Update a user - should trigger onChange
     store.update("users", "1", { profile: { age: 31 } });
     expect(events).toHaveLength(3);
+    expect(events[2]?.type).toBe("update");
     expect(events[2]?.collection).toBe("users");
-    expect(events[2]?.event.type).toBe("update");
-    expect(events[2]?.event.id).toBe("1");
+    expect(events[2]?.id).toBe("1");
 
     // Remove a user - should trigger onChange
     store.remove("users", "1");
     expect(events).toHaveLength(4);
     expect(events[3]).toEqual({
+      type: "remove",
       collection: "users",
-      event: { type: "remove", id: "1" },
+      id: "1",
     });
 
     unsubscribe();
@@ -350,9 +359,11 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
         notes: {
           schema: noteSchema,
+          keyPath: "id",
         },
       },
     });
@@ -360,7 +371,7 @@ describe("createStore", () => {
     const userEvents: any[] = [];
     const unsubscribe = store.onChange((event) => {
       if (event.collection === "users") {
-        userEvents.push(event.event);
+        userEvents.push(event);
       }
     });
 
@@ -369,6 +380,7 @@ describe("createStore", () => {
     expect(userEvents).toHaveLength(1);
     expect(userEvents[0]).toEqual({
       type: "add",
+      collection: "users",
       id: "1",
       data: { id: "1", name: "Alice", profile: { age: 30 } },
     });
@@ -378,6 +390,7 @@ describe("createStore", () => {
     expect(userEvents).toHaveLength(2);
     expect(userEvents[1]).toEqual({
       type: "add",
+      collection: "users",
       id: "2",
       data: { id: "2", name: "Bob", profile: { age: 25 } },
     });
@@ -386,6 +399,7 @@ describe("createStore", () => {
     store.update("users", "1", { profile: { age: 31 } });
     expect(userEvents).toHaveLength(3);
     expect(userEvents[2]?.type).toBe("update");
+    expect(userEvents[2]?.collection).toBe("users");
     expect(userEvents[2]?.id).toBe("1");
 
     // Remove a user - should be captured
@@ -393,6 +407,7 @@ describe("createStore", () => {
     expect(userEvents).toHaveLength(4);
     expect(userEvents[3]).toEqual({
       type: "remove",
+      collection: "users",
       id: "1",
     });
 
@@ -403,22 +418,23 @@ describe("createStore", () => {
     unsubscribe();
   });
 
-  test("throws error when schema missing id property and no getId provided", () => {
-    const schemaWithoutId = z.object({
+  test("keyPath is required in collection config", () => {
+    const schemaWithId = z.object({
+      id: z.string(),
       name: z.string(),
     });
 
     const store = createStore({
       collections: {
         items: {
-          schema: schemaWithoutId as any,
+          schema: schemaWithId,
+          keyPath: "id",
         },
       },
     });
 
-    expect(() => {
-      store.add("items", { name: "Test" } as any);
-    }).toThrow("Schema must have an 'id' property when getId is not provided");
+    store.add("items", { id: "1", name: "Test" });
+    expect(store.get("items", "1")?.name).toBe("Test");
   });
 
   test("tombstones are store-level and globally unique", () => {
@@ -426,9 +442,11 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
         notes: {
           schema: noteSchema,
+          keyPath: "id",
         },
       },
     });
@@ -454,6 +472,7 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
       },
     });
@@ -476,13 +495,13 @@ describe("createStore", () => {
   test("tombstones persist across merge", () => {
     const store1 = createStore({
       collections: {
-        users: { schema: userSchema },
+        users: { schema: userSchema, keyPath: "id" },
       },
     });
 
     const store2 = createStore({
       collections: {
-        users: { schema: userSchema },
+        users: { schema: userSchema, keyPath: "id" },
       },
     });
 
@@ -510,6 +529,7 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
       },
     });
@@ -526,6 +546,7 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
       },
     });
@@ -549,6 +570,7 @@ describe("createStore", () => {
       collections: {
         notes: {
           schema: noteSchema,
+          keyPath: "id",
         },
       },
     });
@@ -571,6 +593,7 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
       },
     });
@@ -590,6 +613,7 @@ describe("createStore", () => {
       collections: {
         users: {
           schema: userSchema,
+          keyPath: "id",
         },
       },
     });
