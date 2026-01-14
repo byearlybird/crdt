@@ -13,15 +13,22 @@ export type StoreCollections<T extends Record<string, CollectionConfig<any>>> = 
   [K in keyof T]: T[K] extends CollectionConfig<infer S> ? CollectionApi<S> : never;
 };
 
-export type StoreChangeEvent = {
-  collection: string;
-  event: CollectionChangeEvent;
+// Helper type to extract schemas from collection configs for cleaner type inference
+type ExtractSchemas<T extends Record<string, CollectionConfig<any>>> = {
+  [K in keyof T]: T[K] extends CollectionConfig<infer S> ? S : never;
 };
+
+export type StoreChangeEvent<T extends Record<string, any>> = {
+  [K in keyof T]: {
+    collection: K;
+    event: CollectionChangeEvent<T[K]>;
+  };
+}[keyof T];
 
 export type StoreAPI<T extends Record<string, CollectionConfig<any>>> = StoreCollections<T> & {
   getSnapshot(): StoreSnapshot;
   merge(snapshot: StoreSnapshot): void;
-  onChange(listener: (event: StoreChangeEvent) => void): () => void;
+  onChange(listener: (event: StoreChangeEvent<ExtractSchemas<T>>) => void): () => void;
 };
 
 export function createStore<T extends Record<string, CollectionConfig<any>>>(config: {
@@ -44,12 +51,14 @@ export function createStore<T extends Record<string, CollectionConfig<any>>>(con
   const collections = initCollections(config.collections, tick);
 
   // Store-level change listeners
-  const storeListeners = new Set<(event: StoreChangeEvent) => void>();
+  const storeListeners = new Set<(event: StoreChangeEvent<ExtractSchemas<T>>) => void>();
 
   // Subscribe to each collection and bubble up events
   for (const [name, collection] of Object.entries(collections)) {
-    collection.onChange((event) => {
-      storeListeners.forEach((listener) => listener({ collection: name, event }));
+    collection.onChange((event: CollectionChangeEvent<any>) => {
+      storeListeners.forEach((listener) =>
+        listener({ collection: name, event } as StoreChangeEvent<ExtractSchemas<T>>),
+      );
     });
   }
 
@@ -77,7 +86,7 @@ export function createStore<T extends Record<string, CollectionConfig<any>>>(con
       }
     },
 
-    onChange(listener: (event: StoreChangeEvent) => void): () => void {
+    onChange(listener: (event: StoreChangeEvent<ExtractSchemas<T>>) => void): () => void {
       storeListeners.add(listener);
       return () => storeListeners.delete(listener);
     },
