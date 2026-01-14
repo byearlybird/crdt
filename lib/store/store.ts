@@ -5,7 +5,6 @@ import {
   mergeDocuments,
   mergeCollections,
   type Collection,
-  type CollectionData,
   type DocumentId,
 } from "../core";
 import type { Clock } from "../core/clock";
@@ -22,7 +21,7 @@ export type CollectionConfig<T extends AnyObject> = {
 
 export type StoreSnapshot = {
   clock: Clock;
-  collections: Record<string, CollectionData>;
+  collections: Record<string, Collection>;
   tombstones: Tombstones;
 };
 
@@ -66,8 +65,8 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   let clock: Clock = { ms: Date.now(), seq: 0 };
   let tombstones: Tombstones = {};
   const documents: Record<string, Record<DocumentId, Document>> = {};
-  const collectionConfigs = new Map<string, CollectionConfig<AnyObject>>();
-  const storeListeners = new Set<(event: StoreChangeEvent<T>) => void>();
+  const configs = new Map<string, CollectionConfig<AnyObject>>();
+  const listeners = new Set<(event: StoreChangeEvent<T>) => void>();
 
   const tick = (): string => {
     advance(Date.now(), 0);
@@ -79,7 +78,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   };
 
   const notify = (collectionName: string, event: { type: string; id?: DocumentId; data?: any }) => {
-    storeListeners.forEach((listener) =>
+    listeners.forEach((listener) =>
       listener({ collection: collectionName, ...event } as StoreChangeEvent<T>),
     );
   };
@@ -87,10 +86,10 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   const getConfig = <K extends keyof T & string>(
     collectionName: K,
   ): CollectionConfig<AnyObject> => {
-    const config = collectionConfigs.get(collectionName);
+    const config = configs.get(collectionName);
 
     if (!config) {
-      throw new Error(`Collection "${String(collectionName)}" not found`);
+      throw new Error(`Collection "${collectionName}" not found`);
     }
 
     return config;
@@ -99,14 +98,14 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   const getDocs = <K extends keyof T & string>(collectionName: K): Record<DocumentId, Document> => {
     const docs = documents[collectionName];
     if (!docs) {
-      throw new Error(`Collection "${String(collectionName)}" not found`);
+      throw new Error(`Collection "${collectionName}" not found`);
     }
     return docs;
   };
 
   // Initialize collections
   for (const [name, collectionConfig] of Object.entries(config.collections)) {
-    collectionConfigs.set(name, collectionConfig);
+    configs.set(name, collectionConfig);
     documents[name] = {};
   }
 
@@ -178,7 +177,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     },
 
     getSnapshot(): StoreSnapshot {
-      const collectionsSnapshot: Record<string, CollectionData> = {};
+      const collectionsSnapshot: Record<string, Collection> = {};
       for (const [name, collectionDocs] of Object.entries(documents)) {
         collectionsSnapshot[name] = { documents: collectionDocs };
       }
@@ -211,15 +210,13 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
         // Merge collections using core mergeCollections function
         const currentCollection: Collection = {
           documents: documents[name],
-          tombstones: {}, // Tombstones are store-level
         };
 
         const sourceCollection: Collection = {
           documents: filteredDocs,
-          tombstones: {}, // Ignore incoming tombstones
         };
 
-        const merged = mergeCollections(currentCollection, sourceCollection);
+        const merged = mergeCollections(currentCollection, sourceCollection, tombstones);
         documents[name] = merged.documents;
 
         // Notify merge event
@@ -228,8 +225,8 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     },
 
     onChange(listener: (event: StoreChangeEvent<T>) => void): () => void {
-      storeListeners.add(listener);
-      return () => storeListeners.delete(listener);
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
   };
 }

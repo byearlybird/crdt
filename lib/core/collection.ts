@@ -1,22 +1,18 @@
 import type { Document } from "./document";
 import type { Tombstones } from "./tombstone";
 import { mergeDocuments } from "./document";
-import { mergeTombstones } from "./tombstone";
 
 export type DocumentId = string;
 
-export type CollectionData = {
-  documents: Record<DocumentId, Document>;
-};
-
 export type Collection = {
   documents: Record<DocumentId, Document>;
-  tombstones: Tombstones;
 };
 
-export function mergeCollections(target: Collection, source: Collection): Collection {
-  const mergedTombstones = mergeTombstones(target.tombstones, source.tombstones);
-
+export function mergeCollections(
+  target: Collection,
+  source: Collection,
+  tombstones: Tombstones,
+): Collection {
   const mergedDocuments: Record<DocumentId, Document> = {};
   const allDocumentIds = new Set([
     ...Object.keys(target.documents),
@@ -27,7 +23,7 @@ export function mergeCollections(target: Collection, source: Collection): Collec
     const targetDoc = target.documents[id];
     const sourceDoc = source.documents[id];
 
-    if (mergedTombstones[id]) {
+    if (tombstones[id]) {
       continue;
     }
 
@@ -42,19 +38,19 @@ export function mergeCollections(target: Collection, source: Collection): Collec
 
   return {
     documents: mergedDocuments,
-    tombstones: mergedTombstones,
   };
 }
 export function mergeCollectionRecords(
   target: Record<string, Collection>,
   source: Record<string, Collection>,
+  tombstones: Tombstones,
 ): Record<string, Collection> {
   const result: Record<string, Collection> = { ...target };
 
   for (const [collectionName, sourceCollection] of Object.entries(source)) {
     const targetCollection = result[collectionName];
     if (targetCollection) {
-      result[collectionName] = mergeCollections(targetCollection, sourceCollection);
+      result[collectionName] = mergeCollections(targetCollection, sourceCollection, tombstones);
     } else {
       result[collectionName] = sourceCollection;
     }

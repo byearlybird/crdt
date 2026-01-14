@@ -2,6 +2,7 @@ import { describe, test, expect } from "vitest";
 import { mergeCollections, mergeCollectionRecords, type Collection } from "./collection";
 import { makeStamp } from "./clock";
 import { makeDocument } from "./document";
+import { mergeTombstones } from "./tombstone";
 
 describe("mergeCollections", () => {
   test("merges documents when both have the same ID", () => {
@@ -12,16 +13,14 @@ describe("mergeCollections", () => {
       documents: {
         "1": makeDocument({ name: "Alice", age: 30 }, stamp1),
       },
-      tombstones: {},
     };
     const source: Collection = {
       documents: {
         "1": makeDocument({ name: "Bob", age: 31 }, stamp2),
       },
-      tombstones: {},
     };
 
-    const result = mergeCollections(target, source);
+    const result = mergeCollections(target, source, {});
 
     expect(result.documents["1"]).toBeDefined();
     expect(result.documents["1"]?.["name"]?.["~value"]).toBe("Bob");
@@ -35,14 +34,12 @@ describe("mergeCollections", () => {
       documents: {
         "1": makeDocument({ name: "Alice" }, stamp1),
       },
-      tombstones: {},
     };
     const source: Collection = {
       documents: {},
-      tombstones: {},
     };
 
-    const result = mergeCollections(target, source);
+    const result = mergeCollections(target, source, {});
 
     expect(result.documents["1"]).toBeDefined();
     expect(result.documents["1"]?.["name"]?.["~value"]).toBe("Alice");
@@ -53,16 +50,14 @@ describe("mergeCollections", () => {
 
     const target: Collection = {
       documents: {},
-      tombstones: {},
     };
     const source: Collection = {
       documents: {
         "2": makeDocument({ name: "Bob" }, stamp2),
       },
-      tombstones: {},
     };
 
-    const result = mergeCollections(target, source);
+    const result = mergeCollections(target, source, {});
 
     expect(result.documents["2"]).toBeDefined();
     expect(result.documents["2"]?.["name"]?.["~value"]).toBe("Bob");
@@ -79,25 +74,31 @@ describe("mergeCollections", () => {
       documents: {
         "1": makeDocument({ name: "Alice" }, stamp1),
       },
-      tombstones: {
-        "2": tombstone2_old,
-      },
     };
     const source: Collection = {
       documents: {
         "2": makeDocument({ name: "Bob" }, stamp2),
         "3": makeDocument({ name: "Charlie" }, stamp2),
       },
-      tombstones: {
+    };
+
+    const tombstones = mergeTombstones(
+      {
+        "2": tombstone2_old,
+      },
+      {
         "2": tombstone2_new,
         "4": tombstone4,
       },
-    };
+    );
 
-    const result = mergeCollections(target, source);
+    const result = mergeCollections(target, source, tombstones);
 
-    expect(result.tombstones["2"]).toBe(tombstone2_new);
-    expect(result.tombstones["4"]).toBe(tombstone4);
+    // Verify that tombstoned documents are excluded
+    expect(result.documents["2"]).toBeUndefined();
+    expect(result.documents["4"]).toBeUndefined();
+    expect(result.documents["1"]).toBeDefined();
+    expect(result.documents["3"]).toBeDefined();
   });
 
   test("removes documents that are tombstoned", () => {
@@ -109,21 +110,18 @@ describe("mergeCollections", () => {
       documents: {
         "1": makeDocument({ name: "Alice" }, stamp1),
       },
-      tombstones: {},
     };
     const source: Collection = {
       documents: {
         "1": makeDocument({ name: "Bob" }, stamp2),
       },
-      tombstones: {
-        "1": tombstone1,
-      },
     };
 
-    const result = mergeCollections(target, source);
+    const result = mergeCollections(target, source, {
+      "1": tombstone1,
+    });
 
     expect(result.documents["1"]).toBeUndefined();
-    expect(result.tombstones["1"]).toBe(tombstone1);
   });
 
   test("handles complex merge scenario", () => {
@@ -139,9 +137,6 @@ describe("mergeCollections", () => {
         "1": makeDocument({ name: "Alice", age: 30 }, stamp1),
         "2": makeDocument({ name: "Bob" }, stamp1),
       },
-      tombstones: {
-        "3": tombstone3_old,
-      },
     };
     const source: Collection = {
       documents: {
@@ -149,36 +144,37 @@ describe("mergeCollections", () => {
         "2": makeDocument({ name: "Robert" }, stamp3),
         "4": makeDocument({ name: "David" }, stamp2),
       },
-      tombstones: {
+    };
+
+    const tombstones = mergeTombstones(
+      {
+        "3": tombstone3_old,
+      },
+      {
         "2": tombstone2,
         "3": tombstone3_new,
       },
-    };
+    );
 
-    const result = mergeCollections(target, source);
+    const result = mergeCollections(target, source, tombstones);
 
     expect(result.documents["1"]).toBeDefined();
     expect(result.documents["2"]).toBeUndefined();
     expect(result.documents["4"]).toBeDefined();
     expect(result.documents["4"]?.["name"]?.["~value"]).toBe("David");
-    expect(result.tombstones["2"]).toBe(tombstone2);
-    expect(result.tombstones["3"]).toBe(tombstone3_new);
   });
 
   test("handles empty snapshots", () => {
     const target: Collection = {
       documents: {},
-      tombstones: {},
     };
     const source: Collection = {
       documents: {},
-      tombstones: {},
     };
 
-    const result = mergeCollections(target, source);
+    const result = mergeCollections(target, source, {});
 
     expect(result.documents).toEqual({});
-    expect(result.tombstones).toEqual({});
   });
 });
 
@@ -192,7 +188,6 @@ describe("mergeCollectionRecords", () => {
         documents: {
           "1": makeDocument({ name: "Alice" }, stamp1),
         },
-        tombstones: {},
       },
     };
 
@@ -201,17 +196,15 @@ describe("mergeCollectionRecords", () => {
         documents: {
           "2": makeDocument({ name: "Bob" }, stamp2),
         },
-        tombstones: {},
       },
       notes: {
         documents: {
           "note-1": makeDocument({ content: "Hello" }, stamp2),
         },
-        tombstones: {},
       },
     };
 
-    const result = mergeCollectionRecords(target, source);
+    const result = mergeCollectionRecords(target, source, {});
 
     expect(result["users"]?.documents["1"]).toBeDefined();
     expect(result["users"]?.documents["2"]).toBeDefined();
@@ -227,11 +220,10 @@ describe("mergeCollectionRecords", () => {
         documents: {
           "1": makeDocument({ name: "Alice" }, stamp),
         },
-        tombstones: {},
       },
     };
 
-    const result = mergeCollectionRecords(target, source);
+    const result = mergeCollectionRecords(target, source, {});
 
     expect(result["users"]).toBeDefined();
     expect(result["users"]?.documents["1"]).toBeDefined();

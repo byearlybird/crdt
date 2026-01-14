@@ -125,69 +125,6 @@ describe("createStore", () => {
     });
   });
 
-  test("works with keyPath property", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    store.add("users", {
-      id: "1",
-      name: "Alice",
-      profile: {},
-    });
-
-    expect(store.get("users", "1")).toEqual({
-      id: "1",
-      name: "Alice",
-      profile: {},
-    });
-  });
-
-  test("collection methods work correctly", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    expect(store.getAll("users")).toHaveLength(0);
-    expect(store.get("users", "1")).toBeUndefined();
-
-    store.add("users", {
-      id: "1",
-      name: "Alice",
-      profile: { age: 30 },
-    });
-    store.add("users", {
-      id: "2",
-      name: "Bob",
-      profile: { age: 25 },
-    });
-    store.add("users", {
-      id: "3",
-      name: "Charlie",
-      profile: { age: 35 },
-    });
-
-    const allUsers = store.getAll("users");
-    expect(allUsers).toHaveLength(3);
-    expect(store.get("users", "1")?.name).toBe("Alice");
-    expect(store.get("users", "nonexistent")).toBeUndefined();
-    expect(allUsers.some((v) => v.name === "Alice")).toBe(true);
-
-    store.remove("users", "2");
-    expect(store.getAll("users")).toHaveLength(2);
-    expect(store.get("users", "2")).toBeUndefined();
-  });
-
   test("getSnapshot returns store snapshot with clock and collections", () => {
     const store = createStore({
       collections: {
@@ -354,89 +291,6 @@ describe("createStore", () => {
     unsubscribe();
   });
 
-  test("can filter onChange by collection", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-        notes: {
-          schema: noteSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    const userEvents: any[] = [];
-    const unsubscribe = store.onChange((event) => {
-      if (event.collection === "users") {
-        userEvents.push(event);
-      }
-    });
-
-    // Add a user - should be captured
-    store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
-    expect(userEvents).toHaveLength(1);
-    expect(userEvents[0]).toEqual({
-      type: "add",
-      collection: "users",
-      id: "1",
-      data: { id: "1", name: "Alice", profile: { age: 30 } },
-    });
-
-    // Add another user - should be captured
-    store.add("users", { id: "2", name: "Bob", profile: { age: 25 } });
-    expect(userEvents).toHaveLength(2);
-    expect(userEvents[1]).toEqual({
-      type: "add",
-      collection: "users",
-      id: "2",
-      data: { id: "2", name: "Bob", profile: { age: 25 } },
-    });
-
-    // Update a user - should be captured
-    store.update("users", "1", { profile: { age: 31 } });
-    expect(userEvents).toHaveLength(3);
-    expect(userEvents[2]?.type).toBe("update");
-    expect(userEvents[2]?.collection).toBe("users");
-    expect(userEvents[2]?.id).toBe("1");
-
-    // Remove a user - should be captured
-    store.remove("users", "1");
-    expect(userEvents).toHaveLength(4);
-    expect(userEvents[3]).toEqual({
-      type: "remove",
-      collection: "users",
-      id: "1",
-    });
-
-    // Adding to notes should NOT be captured
-    store.add("notes", { id: "note-1", content: "Note" });
-    expect(userEvents).toHaveLength(4); // Still 4, no change
-
-    unsubscribe();
-  });
-
-  test("keyPath is required in collection config", () => {
-    const schemaWithId = z.object({
-      id: z.string(),
-      name: z.string(),
-    });
-
-    const store = createStore({
-      collections: {
-        items: {
-          schema: schemaWithId,
-          keyPath: "id",
-        },
-      },
-    });
-
-    store.add("items", { id: "1", name: "Test" });
-    expect(store.get("items", "1")?.name).toBe("Test");
-  });
-
   test("tombstones are store-level and globally unique", () => {
     const store = createStore({
       collections: {
@@ -524,23 +378,6 @@ describe("createStore", () => {
     expect(snapshot2.tombstones).toHaveProperty("1");
   });
 
-  test("getAll works without options (backward compatibility)", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    store.add("users", { id: "1", name: "Alice", profile: {} });
-    store.add("users", { id: "2", name: "Bob", profile: {} });
-
-    const allUsers = store.getAll("users");
-    expect(allUsers).toHaveLength(2);
-  });
-
   test("getAll with where predicate filters items", () => {
     const store = createStore({
       collections: {
@@ -548,9 +385,14 @@ describe("createStore", () => {
           schema: userSchema,
           keyPath: "id",
         },
+        notes: {
+          schema: noteSchema,
+          keyPath: "id",
+        },
       },
     });
 
+    // Test filtering with users collection
     store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
     store.add("users", { id: "2", name: "Bob", profile: { age: 25 } });
     store.add("users", { id: "3", name: "Charlie", profile: { age: 35 } });
@@ -563,18 +405,8 @@ describe("createStore", () => {
     expect(adults.find((u) => u.name === "Alice")).toBeDefined();
     expect(adults.find((u) => u.name === "Charlie")).toBeDefined();
     expect(adults.find((u) => u.name === "Bob")).toBeUndefined();
-  });
 
-  test("getAll with where predicate works with different conditions", () => {
-    const store = createStore({
-      collections: {
-        notes: {
-          schema: noteSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
+    // Test filtering with notes collection (different schema)
     store.add("notes", { id: "1", content: "First note" });
     store.add("notes", { id: "2", content: "Second note" });
     store.add("notes", { id: "3", content: "Third note" });
@@ -586,53 +418,22 @@ describe("createStore", () => {
     expect(filtered).toHaveLength(1);
     expect(filtered[0]?.id).toBe("2");
     expect(filtered[0]?.content).toBe("Second note");
-  });
 
-  test("getAll with where predicate returns empty array when no matches", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-      },
+    // Test empty results
+    const noMatches = store.getAll("users", {
+      where: (user) => user.name === "Nonexistent",
     });
+    expect(noMatches).toHaveLength(0);
 
-    store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
-    store.add("users", { id: "2", name: "Bob", profile: { age: 25 } });
-
-    const filtered = store.getAll("users", {
-      where: (user) => user.name === "Charlie",
-    });
-
-    expect(filtered).toHaveLength(0);
-  });
-
-  test("getAll with where predicate is applied after tombstone filtering", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
-    store.add("users", { id: "2", name: "Bob", profile: { age: 25 } });
-    store.add("users", { id: "3", name: "Charlie", profile: { age: 35 } });
-
-    // Remove one user
+    // Test that where predicate is applied after tombstone filtering
     store.remove("users", "2");
-
-    // Filter for adults - should not include removed user
-    const adults = store.getAll("users", {
+    const adultsAfterRemoval = store.getAll("users", {
       where: (user) => (user.profile?.age ?? 0) >= 30,
     });
 
-    expect(adults).toHaveLength(2);
-    expect(adults.find((u) => u.id === "1")).toBeDefined();
-    expect(adults.find((u) => u.id === "3")).toBeDefined();
-    expect(adults.find((u) => u.id === "2")).toBeUndefined();
+    expect(adultsAfterRemoval).toHaveLength(2);
+    expect(adultsAfterRemoval.find((u) => u.id === "1")).toBeDefined();
+    expect(adultsAfterRemoval.find((u) => u.id === "3")).toBeDefined();
+    expect(adultsAfterRemoval.find((u) => u.id === "2")).toBeUndefined();
   });
 });
