@@ -37,7 +37,10 @@ export type StoreAPI<T extends Record<string, CollectionConfig<any>>> = {
     id: DocumentId
   ): Output<ExtractSchemas<T>[K]> | undefined;
 
-  getAll<K extends keyof T & string>(collection: K): Output<ExtractSchemas<T>[K]>[];
+  getAll<K extends keyof T & string>(
+    collection: K,
+    options?: { where?: (item: Output<ExtractSchemas<T>[K]>) => boolean }
+  ): Output<ExtractSchemas<T>[K]>[];
 
   update<K extends keyof T & string>(
     collection: K,
@@ -129,18 +132,25 @@ export function createStore<T extends Record<string, CollectionConfig<any>>>(con
       return collection.get(id);
     },
 
-    getAll(collectionName) {
+    getAll(collectionName, options) {
       const collection = collections.get(collectionName as string);
       if (!collection) {
         throw new Error(`Collection "${String(collectionName)}" not found`);
       }
 
       // Filter out globally tombstoned documents
-      const allDocs = collection.values();
-      return allDocs.filter((doc) => {
+      let allDocs = collection.values();
+      allDocs = allDocs.filter((doc) => {
         const id = getIdForCollection(collectionName as string, doc);
         return !tombstones[id];
       });
+
+      // Apply where predicate if provided
+      if (options?.where) {
+        allDocs = allDocs.filter(options.where);
+      }
+
+      return allDocs;
     },
 
     update(collectionName, id, data) {

@@ -504,4 +504,111 @@ describe("createStore", () => {
     const snapshot2 = store2.getSnapshot();
     expect(snapshot2.tombstones).toHaveProperty("1");
   });
+
+  test("getAll works without options (backward compatibility)", () => {
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+        },
+      },
+    });
+
+    store.add("users", { id: "1", name: "Alice", profile: {} });
+    store.add("users", { id: "2", name: "Bob", profile: {} });
+
+    const allUsers = store.getAll("users");
+    expect(allUsers).toHaveLength(2);
+  });
+
+  test("getAll with where predicate filters items", () => {
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+        },
+      },
+    });
+
+    store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
+    store.add("users", { id: "2", name: "Bob", profile: { age: 25 } });
+    store.add("users", { id: "3", name: "Charlie", profile: { age: 35 } });
+
+    const adults = store.getAll("users", {
+      where: (user) => (user.profile?.age ?? 0) >= 30,
+    });
+
+    expect(adults).toHaveLength(2);
+    expect(adults.find((u) => u.name === "Alice")).toBeDefined();
+    expect(adults.find((u) => u.name === "Charlie")).toBeDefined();
+    expect(adults.find((u) => u.name === "Bob")).toBeUndefined();
+  });
+
+  test("getAll with where predicate works with different conditions", () => {
+    const store = createStore({
+      collections: {
+        notes: {
+          schema: noteSchema,
+        },
+      },
+    });
+
+    store.add("notes", { id: "1", content: "First note" });
+    store.add("notes", { id: "2", content: "Second note" });
+    store.add("notes", { id: "3", content: "Third note" });
+
+    const filtered = store.getAll("notes", {
+      where: (note) => note.content.includes("Second"),
+    });
+
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]?.id).toBe("2");
+    expect(filtered[0]?.content).toBe("Second note");
+  });
+
+  test("getAll with where predicate returns empty array when no matches", () => {
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+        },
+      },
+    });
+
+    store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
+    store.add("users", { id: "2", name: "Bob", profile: { age: 25 } });
+
+    const filtered = store.getAll("users", {
+      where: (user) => user.name === "Charlie",
+    });
+
+    expect(filtered).toHaveLength(0);
+  });
+
+  test("getAll with where predicate is applied after tombstone filtering", () => {
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+        },
+      },
+    });
+
+    store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
+    store.add("users", { id: "2", name: "Bob", profile: { age: 25 } });
+    store.add("users", { id: "3", name: "Charlie", profile: { age: 35 } });
+
+    // Remove one user
+    store.remove("users", "2");
+
+    // Filter for adults - should not include removed user
+    const adults = store.getAll("users", {
+      where: (user) => (user.profile?.age ?? 0) >= 30,
+    });
+
+    expect(adults).toHaveLength(2);
+    expect(adults.find((u) => u.id === "1")).toBeDefined();
+    expect(adults.find((u) => u.id === "3")).toBeDefined();
+    expect(adults.find((u) => u.id === "2")).toBeUndefined();
+  });
 });
