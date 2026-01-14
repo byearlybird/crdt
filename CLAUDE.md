@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Starling is a conflict-free replicated data type (CRDT) library for JavaScript. It implements Last-Write-Wins (LWW) semantics with hybrid logical clocks (HLC) for distributed systems synchronization. The library is framework-agnostic - users integrate it with their preferred reactive system via change events.
 
 **Core Concepts:**
+
 - **Documents**: Key-value objects where each field has a value and timestamp (stamp)
 - **Collections**: Groups of documents with tombstones for deletion tracking
 - **Clock**: Hybrid logical clock (milliseconds + sequence counter + nonce) for ordering operations
@@ -15,23 +16,27 @@ Starling is a conflict-free replicated data type (CRDT) library for JavaScript. 
 ## Commands
 
 ### Build and Development
-- `bun run build` - Build the library using tsdown
-- `bun run dev` - Build in watch mode
+
+- `pnpm run build` - Build the library using tsdown
+- `pnpm run dev` - Build in watch mode
 
 ### Testing
-- `bun test` - Run all tests
-- `bun test <file>` - Run specific test file
+
+- `pnpm test` - Run all tests
+- `pnpm test <file>` - Run specific test file
 - Test files use pattern: `*.test.ts`
 
 ### Code Quality
-- `bun run format` - Format code with Prettier
-- `bun run format:check` - Check formatting without changes
+
+- `pnpm run fmt` - Format code with oxfmt
+- `pnpm run fmt:check` - Check formatting without changes
 
 ## Architecture
 
 ### Layer Structure
 
 **Core Layer** (`lib/core/`):
+
 - Pure CRDT logic with no dependencies
 - `clock.ts` - Hybrid logical clock implementation (advanceClock, makeStamp, parseStamp)
 - `document.ts` - Document CRDT operations (makeDocument, parseDocument, mergeDocuments)
@@ -41,6 +46,7 @@ Starling is a conflict-free replicated data type (CRDT) library for JavaScript. 
 - `hex.ts` - Hex encoding utilities and nonce generation
 
 **Store Layer** (`lib/store/`):
+
 - Simple coordination layer with change events
 - `store.ts` - Main store API with clock management and multi-collection coordination
 - `collection.ts` - Collection API wrapping core CRDT logic with change events
@@ -70,9 +76,10 @@ Starling is a conflict-free replicated data type (CRDT) library for JavaScript. 
 
 ## Testing Patterns
 
-Tests use bun:test framework with describe/test/expect:
+Tests use Vitest framework with describe/test/expect:
+
 ```ts
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "vitest";
 
 test("documents merge with LWW semantics", () => {
   const stamp1 = makeStamp(1000, 1);
@@ -89,5 +96,5 @@ See `lib/core/integration.test.ts` for comprehensive CRDT behavior tests and `li
 ## Publishing
 
 - Package published as `@byearlybird/starling` on npm
-- `bun run prepublishOnly` runs build automatically before publishing
+- `pnpm run prepublishOnly` runs build automatically before publishing
 - Only `dist/` directory is published (see package.json files array)

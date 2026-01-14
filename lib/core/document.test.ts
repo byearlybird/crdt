@@ -1,10 +1,5 @@
-import { describe, test, expect } from "bun:test";
-import {
-  makeDocument,
-  mergeDocuments,
-  parseDocument,
-  type Document,
-} from "./document";
+import { describe, test, expect } from "vitest";
+import { makeDocument, mergeDocuments, parseDocument, type Document } from "./document";
 
 describe("makeDocument", () => {
   test("wraps simple object fields with stamp", () => {
@@ -196,9 +191,7 @@ describe("mergeDocuments", () => {
     const target: Document = { name: undefined as any };
     const source: Document = { name: undefined as any };
 
-    expect(() => mergeDocuments(target, source)).toThrow(
-      "Key name not found in either document",
-    );
+    expect(() => mergeDocuments(target, source)).toThrow("Key name not found in either document");
   });
 
   test("merges multiple keys with mixed scenarios", () => {

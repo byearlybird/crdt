@@ -18,7 +18,7 @@ export type CollectionConfig<T extends AnyObject> =
       schema: SchemaWithId<T>;
     };
 
-export type CollectionChangeEvent<T = any> =
+export type CollectionChangeEvent<T extends AnyObject> =
   | { type: "add"; id: DocumentId; data: Output<T> }
   | { type: "update"; id: DocumentId; data: Output<T> }
   | { type: "remove"; id: DocumentId }
@@ -184,9 +184,7 @@ export function createCollection<T extends AnyObject>(
   };
 }
 
-function hasIdProperty<T extends AnyObject>(
-  data: Output<T>,
-): data is { id: DocumentId } {
+function hasIdProperty<T extends AnyObject>(data: Output<T>): data is { id: DocumentId } {
   return (
     typeof data === "object" &&
     data !== null &&
@@ -214,7 +212,5 @@ function defaultGetId<T extends AnyObject>(data: Output<T>): DocumentId {
   if (hasIdProperty(data)) {
     return data.id;
   }
-  throw new Error(
-    "Schema must have an 'id' property when getId is not provided",
-  );
+  throw new Error("Schema must have an 'id' property when getId is not provided");
 }

@@ -1,7 +1,6 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "vitest";
 import { z } from "zod";
-import { createStore, type StoreSnapshot } from "./store";
-import type { Collection } from "../core/collection";
+import { createStore } from "./store";
 
 const userSchema = z.object({
   id: z.string(),
@@ -232,9 +231,7 @@ describe("createStore", () => {
 
     const updatedSnapshot = store.getSnapshot();
     expect(updatedSnapshot.collections["users"]?.documents).toHaveProperty("1");
-    expect(updatedSnapshot.collections["notes"]?.documents).toHaveProperty(
-      "note-1",
-    );
+    expect(updatedSnapshot.collections["notes"]?.documents).toHaveProperty("note-1");
     expect(updatedSnapshot.collections["users"]?.tombstones).toEqual({});
     expect(updatedSnapshot.collections["notes"]?.tombstones).toEqual({});
   });
@@ -268,19 +265,13 @@ describe("createStore", () => {
 
     store.users.add({ id: "1", name: "Alice", profile: {} });
     const snapshotAfterUsers = store.getSnapshot();
-    expect(snapshotAfterUsers.collections["users"]?.documents).toHaveProperty(
-      "1",
-    );
+    expect(snapshotAfterUsers.collections["users"]?.documents).toHaveProperty("1");
     expect(snapshotAfterUsers.collections["notes"]?.documents).toEqual({});
 
     store.notes.add({ id: "1", content: "Note" });
     const snapshotAfterNotes = store.getSnapshot();
-    expect(snapshotAfterNotes.collections["users"]?.documents).toHaveProperty(
-      "1",
-    );
-    expect(snapshotAfterNotes.collections["notes"]?.documents).toHaveProperty(
-      "1",
-    );
+    expect(snapshotAfterNotes.collections["users"]?.documents).toHaveProperty("1");
+    expect(snapshotAfterNotes.collections["notes"]?.documents).toHaveProperty("1");
   });
 
   test("merge updates clock and collections", () => {
@@ -339,7 +330,11 @@ describe("createStore", () => {
     expect(events).toHaveLength(2);
     expect(events[1]).toEqual({
       collection: "notes",
-      event: { type: "add", id: "note-1", data: { id: "note-1", content: "First note" } },
+      event: {
+        type: "add",
+        id: "note-1",
+        data: { id: "note-1", content: "First note" },
+      },
     });
 
     // Update a user - should trigger onChange

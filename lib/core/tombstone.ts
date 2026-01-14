@@ -1,9 +1,6 @@
 export type Tombstones = Record<string, string>;
 
-export function mergeTombstones(
-  target: Tombstones,
-  source: Tombstones,
-): Tombstones {
+export function mergeTombstones(target: Tombstones, source: Tombstones): Tombstones {
   const result: Tombstones = {};
   const keys = new Set([...Object.keys(target), ...Object.keys(source)]);
 

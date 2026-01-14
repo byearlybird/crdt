@@ -9,7 +9,7 @@ Starling is a CRDT (conflict-free replicated data type) library that provides au
 ```bash
 npm install @byearlybird/starling
 # or
-bun add @byearlybird/starling
+pnpm add @byearlybird/starling
 ```
 
 Requires TypeScript 5 or higher.
@@ -312,14 +312,14 @@ For full type definitions, see the TypeScript types exported from the package.
 
 ```bash
 # Install dependencies
-bun install
+pnpm install
 
 # Build the library
-bun run build
+pnpm run build
 
 # Run tests
-bun test
+pnpm test
 
 # Watch mode for development
-bun run dev
+pnpm run dev
 ```
