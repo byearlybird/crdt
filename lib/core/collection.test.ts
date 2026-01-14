@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "vitest";
 import { mergeCollections, mergeCollectionRecords, type Collection } from "./collection";
 import { makeStamp } from "./clock";
 import { makeDocument } from "./document";

@@ -17,19 +17,19 @@ Starling is a conflict-free replicated data type (CRDT) library for JavaScript. 
 
 ### Build and Development
 
-- `bun run build` - Build the library using tsdown
-- `bun run dev` - Build in watch mode
+- `pnpm run build` - Build the library using tsdown
+- `pnpm run dev` - Build in watch mode
 
 ### Testing
 
-- `bun test` - Run all tests
-- `bun test <file>` - Run specific test file
+- `pnpm test` - Run all tests
+- `pnpm test <file>` - Run specific test file
 - Test files use pattern: `*.test.ts`
 
 ### Code Quality
 
-- `bun run format` - Format code with Prettier
-- `bun run format:check` - Check formatting without changes
+- `pnpm run fmt` - Format code with oxfmt
+- `pnpm run fmt:check` - Check formatting without changes
 
 ## Architecture
 
@@ -76,10 +76,10 @@ Starling is a conflict-free replicated data type (CRDT) library for JavaScript. 
 
 ## Testing Patterns
 
-Tests use bun:test framework with describe/test/expect:
+Tests use Vitest framework with describe/test/expect:
 
 ```ts
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "vitest";
 
 test("documents merge with LWW semantics", () => {
   const stamp1 = makeStamp(1000, 1);
@@ -96,5 +96,5 @@ See `lib/core/integration.test.ts` for comprehensive CRDT behavior tests and `li
 ## Publishing
 
 - Package published as `@byearlybird/starling` on npm
-- `bun run prepublishOnly` runs build automatically before publishing
+- `pnpm run prepublishOnly` runs build automatically before publishing
 - Only `dist/` directory is published (see package.json files array)
