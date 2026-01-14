@@ -43,9 +43,9 @@ Examples:
 
 - Commits generally follow an imperative, summary-first style (e.g., “Add …”, “Refactor …”, “Enhance …”). Keep subjects concise and scoped.
 - PRs should include:
- - Clear description of behavior changes and rationale
- - Linked issue/context (if applicable)
- - Tests run (`pnpm test`) and any notes for reviewers
+- Clear description of behavior changes and rationale
+- Linked issue/context (if applicable)
+- Tests run (`pnpm test`) and any notes for reviewers
 
 ## Agent-Specific Notes
 

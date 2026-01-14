@@ -58,10 +58,7 @@ export interface StorageAdapter {
    * @param id Document ID
    * @returns Document if exists, undefined otherwise
    */
-  getDocument(
-    collectionName: string,
-    id: DocumentId,
-  ): Promise<Document | undefined>;
+  getDocument(collectionName: string, id: DocumentId): Promise<Document | undefined>;
 
   /**
    * Set (create or update) a single document in a collection.
@@ -70,11 +67,7 @@ export interface StorageAdapter {
    * @param id Document ID
    * @param document Document data (flattened with stamps)
    */
-  setDocument(
-    collectionName: string,
-    id: DocumentId,
-    document: Document,
-  ): Promise<void>;
+  setDocument(collectionName: string, id: DocumentId, document: Document): Promise<void>;
 
   /**
    * Delete a document from a collection.
@@ -93,10 +86,7 @@ export interface StorageAdapter {
    * @param id Document ID
    * @returns Tombstone stamp if exists, undefined otherwise
    */
-  getTombstone(
-    collectionName: string,
-    id: DocumentId,
-  ): Promise<string | undefined>;
+  getTombstone(collectionName: string, id: DocumentId): Promise<string | undefined>;
 
   /**
    * Set a tombstone in a collection.
@@ -105,11 +95,7 @@ export interface StorageAdapter {
    * @param id Document ID
    * @param stamp Deletion timestamp
    */
-  setTombstone(
-    collectionName: string,
-    id: DocumentId,
-    stamp: string,
-  ): Promise<void>;
+  setTombstone(collectionName: string, id: DocumentId, stamp: string): Promise<void>;
 
   /**
    * Get all document IDs in a collection.

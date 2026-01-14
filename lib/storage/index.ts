@@ -13,3 +13,5 @@ export type {
 } from "./adapter.js";
 
 export { StorageError } from "./adapter.js";
+
+export { MemoryAdapter } from "./memory-adapter.js";

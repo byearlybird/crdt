@@ -18,6 +18,7 @@ See `lib/storage/adapter.ts` for the complete interface definition.
 ## Adapter Operations
 
 ### Initialization
+
 ```typescript
 const adapter = new IndexedDBAdapter({ collections: ["users", "notes"] });
 const state = await adapter.initialize(); // Loads existing data
@@ -25,10 +26,11 @@ const state = await adapter.initialize(); // Loads existing data
 ```
 
 ### Document Operations (Granular)
+
 ```typescript
 // Single document CRUD
 await adapter.setDocument("users", "alice", {
-  name: { "~value": "Alice", "~stamp": "..." }
+  name: { "~value": "Alice", "~stamp": "..." },
 });
 const doc = await adapter.getDocument("users", "alice");
 await adapter.deleteDocument("users", "alice");
@@ -39,6 +41,7 @@ const tombstone = await adapter.getTombstone("users", "alice");
 ```
 
 ### Collection Operations (Bulk)
+
 ```typescript
 // Get entire collection
 const collection = await adapter.getCollection("users");
@@ -52,12 +55,14 @@ const ids = await adapter.getDocumentIds("users");
 ```
 
 ### Clock Operations
+
 ```typescript
 const clock = await adapter.getClock();
 await adapter.setClock({ ms: Date.now(), seq: 42 });
 ```
 
 ### Transactions (Atomic Updates)
+
 ```typescript
 await adapter.transaction(async (tx) => {
   // Queue multiple operations - all succeed or all fail
@@ -70,6 +75,7 @@ await adapter.transaction(async (tx) => {
 ```
 
 ### Cleanup
+
 ```typescript
 await adapter.close(); // Release resources, close connections
 ```
@@ -79,13 +85,14 @@ await adapter.close(); // Release resources, close connections
 The Store API becomes fully async:
 
 ### Before (Current)
+
 ```typescript
 import { createStore } from "@byearlybird/starling";
 
 const store = createStore({
   collections: {
-    users: { schema: userSchema }
-  }
+    users: { schema: userSchema },
+  },
 });
 
 // Synchronous operations
@@ -96,16 +103,17 @@ store.users.remove("alice");
 ```
 
 ### After (With Storage Adapter)
+
 ```typescript
 import { createStore } from "@byearlybird/starling";
 import { IndexedDBAdapter } from "@byearlybird/starling/storage";
 
 const store = await createStore({
   collections: {
-    users: { schema: userSchema }
+    users: { schema: userSchema },
   },
   adapter: new IndexedDBAdapter({
-    collections: ["users"]
+    collections: ["users"],
   }),
 });
 
@@ -120,12 +128,13 @@ await store.close();
 ```
 
 ### Default Behavior (In-Memory)
+
 ```typescript
 // If no adapter provided, uses in-memory storage (current behavior)
 const store = await createStore({
   collections: {
-    users: { schema: userSchema }
-  }
+    users: { schema: userSchema },
+  },
   // adapter defaults to new MemoryAdapter()
 });
 
@@ -138,26 +147,29 @@ await store.users.add({ id: "alice", name: "Alice" });
 All Collection methods become async:
 
 ### Mutations
+
 ```typescript
-await collection.add(data);          // async
-await collection.update(id, data);   // async
-await collection.remove(id);         // async
-await collection.merge(snapshot);    // async
+await collection.add(data); // async
+await collection.update(id, data); // async
+await collection.remove(id); // async
+await collection.merge(snapshot); // async
 ```
 
 ### Queries
+
 ```typescript
-const doc = await collection.get(id);      // async
-const exists = await collection.has(id);   // async
-const ids = await collection.keys();       // async
-const docs = await collection.values();    // async
+const doc = await collection.get(id); // async
+const exists = await collection.has(id); // async
+const ids = await collection.keys(); // async
+const docs = await collection.values(); // async
 const entries = await collection.entries(); // async
 
 // Size becomes a method
-const count = await collection.size();     // async
+const count = await collection.size(); // async
 ```
 
 ### Iteration Pattern
+
 ```typescript
 // Option 1: Get all and iterate
 const users = await store.users.values();
@@ -212,33 +224,38 @@ await store.merge(remoteSnapshot);
 ### Built-In Adapters
 
 #### 1. MemoryAdapter (Default)
+
 ```typescript
 import { MemoryAdapter } from "@byearlybird/starling/storage";
 
 const adapter = new MemoryAdapter({
-  collections: ["users"]
+  collections: ["users"],
 });
 ```
+
 - In-memory storage (current behavior)
 - Fast, no persistence
 - Good for testing and development
 
 #### 2. IndexedDBAdapter (Browser)
+
 ```typescript
 import { IndexedDBAdapter } from "@byearlybird/starling/storage";
 
 const adapter = new IndexedDBAdapter({
   collections: ["users", "notes"],
   dbName: "my-app", // Optional, defaults to "starling"
-  version: 1,       // Optional, for migrations
+  version: 1, // Optional, for migrations
 });
 ```
+
 - Browser-based persistent storage
 - Survives page refreshes
 - ~50MB default quota (can request more)
 - Multi-tab support via BroadcastChannel (future)
 
 #### 3. SQLiteAdapter (Node.js/Bun) - Future
+
 ```typescript
 import { SQLiteAdapter } from "@byearlybird/starling/storage";
 
@@ -248,6 +265,7 @@ const adapter = new SQLiteAdapter({
   library: "better-sqlite3", // or "bun:sqlite" or "@databases/sqlite"
 });
 ```
+
 - Server-side persistent storage
 - File-based (easy backup/restore)
 - Excellent performance
@@ -257,6 +275,7 @@ const adapter = new SQLiteAdapter({
 ### Custom Adapters
 
 Users can implement custom adapters for:
+
 - LocalStorage (simple key-value)
 - Remote HTTP API (cloud sync)
 - PouchDB / CouchDB
@@ -265,6 +284,7 @@ Users can implement custom adapters for:
 - Custom database backends
 
 Example:
+
 ```typescript
 class CustomAdapter implements StorageAdapter {
   async initialize(): Promise<StorageState> {
@@ -347,15 +367,18 @@ Total: 4-6 weeks for IndexedDB support
 ## Open Questions
 
 ### 1. Event Timing
+
 When should `onChange` events fire?
 
 **Option A**: After storage write completes
+
 ```typescript
 await store.users.add(data); // Returns after storage write
 // onChange event already fired
 ```
 
 **Option B**: Before storage write completes (optimistic)
+
 ```typescript
 await store.users.add(data); // onChange fires immediately, storage write continues
 // Returns after storage write
@@ -364,9 +387,11 @@ await store.users.add(data); // onChange fires immediately, storage write contin
 **Recommendation**: Option A (fire after storage) for consistency guarantees
 
 ### 2. Error Handling
+
 What happens when storage writes fail?
 
 **Option A**: Throw error, don't update in-memory state
+
 ```typescript
 try {
   await store.users.add(data);
@@ -376,6 +401,7 @@ try {
 ```
 
 **Option B**: Update in-memory, provide error callback
+
 ```typescript
 const store = await createStore({
   adapter,
@@ -388,6 +414,7 @@ await store.users.add(data); // Always succeeds in-memory
 **Recommendation**: Option A (throw on error) for correctness
 
 ### 3. Caching Layer
+
 Should we add an optional in-memory cache?
 
 ```typescript
@@ -396,7 +423,7 @@ const store = await createStore({
   cache: {
     enabled: true,
     maxDocuments: 1000, // LRU cache
-  }
+  },
 });
 
 // First call: loads from storage
@@ -411,6 +438,7 @@ await store.users.get("alice"); // Cache hit
 ## Conclusion
 
 This proposal provides a clean, fully async API that:
+
 - ✅ Works seamlessly with IndexedDB (async, transactions)
 - ✅ Works perfectly with SQLite (async wrapper, transactions)
 - ✅ Maintains in-memory performance (MemoryAdapter)
