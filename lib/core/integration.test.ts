@@ -107,10 +107,7 @@ describe("Integration: Partial Updates", () => {
     const stamp2 = makeStamp(2000, 1);
 
     const doc1 = makeDocument({ name: "Alice", age: 30 }, stamp1);
-    const doc2 = makeDocument(
-      { email: "alice@example.com", city: "NYC" },
-      stamp2,
-    );
+    const doc2 = makeDocument({ email: "alice@example.com", city: "NYC" }, stamp2);
 
     const merged = mergeDocuments(doc1, doc2);
     const result = parseDocument(merged);

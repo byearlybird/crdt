@@ -10,14 +10,8 @@ export type Collection = {
   tombstones: Tombstones;
 };
 
-export function mergeCollections(
-  target: Collection,
-  source: Collection,
-): Collection {
-  const mergedTombstones = mergeTombstones(
-    target.tombstones,
-    source.tombstones,
-  );
+export function mergeCollections(target: Collection, source: Collection): Collection {
+  const mergedTombstones = mergeTombstones(target.tombstones, source.tombstones);
 
   const mergedDocuments: Record<DocumentId, Document> = {};
   const allDocumentIds = new Set([
@@ -56,10 +50,7 @@ export function mergeCollectionRecords(
   for (const [collectionName, sourceCollection] of Object.entries(source)) {
     const targetCollection = result[collectionName];
     if (targetCollection) {
-      result[collectionName] = mergeCollections(
-        targetCollection,
-        sourceCollection,
-      );
+      result[collectionName] = mergeCollections(targetCollection, sourceCollection);
     } else {
       result[collectionName] = sourceCollection;
     }

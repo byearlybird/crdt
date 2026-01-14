@@ -1,7 +1,4 @@
-import {
-  createCollection,
-  type CollectionChangeEvent,
-} from "./collection";
+import { createCollection, type CollectionChangeEvent } from "./collection";
 import type { CollectionConfig, CollectionApi } from "./collection";
 import type { Clock } from "../core/clock";
 import type { Collection } from "../core/collection";
@@ -12,28 +9,24 @@ export type StoreSnapshot = {
   collections: Record<string, Collection>;
 };
 
-export type StoreCollections<T extends Record<string, CollectionConfig<any>>> =
-  {
-    [K in keyof T]: T[K] extends CollectionConfig<infer S>
-      ? CollectionApi<S>
-      : never;
-  };
+export type StoreCollections<T extends Record<string, CollectionConfig<any>>> = {
+  [K in keyof T]: T[K] extends CollectionConfig<infer S> ? CollectionApi<S> : never;
+};
 
 export type StoreChangeEvent = {
   collection: string;
   event: CollectionChangeEvent;
 };
 
-export type StoreAPI<T extends Record<string, CollectionConfig<any>>> =
-  StoreCollections<T> & {
-    getSnapshot(): StoreSnapshot;
-    merge(snapshot: StoreSnapshot): void;
-    onChange(listener: (event: StoreChangeEvent) => void): () => void;
-  };
+export type StoreAPI<T extends Record<string, CollectionConfig<any>>> = StoreCollections<T> & {
+  getSnapshot(): StoreSnapshot;
+  merge(snapshot: StoreSnapshot): void;
+  onChange(listener: (event: StoreChangeEvent) => void): () => void;
+};
 
-export function createStore<T extends Record<string, CollectionConfig<any>>>(
-  config: { collections: T },
-): StoreAPI<T> {
+export function createStore<T extends Record<string, CollectionConfig<any>>>(config: {
+  collections: T;
+}): StoreAPI<T> {
   // Internal clock state
   let clock: Clock = { ms: Date.now(), seq: 0 };
 
@@ -56,9 +49,7 @@ export function createStore<T extends Record<string, CollectionConfig<any>>>(
   // Subscribe to each collection and bubble up events
   for (const [name, collection] of Object.entries(collections)) {
     collection.onChange((event) => {
-      storeListeners.forEach((listener) =>
-        listener({ collection: name, event }),
-      );
+      storeListeners.forEach((listener) => listener({ collection: name, event }));
     });
   }
 
@@ -78,9 +69,7 @@ export function createStore<T extends Record<string, CollectionConfig<any>>>(
 
     merge(snapshot: StoreSnapshot): void {
       advance(snapshot.clock.ms, snapshot.clock.seq);
-      for (const [name, collectionSnapshot] of Object.entries(
-        snapshot.collections,
-      )) {
+      for (const [name, collectionSnapshot] of Object.entries(snapshot.collections)) {
         const collection = collections[name];
         if (collection) {
           collection.merge(collectionSnapshot);

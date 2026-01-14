@@ -7,10 +7,7 @@ type Field<T = unknown> = {
 
 export type Document = Record<string, Field>;
 
-export function makeDocument(
-  fields: Record<string, any>,
-  stamp: string,
-): Document {
+export function makeDocument(fields: Record<string, any>, stamp: string): Document {
   return flatten(fields, (value) => ({ "~value": value, "~stamp": stamp }));
 }
 
@@ -27,10 +24,7 @@ export function mergeDocuments(target: Document, source: Document): Document {
     const sourceValue = source[key];
 
     if (targetValue && sourceValue) {
-      result[key] =
-        targetValue["~stamp"] > sourceValue["~stamp"]
-          ? targetValue
-          : sourceValue;
+      result[key] = targetValue["~stamp"] > sourceValue["~stamp"] ? targetValue : sourceValue;
     } else if (targetValue) {
       result[key] = targetValue;
     } else if (sourceValue) {

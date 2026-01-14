@@ -7,7 +7,7 @@
   - `lib/store/` contains the higher-level store API built on top of `core`.
   - `lib/index.ts` is the public entrypoint used for builds.
 - `dist/` is generated build output (ESM + `.d.ts`). Do not hand-edit.
-- Tooling/config lives at the repo root: `package.json`, `tsconfig.json`, `tsdown.config.ts`, `bun.lock`, `.prettierrc`.
+- Tooling/config lives at the repo root: `package.json`, `tsconfig.json`, `tsdown.config.ts`, `bun.lock`, `.oxfmtrc.json`, `.oxlintrc.json`.
 
 ## Build, Test, and Development Commands
 
@@ -15,16 +15,19 @@
 - `bun run build`: bundle from `lib/index.ts` into `dist/` using `tsdown` (also generates types).
 - `bun run dev`: watch mode build for local iteration.
 - `bun test`: run all tests (Bun test runner).
-- `bun run format` / `bun run format:check`: format or verify formatting with Prettier.
+- `bun run fmt` / `bun run fmt:check`: format or verify formatting with oxfmt.
+- `bun run lint` / `bun run lint:fix`: lint or auto-fix linting issues with oxlint.
 
 Examples:
+
 - Run a single test file: `bun test lib/core/document.test.ts`
 - Clean rebuild: `bun run build` (uses `clean: true` in `tsdown.config.ts`).
 
 ## Coding Style & Naming Conventions
 
 - TypeScript ESM (`"type": "module"`). Prefer `import`/`export`; avoid CommonJS patterns.
-- Formatting is enforced by Prettier (2-space indentation, semicolons, double quotes as configured/auto-formatted). Run `bun run format` before pushing.
+- Formatting is enforced by oxfmt (2-space indentation, semicolons, double quotes as configured/auto-formatted). Run `bun run fmt` before pushing.
+- Linting is enforced by oxlint. Run `bun run lint` to check for issues.
 - Naming:
   - Types/interfaces: `PascalCase`
   - Values/functions: `camelCase`
