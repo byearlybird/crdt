@@ -5,6 +5,10 @@ import { mergeTombstones } from "./tombstone";
 
 export type DocumentId = string;
 
+export type CollectionData = {
+  documents: Record<DocumentId, Document>;
+};
+
 export type Collection = {
   documents: Record<DocumentId, Document>;
   tombstones: Tombstones;

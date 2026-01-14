@@ -31,8 +31,8 @@ const store = createStore({
   },
 });
 
-store.users.add({ id: "1", name: "Alice" });
-const user = store.users.get("1"); // { id: "1", name: "Alice" }
+store.add("users", { id: "1", name: "Alice" });
+const user = store.get("users", "1"); // { id: "1", name: "Alice" }
 ```
 
 ## Features
@@ -79,7 +79,7 @@ const store = createStore({
 Add new items to a collection with `add()`:
 
 ```typescript
-store.users.add({
+store.add("users", {
   id: "1",
   name: "Alice",
   email: "alice@example.com",
@@ -91,7 +91,7 @@ store.users.add({
 Update existing items with `update()`:
 
 ```typescript
-store.users.update("1", {
+store.update("users", "1", {
   email: "newemail@example.com",
 });
 ```
@@ -101,33 +101,23 @@ store.users.update("1", {
 Remove items with `remove()`:
 
 ```typescript
-store.users.remove("1");
+store.remove("users", "1");
 ```
 
 ### Reading Data
 
-Collections provide simple getter methods:
+The store provides simple getter methods:
 
 ```typescript
 // Get a single item
-const user = store.users.get("1");
-
-// Check if an item exists
-if (store.users.has("1")) {
-  // ...
-}
+const user = store.get("users", "1");
 
 // Get all items as an array
-const allUsers = store.users.values();
+const allUsers = store.getAll("users");
 
-// Get all keys
-const userIds = store.users.keys();
-
-// Get entries
-const entries = store.users.entries();
-
-// Check size
-console.log(store.users.size);
+// You can easily derive other operations:
+const userIds = allUsers.map((u) => u.id);
+const hasUser = allUsers.some((u) => u.id === "1");
 ```
 
 ### Listening to Changes
@@ -141,11 +131,13 @@ store.onChange((event) => {
   // Invalidate queries, update UI, etc.
 });
 
-// Listen to specific collection changes
-store.users.onChange((event) => {
-  console.log("User change:", event.type, event.id);
-  if (event.type === "add") {
-    console.log("New user:", event.data);
+// Filter for specific collection changes
+store.onChange((event) => {
+  if (event.collection === "users") {
+    console.log("User change:", event.event.type, event.event.id);
+    if (event.event.type === "add") {
+      console.log("New user:", event.event.data);
+    }
   }
 });
 ```
@@ -186,14 +178,14 @@ const store1 = createStore({ collections: { users: { schema: userSchema } } });
 const store2 = createStore({ collections: { users: { schema: userSchema } } });
 
 // Add data to store1
-store1.users.add({ id: "1", name: "Alice" });
+store1.add("users", { id: "1", name: "Alice" });
 
 // Sync to store2
 const snapshot = store1.getSnapshot();
 store2.merge(snapshot);
 
 // Now store2 has the same data
-console.log(store2.users.get("1")); // { id: "1", name: "Alice" }
+console.log(store2.get("users", "1")); // { id: "1", name: "Alice" }
 ```
 
 ## Reactivity Integration
@@ -209,14 +201,16 @@ function useUsers() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    return store.users.onChange(() => {
-      queryClient.invalidateQueries({ queryKey: ["users"] });
+    return store.onChange((event) => {
+      if (event.collection === "users") {
+        queryClient.invalidateQueries({ queryKey: ["users"] });
+      }
     });
   }, []);
 
   return useQuery({
     queryKey: ["users"],
-    queryFn: () => store.users.values(),
+    queryFn: () => store.getAll("users"),
   });
 }
 ```
@@ -228,8 +222,11 @@ import { useSyncExternalStore } from "react";
 
 function useUsers() {
   return useSyncExternalStore(
-    (callback) => store.users.onChange(callback),
-    () => store.users.values(),
+    (callback) =>
+      store.onChange((event) => {
+        if (event.collection === "users") callback();
+      }),
+    () => store.getAll("users"),
   );
 }
 ```
@@ -239,8 +236,12 @@ function useUsers() {
 ```typescript
 import { writable } from "svelte/store";
 
-const users = writable(store.users.values());
-store.users.onChange(() => users.set(store.users.values()));
+const users = writable(store.getAll("users"));
+store.onChange((event) => {
+  if (event.collection === "users") {
+    users.set(store.getAll("users"));
+  }
+});
 ```
 
 ### Vue
@@ -248,8 +249,12 @@ store.users.onChange(() => users.set(store.users.values()));
 ```typescript
 import { ref } from "vue";
 
-const users = ref(store.users.values());
-store.users.onChange(() => (users.value = store.users.values()));
+const users = ref(store.getAll("users"));
+store.onChange((event) => {
+  if (event.collection === "users") {
+    users.value = store.getAll("users");
+  }
+});
 ```
 
 ## Schema Support
@@ -283,25 +288,13 @@ const schema = type({ id: "string", name: "string" });
 
 - `createStore(config)` - Creates a new store with collections
 
-### Collection Methods
-
-Each collection in your store has these methods:
-
-- `add(data)` - Add a new document
-- `update(id, data)` - Update an existing document
-- `remove(id)` - Remove a document
-- `get(id)` - Get a document by ID
-- `has(id)` - Check if a document exists
-- `keys()` - Get all document IDs as an array
-- `values()` - Get all documents as an array
-- `entries()` - Get all [id, document] pairs as an array
-- `size` - Number of documents
-- `getSnapshot()` - Get the collection snapshot for syncing
-- `merge(snapshot)` - Merge a collection snapshot
-- `onChange(listener)` - Subscribe to changes
-
 ### Store Methods
 
+- `add(collection, data)` - Add a new document to a collection
+- `get(collection, id)` - Get a document by ID from a collection
+- `getAll(collection)` - Get all documents from a collection as an array
+- `update(collection, id, data)` - Update an existing document in a collection
+- `remove(collection, id)` - Remove a document from a collection
 - `getSnapshot()` - Get the full store snapshot for syncing
 - `merge(snapshot)` - Merge a store snapshot
 - `onChange(listener)` - Subscribe to all collection changes

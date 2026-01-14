@@ -48,10 +48,9 @@ export type CollectionApi<T extends AnyObject> = {
 
 type TickFunction = () => string;
 
-// Internal state that holds both documents and tombstones
+// Internal state that holds documents only (tombstones are now store-level)
 type CollectionState = {
   documents: Collection["documents"];
-  tombstones: Collection["tombstones"];
 };
 
 export function createCollection<T extends AnyObject>(
@@ -60,7 +59,6 @@ export function createCollection<T extends AnyObject>(
 ): CollectionApi<T> {
   let state: CollectionState = {
     documents: {},
-    tombstones: {},
   };
 
   const listeners = new Set<(event: CollectionChangeEvent<T>) => void>();
@@ -74,7 +72,7 @@ export function createCollection<T extends AnyObject>(
   const parseData = (): ReadonlyMap<DocumentId, Output<T>> => {
     const result = new Map<DocumentId, Output<T>>();
     for (const [id, doc] of Object.entries(state.documents)) {
-      if (!state.tombstones[id] && doc) {
+      if (doc) {
         result.set(id, parseDocument(doc));
       }
     }
@@ -84,13 +82,14 @@ export function createCollection<T extends AnyObject>(
   return {
     // Getters
     get(id: DocumentId): Output<T> | undefined {
-      if (state.tombstones[id]) return undefined;
+      // No tombstone check - store layer handles this
       const doc = state.documents[id];
       return doc ? parseDocument(doc) : undefined;
     },
 
     has(id: DocumentId): boolean {
-      return !state.tombstones[id] && !!state.documents[id];
+      // No tombstone check - store layer handles this
+      return !!state.documents[id];
     },
 
     keys(): DocumentId[] {
@@ -126,9 +125,9 @@ export function createCollection<T extends AnyObject>(
     remove(id: DocumentId): void {
       const { [id]: _removed, ...remainingDocs } = state.documents;
 
+      // No tombstone addition - store layer handles this
       state = {
         documents: remainingDocs,
-        tombstones: { ...state.tombstones, [id]: tick() },
       };
 
       notify({ type: "remove", id });
@@ -156,21 +155,24 @@ export function createCollection<T extends AnyObject>(
     getSnapshot(): Collection {
       return {
         documents: state.documents,
-        tombstones: state.tombstones,
+        tombstones: {}, // Always empty now - tombstones are store-level
       };
     },
 
     merge(snapshot: Collection): void {
       const currentSnapshot = {
         documents: state.documents,
-        tombstones: state.tombstones,
+        tombstones: {}, // Always empty - tombstones are store-level
       };
 
-      const merged = mergeCollections(currentSnapshot, snapshot);
+      // Merge documents only, ignore tombstones from snapshot
+      const merged = mergeCollections(currentSnapshot, {
+        documents: snapshot.documents,
+        tombstones: {}, // Ignore incoming tombstones
+      });
 
       state = {
         documents: merged.documents,
-        tombstones: merged.tombstones,
       };
 
       notify({ type: "merge" });

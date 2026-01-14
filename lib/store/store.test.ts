@@ -29,12 +29,14 @@ describe("createStore", () => {
       },
     });
 
-    expect(store.users).toBeDefined();
-    expect(store.notes).toBeDefined();
-    expect(store.users.get).toBeDefined();
-    expect(store.users.getSnapshot).toBeDefined();
-    expect(store.notes.get).toBeDefined();
-    expect(store.notes.getSnapshot).toBeDefined();
+    expect(store.add).toBeDefined();
+    expect(store.get).toBeDefined();
+    expect(store.getAll).toBeDefined();
+    expect(store.update).toBeDefined();
+    expect(store.remove).toBeDefined();
+    expect(store.getSnapshot).toBeDefined();
+    expect(store.merge).toBeDefined();
+    expect(store.onChange).toBeDefined();
   });
 
   test("can add documents to collections", () => {
@@ -46,13 +48,13 @@ describe("createStore", () => {
       },
     });
 
-    store.users.add({
+    store.add("users", {
       id: "1",
       name: "Alice",
       profile: { age: 30 },
     });
 
-    const result = store.users.get("1");
+    const result = store.get("users", "1");
     expect(result).toEqual({
       id: "1",
       name: "Alice",
@@ -69,21 +71,22 @@ describe("createStore", () => {
       },
     });
 
-    store.users.add({
+    store.add("users", {
       id: "1",
       name: "Alice",
       profile: {},
     });
-    store.users.add({
+    
+    store.add("users", {
       id: "2",
       name: "Bob",
       profile: {},
     });
 
-    store.users.remove("1");
+    store.remove("users", "1");
 
-    expect(store.users.get("1")).toBeUndefined();
-    expect(store.users.get("2")).toEqual({
+    expect(store.get("users", "1")).toBeUndefined();
+    expect(store.get("users", "2")).toEqual({
       id: "2",
       name: "Bob",
       profile: {},
@@ -99,17 +102,17 @@ describe("createStore", () => {
       },
     });
 
-    store.users.add({
+    store.add("users", {
       id: "1",
       name: "Alice",
       profile: {},
     });
 
-    store.users.update("1", {
+    store.update("users", "1", {
       profile: { age: 30 },
     });
 
-    const result = store.users.get("1");
+    const result = store.get("users", "1");
     expect(result).toEqual({
       id: "1",
       name: "Alice",
@@ -127,18 +130,18 @@ describe("createStore", () => {
       },
     });
 
-    store.users.add({
+    store.add("users", {
       id: "1",
       name: "Alice",
       profile: {},
     });
 
-    expect(store.users.get("user-1")).toEqual({
+    expect(store.get("users", "user-1")).toEqual({
       id: "1",
       name: "Alice",
       profile: {},
     });
-    expect(store.users.get("1")).toBeUndefined();
+    expect(store.get("users", "1")).toBeUndefined();
   });
 
   test("collection methods work correctly", () => {
@@ -150,47 +153,34 @@ describe("createStore", () => {
       },
     });
 
-    expect(store.users.size).toBe(0);
-    expect(store.users.has("1")).toBe(false);
-    expect(store.users.get("1")).toBeUndefined();
+    expect(store.getAll("users")).toHaveLength(0);
+    expect(store.get("users", "1")).toBeUndefined();
 
-    store.users.add({
+    store.add("users", {
       id: "1",
       name: "Alice",
       profile: { age: 30 },
     });
-    store.users.add({
+    store.add("users", {
       id: "2",
       name: "Bob",
       profile: { age: 25 },
     });
-    store.users.add({
+    store.add("users", {
       id: "3",
       name: "Charlie",
       profile: { age: 35 },
     });
 
-    expect(store.users.size).toBe(3);
-    expect(store.users.get("1")?.name).toBe("Alice");
-    expect(store.users.get("nonexistent")).toBeUndefined();
-    expect(store.users.has("1")).toBe(true);
-    expect(store.users.has("nonexistent")).toBe(false);
+    const allUsers = store.getAll("users");
+    expect(allUsers).toHaveLength(3);
+    expect(store.get("users", "1")?.name).toBe("Alice");
+    expect(store.get("users", "nonexistent")).toBeUndefined();
+    expect(allUsers.some((v) => v.name === "Alice")).toBe(true);
 
-    const keys = store.users.keys();
-    expect(keys).toHaveLength(3);
-    expect(keys).toContain("1");
-
-    const values = store.users.values();
-    expect(values).toHaveLength(3);
-    expect(values.some((v) => v.name === "Alice")).toBe(true);
-
-    const entries = store.users.entries();
-    expect(entries).toHaveLength(3);
-    expect(new Map(entries).get("1")?.name).toBe("Alice");
-
-    store.users.remove("2");
-    expect(store.users.size).toBe(2);
-    expect(store.users.has("2")).toBe(false);
+    store.remove("users", "2");
+    expect(store.getAll("users")).toHaveLength(2);
+    expect(store.get("users", "2")).toBeUndefined();
   });
 
   test("getSnapshot returns store snapshot with clock and collections", () => {
@@ -208,23 +198,23 @@ describe("createStore", () => {
     const initialSnapshot = store.getSnapshot();
     expect(initialSnapshot).toHaveProperty("clock");
     expect(initialSnapshot).toHaveProperty("collections");
+    expect(initialSnapshot).toHaveProperty("tombstones");
     expect(initialSnapshot.collections["users"]).toEqual({
       documents: {},
-      tombstones: {},
     });
     expect(initialSnapshot.collections["notes"]).toEqual({
       documents: {},
-      tombstones: {},
     });
+    expect(initialSnapshot.tombstones).toEqual({});
     expect(initialSnapshot.clock).toHaveProperty("ms");
     expect(initialSnapshot.clock).toHaveProperty("seq");
 
-    store.users.add({
+    store.add("users", {
       id: "1",
       name: "Alice",
       profile: { age: 30 },
     });
-    store.notes.add({
+    store.add("notes", {
       id: "note-1",
       content: "Hello world",
     });
@@ -232,8 +222,7 @@ describe("createStore", () => {
     const updatedSnapshot = store.getSnapshot();
     expect(updatedSnapshot.collections["users"]?.documents).toHaveProperty("1");
     expect(updatedSnapshot.collections["notes"]?.documents).toHaveProperty("note-1");
-    expect(updatedSnapshot.collections["users"]?.tombstones).toEqual({});
-    expect(updatedSnapshot.collections["notes"]?.tombstones).toEqual({});
+    expect(updatedSnapshot.tombstones).toEqual({});
   });
 
   test("creates store with empty collections", () => {
@@ -263,12 +252,12 @@ describe("createStore", () => {
     expect(initialSnapshot.collections["users"]?.documents).toEqual({});
     expect(initialSnapshot.collections["notes"]?.documents).toEqual({});
 
-    store.users.add({ id: "1", name: "Alice", profile: {} });
+    store.add("users", { id: "1", name: "Alice", profile: {} });
     const snapshotAfterUsers = store.getSnapshot();
     expect(snapshotAfterUsers.collections["users"]?.documents).toHaveProperty("1");
     expect(snapshotAfterUsers.collections["notes"]?.documents).toEqual({});
 
-    store.notes.add({ id: "1", content: "Note" });
+    store.add("notes", { id: "1", content: "Note" });
     const snapshotAfterNotes = store.getSnapshot();
     expect(snapshotAfterNotes.collections["users"]?.documents).toHaveProperty("1");
     expect(snapshotAfterNotes.collections["notes"]?.documents).toHaveProperty("1");
@@ -287,6 +276,7 @@ describe("createStore", () => {
     const futureSnapshot = {
       clock: { ms: snapshot.clock.ms + 1000, seq: 5 },
       collections: snapshot.collections,
+      tombstones: {},
     };
 
     store.merge(futureSnapshot);
@@ -314,7 +304,7 @@ describe("createStore", () => {
     });
 
     // Add a user - should trigger onChange
-    store.users.add({ id: "1", name: "Alice", profile: { age: 30 } });
+    store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
     expect(events).toHaveLength(1);
     expect(events[0]).toEqual({
       collection: "users",
@@ -326,7 +316,7 @@ describe("createStore", () => {
     });
 
     // Add a note - should trigger onChange
-    store.notes.add({ id: "note-1", content: "First note" });
+    store.add("notes", { id: "note-1", content: "First note" });
     expect(events).toHaveLength(2);
     expect(events[1]).toEqual({
       collection: "notes",
@@ -338,14 +328,14 @@ describe("createStore", () => {
     });
 
     // Update a user - should trigger onChange
-    store.users.update("1", { profile: { age: 31 } });
+    store.update("users", "1", { profile: { age: 31 } });
     expect(events).toHaveLength(3);
     expect(events[2]?.collection).toBe("users");
     expect(events[2]?.event.type).toBe("update");
     expect(events[2]?.event.id).toBe("1");
 
     // Remove a user - should trigger onChange
-    store.users.remove("1");
+    store.remove("users", "1");
     expect(events).toHaveLength(4);
     expect(events[3]).toEqual({
       collection: "users",
@@ -355,7 +345,7 @@ describe("createStore", () => {
     unsubscribe();
   });
 
-  test("collection onChange is called when collection changes", () => {
+  test("can filter onChange by collection", () => {
     const store = createStore({
       collections: {
         users: {
@@ -368,12 +358,14 @@ describe("createStore", () => {
     });
 
     const userEvents: any[] = [];
-    const unsubscribe = store.users.onChange((event) => {
-      userEvents.push(event);
+    const unsubscribe = store.onChange((event) => {
+      if (event.collection === "users") {
+        userEvents.push(event.event);
+      }
     });
 
-    // Add a user - should trigger onChange
-    store.users.add({ id: "1", name: "Alice", profile: { age: 30 } });
+    // Add a user - should be captured
+    store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
     expect(userEvents).toHaveLength(1);
     expect(userEvents[0]).toEqual({
       type: "add",
@@ -381,8 +373,8 @@ describe("createStore", () => {
       data: { id: "1", name: "Alice", profile: { age: 30 } },
     });
 
-    // Add another user - should trigger onChange
-    store.users.add({ id: "2", name: "Bob", profile: { age: 25 } });
+    // Add another user - should be captured
+    store.add("users", { id: "2", name: "Bob", profile: { age: 25 } });
     expect(userEvents).toHaveLength(2);
     expect(userEvents[1]).toEqual({
       type: "add",
@@ -390,22 +382,22 @@ describe("createStore", () => {
       data: { id: "2", name: "Bob", profile: { age: 25 } },
     });
 
-    // Update a user - should trigger onChange
-    store.users.update("1", { profile: { age: 31 } });
+    // Update a user - should be captured
+    store.update("users", "1", { profile: { age: 31 } });
     expect(userEvents).toHaveLength(3);
     expect(userEvents[2]?.type).toBe("update");
     expect(userEvents[2]?.id).toBe("1");
 
-    // Remove a user - should trigger onChange
-    store.users.remove("1");
+    // Remove a user - should be captured
+    store.remove("users", "1");
     expect(userEvents).toHaveLength(4);
     expect(userEvents[3]).toEqual({
       type: "remove",
       id: "1",
     });
 
-    // Adding to notes should NOT trigger users onChange
-    store.notes.add({ id: "note-1", content: "Note" });
+    // Adding to notes should NOT be captured
+    store.add("notes", { id: "note-1", content: "Note" });
     expect(userEvents).toHaveLength(4); // Still 4, no change
 
     unsubscribe();
@@ -425,7 +417,91 @@ describe("createStore", () => {
     });
 
     expect(() => {
-      store.items.add({ name: "Test" } as any);
+      store.add("items", { name: "Test" } as any);
     }).toThrow("Schema must have an 'id' property when getId is not provided");
+  });
+
+  test("tombstones are store-level and globally unique", () => {
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+        },
+        notes: {
+          schema: noteSchema,
+        },
+      },
+    });
+
+    store.add("users", { id: "123", name: "Alice", profile: {} });
+    store.remove("users", "123");
+
+    // Should be undefined (tombstoned)
+    expect(store.get("users", "123")).toBeUndefined();
+
+    // Snapshot should have store-level tombstones
+    const snapshot = store.getSnapshot();
+    expect(snapshot.tombstones).toHaveProperty("123");
+    expect(snapshot.tombstones["123"]).toBeDefined();
+
+    // Collections should not have tombstones field
+    expect(snapshot.collections["users"]).not.toHaveProperty("tombstones");
+    expect(snapshot.collections["notes"]).not.toHaveProperty("tombstones");
+  });
+
+  test("removed documents don't appear in getAll", () => {
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+        },
+      },
+    });
+
+    store.add("users", { id: "1", name: "Alice", profile: {} });
+    store.add("users", { id: "2", name: "Bob", profile: {} });
+    store.add("users", { id: "3", name: "Charlie", profile: {} });
+
+    expect(store.getAll("users")).toHaveLength(3);
+
+    store.remove("users", "2");
+
+    const allUsers = store.getAll("users");
+    expect(allUsers).toHaveLength(2);
+    expect(allUsers.find((u) => u.id === "2")).toBeUndefined();
+    expect(allUsers.find((u) => u.id === "1")).toBeDefined();
+    expect(allUsers.find((u) => u.id === "3")).toBeDefined();
+  });
+
+  test("tombstones persist across merge", () => {
+    const store1 = createStore({
+      collections: {
+        users: { schema: userSchema },
+      },
+    });
+
+    const store2 = createStore({
+      collections: {
+        users: { schema: userSchema },
+      },
+    });
+
+    // Store1: Add and remove a user
+    store1.add("users", { id: "1", name: "Alice", profile: {} });
+    store1.remove("users", "1");
+
+    // Store2: Add the same user
+    store2.add("users", { id: "1", name: "Alice", profile: {} });
+
+    // Merge store1 into store2
+    const snapshot1 = store1.getSnapshot();
+    store2.merge(snapshot1);
+
+    // User should still be tombstoned after merge
+    expect(store2.get("users", "1")).toBeUndefined();
+    expect(store2.getAll("users")).toHaveLength(0);
+
+    const snapshot2 = store2.getSnapshot();
+    expect(snapshot2.tombstones).toHaveProperty("1");
   });
 });
