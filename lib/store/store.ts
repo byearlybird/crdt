@@ -59,26 +59,38 @@ export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
   onChange(listener: (event: StoreChangeEvent<T>) => void): () => void;
 };
 
+/**
+ * Creates a CRDT Store instance with encapsulated mutable state.
+ *
+ * The store maintains internal state including clock, documents, tombstones,
+ * and event listeners. All mutations are tracked via the onChange callback.
+ *
+ * @param config - Store configuration with collection schemas
+ * @returns A stateful Store instance with methods for CRUD operations
+ */
 export function createStore<T extends Record<string, CollectionConfig<AnyObject>>>(config: {
   collections: T;
 }): StoreAPI<T> {
-  let clock: Clock = { ms: Date.now(), seq: 0 };
-  let tombstones: Tombstones = {};
-  const documents: Record<string, Record<DocumentId, Document>> = {};
-  const configs = new Map<string, CollectionConfig<AnyObject>>();
-  const listeners = new Set<(event: StoreChangeEvent<T>) => void>();
+  // Encapsulated mutable state
+  const state = {
+    clock: { ms: Date.now(), seq: 0 } as Clock,
+    tombstones: {} as Tombstones,
+    documents: {} as Record<string, Record<DocumentId, Document>>,
+    configs: new Map<string, CollectionConfig<AnyObject>>(),
+    listeners: new Set<(event: StoreChangeEvent<T>) => void>(),
+  };
 
   const tick = (): string => {
     advance(Date.now(), 0);
-    return makeStamp(clock.ms, clock.seq);
+    return makeStamp(state.clock.ms, state.clock.seq);
   };
 
   const advance = (ms: number, seq: number): void => {
-    clock = advanceClock(clock, { ms, seq });
+    state.clock = advanceClock(state.clock, { ms, seq });
   };
 
   const notify = (collectionName: string, event: { type: string; id?: DocumentId; data?: any }) => {
-    listeners.forEach((listener) =>
+    state.listeners.forEach((listener) =>
       listener({ collection: collectionName, ...event } as StoreChangeEvent<T>),
     );
   };
@@ -86,7 +98,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   const getConfig = <K extends keyof T & string>(
     collectionName: K,
   ): CollectionConfig<AnyObject> => {
-    const config = configs.get(collectionName);
+    const config = state.configs.get(collectionName);
 
     if (!config) {
       throw new Error(`Collection "${collectionName}" not found`);
@@ -96,7 +108,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   };
 
   const getDocs = <K extends keyof T & string>(collectionName: K): Record<DocumentId, Document> => {
-    const docs = documents[collectionName];
+    const docs = state.documents[collectionName];
     if (!docs) {
       throw new Error(`Collection "${collectionName}" not found`);
     }
@@ -105,8 +117,8 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
 
   // Initialize collections
   for (const [name, collectionConfig] of Object.entries(config.collections)) {
-    configs.set(name, collectionConfig);
-    documents[name] = {};
+    state.configs.set(name, collectionConfig);
+    state.documents[name] = {};
   }
 
   return {
@@ -116,8 +128,8 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
       const id = valid[collectionConfig.keyPath] as DocumentId;
       const doc = makeDocument(valid, tick());
 
-      documents[collectionName] = {
-        ...documents[collectionName],
+      state.documents[collectionName] = {
+        ...state.documents[collectionName],
         [id]: doc,
       };
 
@@ -125,7 +137,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     },
 
     get(collectionName, id) {
-      if (tombstones[id]) return undefined;
+      if (state.tombstones[id]) return undefined;
       const collectionDocs = getDocs(collectionName);
       const doc = collectionDocs[id];
 
@@ -139,7 +151,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
       const resultDocs: Output<T[typeof collectionName]["schema"]>[] = [];
 
       for (const [id, doc] of Object.entries(collectionDocs)) {
-        if (doc && !tombstones[id]) {
+        if (doc && !state.tombstones[id]) {
           const parsed = parseDocument(doc) as Output<T[typeof collectionName]["schema"]>;
           if (!options?.where || options?.where(parsed)) {
             resultDocs.push(parsed);
@@ -163,61 +175,61 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
       const parsed = parseDocument(mergedDoc);
       validate(collectionConfig.schema, parsed);
 
-      documents[collectionName] = { ...collectionDocs, [id]: mergedDoc };
+      state.documents[collectionName] = { ...collectionDocs, [id]: mergedDoc };
 
       notify(collectionName, { type: "update", id, data: parsed });
     },
 
     remove(collectionName, id) {
       const collectionDocs = getDocs(collectionName);
-      tombstones = { ...tombstones, [id]: tick() };
+      state.tombstones = { ...state.tombstones, [id]: tick() };
       const { [id]: _removed, ...remainingDocs } = collectionDocs;
-      documents[collectionName] = remainingDocs;
+      state.documents[collectionName] = remainingDocs;
       notify(collectionName, { type: "remove", id });
     },
 
     getSnapshot(): StoreSnapshot {
       const collectionsSnapshot: Record<string, Collection> = {};
-      for (const [name, collectionDocs] of Object.entries(documents)) {
+      for (const [name, collectionDocs] of Object.entries(state.documents)) {
         collectionsSnapshot[name] = { documents: collectionDocs };
       }
       return {
-        clock,
+        clock: state.clock,
         collections: collectionsSnapshot,
-        tombstones,
+        tombstones: state.tombstones,
       };
     },
 
     merge(snapshot: StoreSnapshot, options?: { silent?: boolean }): void {
       advance(snapshot.clock.ms, snapshot.clock.seq);
 
-      tombstones = mergeTombstones(tombstones, snapshot.tombstones);
+      state.tombstones = mergeTombstones(state.tombstones, snapshot.tombstones);
 
       for (const [name, collectionData] of Object.entries(snapshot.collections)) {
         // Initialize collection if it doesn't exist
-        if (!documents[name]) {
-          documents[name] = {};
+        if (!state.documents[name]) {
+          state.documents[name] = {};
         }
 
         // Filter out tombstoned documents before merging
         const filteredDocs: Record<DocumentId, Document> = {};
         for (const [id, doc] of Object.entries(collectionData.documents)) {
-          if (!tombstones[id]) {
+          if (!state.tombstones[id]) {
             filteredDocs[id] = doc;
           }
         }
 
         // Merge collections using core mergeCollections function
         const currentCollection: Collection = {
-          documents: documents[name],
+          documents: state.documents[name],
         };
 
         const sourceCollection: Collection = {
           documents: filteredDocs,
         };
 
-        const merged = mergeCollections(currentCollection, sourceCollection, tombstones);
-        documents[name] = merged.documents;
+        const merged = mergeCollections(currentCollection, sourceCollection, state.tombstones);
+        state.documents[name] = merged.documents;
 
         // Notify merge event only if not silent
         if (!options?.silent) {
@@ -227,8 +239,8 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     },
 
     onChange(listener: (event: StoreChangeEvent<T>) => void): () => void {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
+      state.listeners.add(listener);
+      return () => state.listeners.delete(listener);
     },
   };
 }
