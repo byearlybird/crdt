@@ -55,7 +55,7 @@ export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
   remove<K extends keyof T & string>(collection: K, id: DocumentId): void;
 
   getSnapshot(): StoreSnapshot;
-  merge(snapshot: StoreSnapshot): void;
+  merge(snapshot: StoreSnapshot, options?: { silent?: boolean }): void;
   onChange(listener: (event: StoreChangeEvent<T>) => void): () => void;
 };
 
@@ -188,7 +188,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
       };
     },
 
-    merge(snapshot: StoreSnapshot): void {
+    merge(snapshot: StoreSnapshot, options?: { silent?: boolean }): void {
       advance(snapshot.clock.ms, snapshot.clock.seq);
 
       tombstones = mergeTombstones(tombstones, snapshot.tombstones);
@@ -219,8 +219,10 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
         const merged = mergeCollections(currentCollection, sourceCollection, tombstones);
         documents[name] = merged.documents;
 
-        // Notify merge event
-        notify(name, { type: "merge" });
+        // Notify merge event only if not silent
+        if (!options?.silent) {
+          notify(name, { type: "merge" });
+        }
       }
     },
 

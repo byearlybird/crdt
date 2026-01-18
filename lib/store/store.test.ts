@@ -436,4 +436,173 @@ describe("createStore", () => {
     expect(adultsAfterRemoval.find((u) => u.id === "3")).toBeDefined();
     expect(adultsAfterRemoval.find((u) => u.id === "2")).toBeUndefined();
   });
+
+  test("merge with silent: true does not emit events", () => {
+    const store1 = createStore({
+      collections: {
+        users: { schema: userSchema, keyPath: "id" },
+      },
+    });
+
+    const store2 = createStore({
+      collections: {
+        users: { schema: userSchema, keyPath: "id" },
+      },
+    });
+
+    // Add data to store1
+    store1.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
+    store1.add("users", { id: "2", name: "Bob", profile: { age: 25 } });
+
+    // Listen for events on store2
+    const events: any[] = [];
+    store2.onChange((event) => {
+      events.push(event);
+    });
+
+    // Merge with silent: true
+    const snapshot = store1.getSnapshot();
+    store2.merge(snapshot, { silent: true });
+
+    // No events should have been emitted
+    expect(events).toHaveLength(0);
+
+    // But the data should still be merged
+    expect(store2.get("users", "1")).toEqual({
+      id: "1",
+      name: "Alice",
+      profile: { age: 30 },
+    });
+    expect(store2.get("users", "2")).toEqual({
+      id: "2",
+      name: "Bob",
+      profile: { age: 25 },
+    });
+  });
+
+  test("merge without silent option emits merge events", () => {
+    const store1 = createStore({
+      collections: {
+        users: { schema: userSchema, keyPath: "id" },
+      },
+    });
+
+    const store2 = createStore({
+      collections: {
+        users: { schema: userSchema, keyPath: "id" },
+      },
+    });
+
+    // Add data to store1
+    store1.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
+
+    // Listen for events on store2
+    const events: any[] = [];
+    store2.onChange((event) => {
+      events.push(event);
+    });
+
+    // Merge without silent option (default behavior)
+    const snapshot = store1.getSnapshot();
+    store2.merge(snapshot);
+
+    // Should emit a merge event
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({
+      type: "merge",
+      collection: "users",
+    });
+
+    // Data should be merged
+    expect(store2.get("users", "1")).toEqual({
+      id: "1",
+      name: "Alice",
+      profile: { age: 30 },
+    });
+  });
+
+  test("merge with silent: false emits merge events", () => {
+    const store1 = createStore({
+      collections: {
+        users: { schema: userSchema, keyPath: "id" },
+      },
+    });
+
+    const store2 = createStore({
+      collections: {
+        users: { schema: userSchema, keyPath: "id" },
+      },
+    });
+
+    // Add data to store1
+    store1.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
+
+    // Listen for events on store2
+    const events: any[] = [];
+    store2.onChange((event) => {
+      events.push(event);
+    });
+
+    // Merge with explicit silent: false
+    const snapshot = store1.getSnapshot();
+    store2.merge(snapshot, { silent: false });
+
+    // Should emit a merge event
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({
+      type: "merge",
+      collection: "users",
+    });
+
+    // Data should be merged
+    expect(store2.get("users", "1")).toEqual({
+      id: "1",
+      name: "Alice",
+      profile: { age: 30 },
+    });
+  });
+
+  test("merge with silent: true emits no events for multiple collections", () => {
+    const store1 = createStore({
+      collections: {
+        users: { schema: userSchema, keyPath: "id" },
+        notes: { schema: noteSchema, keyPath: "id" },
+      },
+    });
+
+    const store2 = createStore({
+      collections: {
+        users: { schema: userSchema, keyPath: "id" },
+        notes: { schema: noteSchema, keyPath: "id" },
+      },
+    });
+
+    // Add data to store1
+    store1.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
+    store1.add("notes", { id: "note-1", content: "First note" });
+
+    // Listen for events on store2
+    const events: any[] = [];
+    store2.onChange((event) => {
+      events.push(event);
+    });
+
+    // Merge with silent: true
+    const snapshot = store1.getSnapshot();
+    store2.merge(snapshot, { silent: true });
+
+    // No events should have been emitted for either collection
+    expect(events).toHaveLength(0);
+
+    // But the data should still be merged for both collections
+    expect(store2.get("users", "1")).toEqual({
+      id: "1",
+      name: "Alice",
+      profile: { age: 30 },
+    });
+    expect(store2.get("notes", "note-1")).toEqual({
+      id: "note-1",
+      content: "First note",
+    });
+  });
 });
