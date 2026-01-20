@@ -40,17 +40,9 @@ export type StoreSnapshot = {
   tombstones: Tombstones;
 };
 
-export type CollectionMutation<K extends string> = {
-  collection: K;
-  mutated: Array<DocumentId>;
-  removed: Array<DocumentId>;
+export type StoreChangeEvent<T extends Record<string, CollectionConfig<AnyObject>>> = {
+  [K in keyof T]?: true;
 };
-
-export type StoreChangeEvent<T extends Record<string, CollectionConfig<AnyObject>>> = Array<
-  {
-    [K in keyof T]: CollectionMutation<K & string>;
-  }[keyof T]
->;
 
 export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
   add<K extends keyof T & string>(collection: K, data: Input<T[K]["schema"]>): void;
@@ -132,7 +124,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     txDocs: Record<DocumentId, Document>,
     txTombstones: Tombstones,
     txTick: () => string,
-    recordChange: (type: "add" | "update" | "remove", id: DocumentId) => void,
+    recordChange: () => void,
   ): TransactionHandle<C> => {
     return {
       get(id) {
@@ -158,7 +150,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
         const id = valid[collectionConfig.keyPath] as DocumentId;
         const doc = makeDocument(valid, txTick());
         txDocs[id] = doc;
-        recordChange("add", id);
+        recordChange();
       },
 
       update(id, data) {
@@ -171,13 +163,13 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
         validate(collectionConfig.schema, parsed);
 
         txDocs[id] = mergedDoc;
-        recordChange("update", id);
+        recordChange();
       },
 
       remove(id) {
         txTombstones[id] = txTick();
         delete txDocs[id];
-        recordChange("remove", id);
+        recordChange();
       },
     };
   };
@@ -200,35 +192,11 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     // Clone tombstones (shallow copy)
     const txTombstones: Tombstones = { ...state.tombstones };
 
-    // Accumulate mutations by collection (just IDs)
-    const mutationsByCollection = new Map<
-      string,
-      {
-        mutated: Set<DocumentId>;
-        removed: Set<DocumentId>;
-      }
-    >();
+    // Track which collections have changes
+    const dirtyCollections = new Set<string>();
 
-    const recordChange = (
-      collectionName: string,
-      type: "add" | "update" | "remove",
-      id: DocumentId,
-    ) => {
-      if (!mutationsByCollection.has(collectionName)) {
-        mutationsByCollection.set(collectionName, {
-          mutated: new Set(),
-          removed: new Set(),
-        });
-      }
-      const mutations = mutationsByCollection.get(collectionName)!;
-
-      if (type === "add" || type === "update") {
-        mutations.mutated.add(id);
-        mutations.removed.delete(id);
-      } else if (type === "remove") {
-        mutations.mutated.delete(id);
-        mutations.removed.add(id);
-      }
+    const recordChange = (collectionName: string) => {
+      dirtyCollections.add(collectionName);
     };
 
     // Create handles for each collection
@@ -240,7 +208,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
         txDocs,
         txTombstones,
         tick,
-        (type, id) => recordChange(collectionName, type, id),
+        () => recordChange(collectionName),
       );
     }) as TransactionHandles<T, typeof collectionNames>;
 
@@ -267,22 +235,15 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
       state.documents[collectionName] = merged.documents;
     }
 
-    // Build batched event from accumulated mutations
-    const batchedEvent: StoreChangeEvent<T> = [];
-    for (const [collectionName, mutations] of mutationsByCollection.entries()) {
-      // Only include collections that have actual changes
-      if (mutations.mutated.size > 0 || mutations.removed.size > 0) {
-        batchedEvent.push({
-          collection: collectionName,
-          mutated: Array.from(mutations.mutated),
-          removed: Array.from(mutations.removed),
-        } as CollectionMutation<string>);
-      }
+    // Build event with dirty collections
+    const event: StoreChangeEvent<T> = {};
+    for (const collectionName of dirtyCollections) {
+      event[collectionName as keyof T] = true;
     }
 
     // Notify listeners once with batched event (only if there are changes)
-    if (batchedEvent.length > 0) {
-      listeners.forEach((listener) => listener(batchedEvent));
+    if (dirtyCollections.size > 0) {
+      listeners.forEach((listener) => listener(event));
     }
 
     // Return the callback's return value
@@ -349,16 +310,9 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     merge(snapshot: StoreSnapshot, options?: { silent?: boolean }): void {
       advance(snapshot.clock.ms, snapshot.clock.seq);
 
-      // Capture before state for change detection
-      const beforeTombstones = { ...state.tombstones };
-      const beforeDocuments: Record<string, Record<DocumentId, Document>> = {};
-      for (const [name, docs] of Object.entries(state.documents)) {
-        beforeDocuments[name] = { ...docs };
-      }
-
       state.tombstones = mergeTombstones(state.tombstones, snapshot.tombstones);
 
-      const batchedEvent: StoreChangeEvent<T> = [];
+      const event: StoreChangeEvent<T> = {};
 
       for (const [name, collectionData] of Object.entries(snapshot.collections)) {
         // Initialize collection if it doesn't exist
@@ -386,53 +340,13 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
         const merged = mergeCollections(currentCollection, sourceCollection, state.tombstones);
         state.documents[name] = merged.documents;
 
-        // Detect changes if not silent
-        if (!options?.silent) {
-          const beforeDocs = beforeDocuments[name] || {};
-          const afterDocs = state.documents[name];
-
-          const mutated: Array<DocumentId> = [];
-          const removed: Array<DocumentId> = [];
-
-          // Check for added and updated documents
-          for (const [id, afterDoc] of Object.entries(afterDocs)) {
-            if (state.tombstones[id]) continue; // Skip tombstoned
-
-            const beforeDoc = beforeDocs[id];
-            if (!beforeDoc) {
-              // Document was added
-              mutated.push(id);
-            } else {
-              // Document exists in both - check if it changed
-              const beforeParsed = parseDocument(beforeDoc);
-              const afterParsed = parseDocument(afterDoc);
-              if (JSON.stringify(beforeParsed) !== JSON.stringify(afterParsed)) {
-                mutated.push(id);
-              }
-            }
-          }
-
-          // Check for removed documents (tombstoned during merge)
-          for (const [id, beforeDoc] of Object.entries(beforeDocs)) {
-            if (beforeDoc && !beforeTombstones[id] && state.tombstones[id]) {
-              removed.push(id);
-            }
-          }
-
-          // Only add to event if there are actual changes
-          if (mutated.length > 0 || removed.length > 0) {
-            batchedEvent.push({
-              collection: name,
-              mutated,
-              removed,
-            } as CollectionMutation<string>);
-          }
-        }
+        // Mark collection as dirty
+        event[name as keyof T] = true;
       }
 
-      // Notify listeners once with batched event (only if there are changes)
-      if (!options?.silent && batchedEvent.length > 0) {
-        listeners.forEach((listener) => listener(batchedEvent));
+      // Notify listeners once with batched event (only if there are changes and not silent)
+      if (!options?.silent && Object.keys(event).length > 0) {
+        listeners.forEach((listener) => listener(event));
       }
     },
 

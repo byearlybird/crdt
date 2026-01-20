@@ -255,46 +255,22 @@ describe("createStore", () => {
     // Add a user - should trigger onChange
     store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
     expect(events).toHaveLength(1);
-    expect(events[0]).toEqual([
-      {
-        collection: "users",
-        mutated: ["1"],
-        removed: [],
-      },
-    ]);
+    expect(events[0]).toEqual({ users: true });
 
     // Add a note - should trigger onChange
     store.add("notes", { id: "note-1", content: "First note" });
     expect(events).toHaveLength(2);
-    expect(events[1]).toEqual([
-      {
-        collection: "notes",
-        mutated: ["note-1"],
-        removed: [],
-      },
-    ]);
+    expect(events[1]).toEqual({ notes: true });
 
     // Update a user - should trigger onChange
     store.update("users", "1", { profile: { age: 31 } });
     expect(events).toHaveLength(3);
-    expect(events[2]).toEqual([
-      {
-        collection: "users",
-        mutated: ["1"],
-        removed: [],
-      },
-    ]);
+    expect(events[2]).toEqual({ users: true });
 
     // Remove a user - should trigger onChange
     store.remove("users", "1");
     expect(events).toHaveLength(4);
-    expect(events[3]).toEqual([
-      {
-        collection: "users",
-        mutated: [],
-        removed: ["1"],
-      },
-    ]);
+    expect(events[3]).toEqual({ users: true });
 
     unsubscribe();
   });
@@ -504,15 +480,9 @@ describe("createStore", () => {
     const snapshot = store1.getSnapshot();
     store2.merge(snapshot);
 
-    // Should emit a batched event with mutated items
+    // Should emit an event marking users collection as dirty
     expect(events).toHaveLength(1);
-    expect(events[0]).toEqual([
-      {
-        collection: "users",
-        mutated: ["1"],
-        removed: [],
-      },
-    ]);
+    expect(events[0]).toEqual({ users: true });
 
     // Data should be merged
     expect(store2.get("users", "1")).toEqual({
@@ -548,15 +518,9 @@ describe("createStore", () => {
     const snapshot = store1.getSnapshot();
     store2.merge(snapshot, { silent: false });
 
-    // Should emit a batched event with mutated items
+    // Should emit an event marking users collection as dirty
     expect(events).toHaveLength(1);
-    expect(events[0]).toEqual([
-      {
-        collection: "users",
-        mutated: ["1"],
-        removed: [],
-      },
-    ]);
+    expect(events[0]).toEqual({ users: true });
 
     // Data should be merged
     expect(store2.get("users", "1")).toEqual({
@@ -762,15 +726,9 @@ describe("createStore", () => {
         users.remove("2");
       });
 
-      // Should have 1 batched event with all changes
+      // Should have 1 event marking users collection as dirty
       expect(events).toHaveLength(1);
-      expect(events[0]).toEqual([
-        {
-          collection: "users",
-          mutated: ["1"],
-          removed: ["2"],
-        },
-      ]);
+      expect(events[0]).toEqual({ users: true });
     });
 
     test("transact with multiple collections batches notifications across collections", () => {
@@ -799,21 +757,9 @@ describe("createStore", () => {
         notes.add({ id: "note-2", content: "World" });
       });
 
-      // Should have 1 batched event with changes from both collections
+      // Should have 1 event marking both collections as dirty
       expect(events).toHaveLength(1);
-      expect(events[0]).toHaveLength(2);
-      const usersChange = events[0].find((c: any) => c.collection === "users");
-      const notesChange = events[0].find((c: any) => c.collection === "notes");
-      expect(usersChange).toEqual({
-        collection: "users",
-        mutated: ["1"],
-        removed: [],
-      });
-      expect(notesChange).toEqual({
-        collection: "notes",
-        mutated: ["note-1", "note-2"],
-        removed: [],
-      });
+      expect(events[0]).toEqual({ users: true, notes: true });
     });
 
     test("transact can read within transaction", () => {
@@ -902,29 +848,11 @@ describe("createStore", () => {
       store.update("users", "1", { name: "Alice Updated" });
       store.remove("users", "1");
 
-      // Each convenience method should emit one batched event
+      // Each convenience method should emit one event
       expect(events).toHaveLength(3);
-      expect(events[0]).toEqual([
-        {
-          collection: "users",
-          mutated: ["1"],
-          removed: [],
-        },
-      ]);
-      expect(events[1]).toEqual([
-        {
-          collection: "users",
-          mutated: ["1"],
-          removed: [],
-        },
-      ]);
-      expect(events[2]).toEqual([
-        {
-          collection: "users",
-          mutated: [],
-          removed: ["1"],
-        },
-      ]);
+      expect(events[0]).toEqual({ users: true });
+      expect(events[1]).toEqual({ users: true });
+      expect(events[2]).toEqual({ users: true });
     });
   });
 });
