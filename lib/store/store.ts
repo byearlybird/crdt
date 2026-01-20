@@ -1,38 +1,23 @@
-import { validate } from "./schema";
 import {
-  makeDocument,
   parseDocument,
-  mergeDocuments,
   mergeCollections,
   type Collection,
   type DocumentId,
 } from "../core";
 import type { Clock } from "../core/clock";
 import { advanceClock, makeStamp } from "../core/clock";
-import type { Input, Output, AnyObject } from "./schema";
+import type { Input, Output, AnyObject, CollectionConfig } from "./schema";
 import type { Tombstones } from "../core/tombstone";
 import { mergeTombstones } from "../core/tombstone";
 import type { Document } from "../core/document";
+import {
+  executeTransaction,
+  type TransactionHandles,
+  type TransactionDependencies,
+} from "./transaction";
 
-export type CollectionConfig<T extends AnyObject> = {
-  schema: T;
-  keyPath: keyof Output<T> & string;
-};
-
-// Handle for a single collection within a transaction
-type TransactionHandle<T extends CollectionConfig<AnyObject>> = {
-  get(id: DocumentId): Output<T["schema"]> | undefined;
-  list(): Output<T["schema"]>[];
-  add(data: Input<T["schema"]>): void;
-  update(id: DocumentId, data: Partial<Input<T["schema"]>>): void;
-  remove(id: DocumentId): void;
-};
-
-// Maps collection names to their handles - enables type inference
-type TransactionHandles<
-  T extends Record<string, CollectionConfig<AnyObject>>,
-  K extends (keyof T & string)[],
-> = { [I in keyof K]: TransactionHandle<T[K[I] & keyof T]> };
+// Re-export transaction types for public API
+export type { TransactionHandles } from "./transaction";
 
 export type StoreSnapshot = {
   clock: Clock;
@@ -119,135 +104,42 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     state.documents[name] = {};
   }
 
-  const createTransactionHandle = <C extends CollectionConfig<AnyObject>>(
-    collectionConfig: C,
-    txDocs: Record<DocumentId, Document>,
-    txTombstones: Tombstones,
-    txTick: () => string,
-    recordChange: () => void,
-  ): TransactionHandle<C> => {
-    return {
-      get(id) {
-        if (txTombstones[id]) return undefined;
-        const doc = txDocs[id];
-        if (!doc) return undefined;
-        return parseDocument(doc) as Output<C["schema"]>;
-      },
-
-      list() {
-        const resultDocs: Output<C["schema"]>[] = [];
-        for (const [id, doc] of Object.entries(txDocs)) {
-          if (doc && !txTombstones[id]) {
-            const parsed = parseDocument(doc) as Output<C["schema"]>;
-            resultDocs.push(parsed);
-          }
-        }
-        return resultDocs;
-      },
-
-      add(data) {
-        const valid = validate(collectionConfig.schema, data);
-        const id = valid[collectionConfig.keyPath] as DocumentId;
-        const doc = makeDocument(valid, txTick());
-        txDocs[id] = doc;
-        recordChange();
-      },
-
-      update(id, data) {
-        const currentDoc = txDocs[id];
-        if (!currentDoc) return;
-
-        const newAttrs = makeDocument(data, txTick());
-        const mergedDoc = mergeDocuments(currentDoc, newAttrs);
-        const parsed = parseDocument(mergedDoc);
-        validate(collectionConfig.schema, parsed);
-
-        txDocs[id] = mergedDoc;
-        recordChange();
-      },
-
-      remove(id) {
-        txTombstones[id] = txTick();
-        delete txDocs[id];
-        recordChange();
-      },
-    };
-  };
-
   const transactFn = <K extends (keyof T & string)[], R>(
     collectionNames: [...K],
     callback: (handles: TransactionHandles<T, K>) => R,
   ): R => {
-    // Clone documents for each specified collection
-    const txDocuments: Record<string, Record<DocumentId, Document>> = {};
-    for (const collectionName of collectionNames) {
-      const collectionDocs = state.documents[collectionName];
-      if (!collectionDocs) {
-        throw new Error(`Collection "${collectionName}" not found`);
-      }
-      // Shallow copy of the documents record
-      txDocuments[collectionName] = { ...collectionDocs };
-    }
+    const deps: TransactionDependencies<T> = {
+      getConfig,
+      getCollectionDocuments: (name: string) => {
+        const docs = state.documents[name];
+        if (!docs) {
+          throw new Error(`Collection "${name}" not found`);
+        }
+        return docs;
+      },
+      getTombstones: () => state.tombstones,
+      tick,
+      notifyListeners: (event) => {
+        listeners.forEach((listener) => listener(event));
+      },
+      applyMerge: (collectionName, txDocuments) => {
+        const currentCollection: Collection = {
+          documents: state.documents[collectionName]!,
+        };
 
-    // Clone tombstones (shallow copy)
-    const txTombstones: Tombstones = { ...state.tombstones };
+        const txCollection: Collection = {
+          documents: txDocuments,
+        };
 
-    // Track which collections have changes
-    const dirtyCollections = new Set<string>();
-
-    const recordChange = (collectionName: string) => {
-      dirtyCollections.add(collectionName);
+        const merged = mergeCollections(currentCollection, txCollection, state.tombstones);
+        state.documents[collectionName] = merged.documents;
+      },
+      applyTombstones: (txTombstones) => {
+        state.tombstones = mergeTombstones(state.tombstones, txTombstones);
+      },
     };
 
-    // Create handles for each collection
-    const handles = collectionNames.map((collectionName) => {
-      const collectionConfig = getConfig(collectionName);
-      const txDocs = txDocuments[collectionName]!; // Safe: we just set it above
-      return createTransactionHandle(
-        collectionConfig,
-        txDocs,
-        txTombstones,
-        tick,
-        () => recordChange(collectionName),
-      );
-    }) as TransactionHandles<T, typeof collectionNames>;
-
-    // Execute callback and capture return value
-    // On error: discard clones (automatic - just don't merge, execution stops here)
-    const result = callback(handles);
-
-    // On success: merge cloned state back
-
-    // Merge tombstones
-    state.tombstones = mergeTombstones(state.tombstones, txTombstones);
-
-    // Merge collections
-    for (const collectionName of collectionNames) {
-      const currentCollection: Collection = {
-        documents: state.documents[collectionName]!,
-      };
-
-      const txCollection: Collection = {
-        documents: txDocuments[collectionName]!,
-      };
-
-      const merged = mergeCollections(currentCollection, txCollection, state.tombstones);
-      state.documents[collectionName] = merged.documents;
-    }
-
-    // Build event with dirty collections
-    const event: StoreChangeEvent<T> = {};
-    for (const collectionName of dirtyCollections) {
-      event[collectionName as keyof T] = true;
-    }
-
-    // Notify listeners once with batched event (only if there are changes)
-    if (dirtyCollections.size > 0) {
-      listeners.forEach((listener) => listener(event));
-    }
-
-    // Return the callback's return value
-    return result;
+    return executeTransaction(collectionNames, callback, deps);
   };
 
   return {
