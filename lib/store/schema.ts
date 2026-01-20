@@ -31,3 +31,8 @@ export type SchemaWithId<T extends AnyObject> =
 export type Output<T extends AnyObject> = StandardSchemaV1.InferOutput<T>;
 
 export type Input<T extends AnyObject> = StandardSchemaV1.InferInput<T>;
+
+export type CollectionConfig<T extends AnyObject> = {
+  schema: T;
+  keyPath: keyof Output<T> & string;
+};
