@@ -31,11 +31,9 @@ describe("createStore", () => {
       },
     });
 
-    expect(store.add).toBeDefined();
     expect(store.get).toBeDefined();
     expect(store.list).toBeDefined();
-    expect(store.update).toBeDefined();
-    expect(store.remove).toBeDefined();
+    expect(store.transact).toBeDefined();
     expect(store.getSnapshot).toBeDefined();
     expect(store.merge).toBeDefined();
     expect(store.onChange).toBeDefined();
@@ -51,10 +49,12 @@ describe("createStore", () => {
       },
     });
 
-    store.add("users", {
-      id: "1",
-      name: "Alice",
-      profile: { age: 30 },
+    store.transact(["users"], ([users]) => {
+      users.add({
+        id: "1",
+        name: "Alice",
+        profile: { age: 30 },
+      });
     });
 
     const result = store.get("users", "1");
@@ -75,19 +75,21 @@ describe("createStore", () => {
       },
     });
 
-    store.add("users", {
-      id: "1",
-      name: "Alice",
-      profile: {},
-    });
+    store.transact(["users"], ([users]) => {
+      users.add({
+        id: "1",
+        name: "Alice",
+        profile: {},
+      });
 
-    store.add("users", {
-      id: "2",
-      name: "Bob",
-      profile: {},
-    });
+      users.add({
+        id: "2",
+        name: "Bob",
+        profile: {},
+      });
 
-    store.remove("users", "1");
+      users.remove("1");
+    });
 
     expect(store.get("users", "1")).toBeUndefined();
     expect(store.get("users", "2")).toEqual({
@@ -107,14 +109,18 @@ describe("createStore", () => {
       },
     });
 
-    store.add("users", {
-      id: "1",
-      name: "Alice",
-      profile: {},
+    store.transact(["users"], ([users]) => {
+      users.add({
+        id: "1",
+        name: "Alice",
+        profile: {},
+      });
     });
 
-    store.update("users", "1", {
-      profile: { age: 30 },
+    store.transact(["users"], ([users]) => {
+      users.update("1", {
+        profile: { age: 30 },
+      });
     });
 
     const result = store.get("users", "1");
@@ -153,14 +159,16 @@ describe("createStore", () => {
     expect(initialSnapshot.clock).toHaveProperty("ms");
     expect(initialSnapshot.clock).toHaveProperty("seq");
 
-    store.add("users", {
-      id: "1",
-      name: "Alice",
-      profile: { age: 30 },
-    });
-    store.add("notes", {
-      id: "note-1",
-      content: "Hello world",
+    store.transact(["users", "notes"], ([users, notes]) => {
+      users.add({
+        id: "1",
+        name: "Alice",
+        profile: { age: 30 },
+      });
+      notes.add({
+        id: "note-1",
+        content: "Hello world",
+      });
     });
 
     const updatedSnapshot = store.getSnapshot();
@@ -198,12 +206,16 @@ describe("createStore", () => {
     expect(initialSnapshot.collections["users"]?.documents).toEqual({});
     expect(initialSnapshot.collections["notes"]?.documents).toEqual({});
 
-    store.add("users", { id: "1", name: "Alice", profile: {} });
+    store.transact(["users"], ([users]) => {
+      users.add({ id: "1", name: "Alice", profile: {} });
+    });
     const snapshotAfterUsers = store.getSnapshot();
     expect(snapshotAfterUsers.collections["users"]?.documents).toHaveProperty("1");
     expect(snapshotAfterUsers.collections["notes"]?.documents).toEqual({});
 
-    store.add("notes", { id: "1", content: "Note" });
+    store.transact(["notes"], ([notes]) => {
+      notes.add({ id: "1", content: "Note" });
+    });
     const snapshotAfterNotes = store.getSnapshot();
     expect(snapshotAfterNotes.collections["users"]?.documents).toHaveProperty("1");
     expect(snapshotAfterNotes.collections["notes"]?.documents).toHaveProperty("1");
@@ -253,22 +265,30 @@ describe("createStore", () => {
     });
 
     // Add a user - should trigger onChange
-    store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
+    store.transact(["users"], ([users]) => {
+      users.add({ id: "1", name: "Alice", profile: { age: 30 } });
+    });
     expect(events).toHaveLength(1);
     expect(events[0]).toEqual({ users: true });
 
     // Add a note - should trigger onChange
-    store.add("notes", { id: "note-1", content: "First note" });
+    store.transact(["notes"], ([notes]) => {
+      notes.add({ id: "note-1", content: "First note" });
+    });
     expect(events).toHaveLength(2);
     expect(events[1]).toEqual({ notes: true });
 
     // Update a user - should trigger onChange
-    store.update("users", "1", { profile: { age: 31 } });
+    store.transact(["users"], ([users]) => {
+      users.update("1", { profile: { age: 31 } });
+    });
     expect(events).toHaveLength(3);
     expect(events[2]).toEqual({ users: true });
 
     // Remove a user - should trigger onChange
-    store.remove("users", "1");
+    store.transact(["users"], ([users]) => {
+      users.remove("1");
+    });
     expect(events).toHaveLength(4);
     expect(events[3]).toEqual({ users: true });
 
@@ -289,8 +309,10 @@ describe("createStore", () => {
       },
     });
 
-    store.add("users", { id: "123", name: "Alice", profile: {} });
-    store.remove("users", "123");
+    store.transact(["users"], ([users]) => {
+      users.add({ id: "123", name: "Alice", profile: {} });
+      users.remove("123");
+    });
 
     // Should be undefined (tombstoned)
     expect(store.get("users", "123")).toBeUndefined();
@@ -315,13 +337,17 @@ describe("createStore", () => {
       },
     });
 
-    store.add("users", { id: "1", name: "Alice", profile: {} });
-    store.add("users", { id: "2", name: "Bob", profile: {} });
-    store.add("users", { id: "3", name: "Charlie", profile: {} });
+    store.transact(["users"], ([users]) => {
+      users.add({ id: "1", name: "Alice", profile: {} });
+      users.add({ id: "2", name: "Bob", profile: {} });
+      users.add({ id: "3", name: "Charlie", profile: {} });
+    });
 
     expect(store.list("users")).toHaveLength(3);
 
-    store.remove("users", "2");
+    store.transact(["users"], ([users]) => {
+      users.remove("2");
+    });
 
     const allUsers = store.list("users");
     expect(allUsers).toHaveLength(2);
@@ -344,11 +370,15 @@ describe("createStore", () => {
     });
 
     // Store1: Add and remove a user
-    store1.add("users", { id: "1", name: "Alice", profile: {} });
-    store1.remove("users", "1");
+    store1.transact(["users"], ([users]) => {
+      users.add({ id: "1", name: "Alice", profile: {} });
+      users.remove("1");
+    });
 
     // Store2: Add the same user
-    store2.add("users", { id: "1", name: "Alice", profile: {} });
+    store2.transact(["users"], ([users]) => {
+      users.add({ id: "1", name: "Alice", profile: {} });
+    });
 
     // Merge store1 into store2
     const snapshot1 = store1.getSnapshot();
@@ -377,9 +407,11 @@ describe("createStore", () => {
     });
 
     // Test listing users
-    store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
-    store.add("users", { id: "2", name: "Bob", profile: { age: 25 } });
-    store.add("users", { id: "3", name: "Charlie", profile: { age: 35 } });
+    store.transact(["users"], ([users]) => {
+      users.add({ id: "1", name: "Alice", profile: { age: 30 } });
+      users.add({ id: "2", name: "Bob", profile: { age: 25 } });
+      users.add({ id: "3", name: "Charlie", profile: { age: 35 } });
+    });
 
     const allUsers = store.list("users");
     expect(allUsers).toHaveLength(3);
@@ -388,16 +420,20 @@ describe("createStore", () => {
     expect(allUsers.find((u) => u.name === "Charlie")).toBeDefined();
 
     // Test listing notes
-    store.add("notes", { id: "1", content: "First note" });
-    store.add("notes", { id: "2", content: "Second note" });
-    store.add("notes", { id: "3", content: "Third note" });
+    store.transact(["notes"], ([notes]) => {
+      notes.add({ id: "1", content: "First note" });
+      notes.add({ id: "2", content: "Second note" });
+      notes.add({ id: "3", content: "Third note" });
+    });
 
     const allNotes = store.list("notes");
     expect(allNotes).toHaveLength(3);
     expect(allNotes.find((n) => n.content === "First note")).toBeDefined();
 
     // Test that removed documents don't appear
-    store.remove("users", "2");
+    store.transact(["users"], ([users]) => {
+      users.remove("2");
+    });
     const usersAfterRemoval = store.list("users");
     expect(usersAfterRemoval).toHaveLength(2);
     expect(usersAfterRemoval.find((u) => u.id === "2")).toBeUndefined();
@@ -425,8 +461,10 @@ describe("createStore", () => {
     });
 
     // Add data to store1
-    store1.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
-    store1.add("users", { id: "2", name: "Bob", profile: { age: 25 } });
+    store1.transact(["users"], ([users]) => {
+      users.add({ id: "1", name: "Alice", profile: { age: 30 } });
+      users.add({ id: "2", name: "Bob", profile: { age: 25 } });
+    });
 
     // Listen for events on store2
     const events: any[] = [];
@@ -468,7 +506,9 @@ describe("createStore", () => {
     });
 
     // Add data to store1
-    store1.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
+    store1.transact(["users"], ([users]) => {
+      users.add({ id: "1", name: "Alice", profile: { age: 30 } });
+    });
 
     // Listen for events on store2
     const events: any[] = [];
@@ -506,7 +546,9 @@ describe("createStore", () => {
     });
 
     // Add data to store1
-    store1.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
+    store1.transact(["users"], ([users]) => {
+      users.add({ id: "1", name: "Alice", profile: { age: 30 } });
+    });
 
     // Listen for events on store2
     const events: any[] = [];
@@ -546,8 +588,10 @@ describe("createStore", () => {
     });
 
     // Add data to store1
-    store1.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
-    store1.add("notes", { id: "note-1", content: "First note" });
+    store1.transact(["users", "notes"], ([users, notes]) => {
+      users.add({ id: "1", name: "Alice", profile: { age: 30 } });
+      notes.add({ id: "note-1", content: "First note" });
+    });
 
     // Listen for events on store2
     const events: any[] = [];
@@ -689,7 +733,9 @@ describe("createStore", () => {
         },
       });
 
-      store.add("users", { id: "1", name: "Alice", profile: {} });
+      store.transact(["users"], ([users]) => {
+        users.add({ id: "1", name: "Alice", profile: {} });
+      });
 
       expect(() => {
         store.transact(["users"], ([users]) => {
@@ -772,7 +818,9 @@ describe("createStore", () => {
         },
       });
 
-      store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
+      store.transact(["users"], ([users]) => {
+        users.add({ id: "1", name: "Alice", profile: { age: 30 } });
+      });
 
       const result = store.transact(["users"], ([users]) => {
         const user = users.get("1");
@@ -795,8 +843,10 @@ describe("createStore", () => {
         },
       });
 
-      store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
-      store.add("users", { id: "2", name: "Bob", profile: { age: 25 } });
+      store.transact(["users"], ([users]) => {
+        users.add({ id: "1", name: "Alice", profile: { age: 30 } });
+        users.add({ id: "2", name: "Bob", profile: { age: 25 } });
+      });
 
       const result = store.transact(["users"], ([users]) => {
         const all = users.list();
@@ -808,51 +858,5 @@ describe("createStore", () => {
       expect(store.get("users", "3")).toBeDefined(); // But the new one should be added
     });
 
-    test("convenience methods still work (add, update, remove)", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      // These should all work the same as before
-      store.add("users", { id: "1", name: "Alice", profile: {} });
-      expect(store.get("users", "1")?.name).toBe("Alice");
-
-      store.update("users", "1", { name: "Alice Updated" });
-      expect(store.get("users", "1")?.name).toBe("Alice Updated");
-
-      store.remove("users", "1");
-      expect(store.get("users", "1")).toBeUndefined();
-    });
-
-    test("convenience methods still emit notifications", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      const events: any[] = [];
-      store.onChange((event) => {
-        events.push(event);
-      });
-
-      store.add("users", { id: "1", name: "Alice", profile: {} });
-      store.update("users", "1", { name: "Alice Updated" });
-      store.remove("users", "1");
-
-      // Each convenience method should emit one event
-      expect(events).toHaveLength(3);
-      expect(events[0]).toEqual({ users: true });
-      expect(events[1]).toEqual({ users: true });
-      expect(events[2]).toEqual({ users: true });
-    });
   });
 });

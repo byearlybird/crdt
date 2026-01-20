@@ -30,8 +30,7 @@ export type StoreChangeEvent<T extends Record<string, CollectionConfig<AnyObject
 };
 
 export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  add<K extends keyof T & string>(collection: K, data: Input<T[K]["schema"]>): void;
-
+  // Reads
   get<K extends keyof T & string>(
     collection: K,
     id: DocumentId,
@@ -39,21 +38,17 @@ export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
 
   list<K extends keyof T & string>(collection: K): Output<T[K]["schema"]>[];
 
-  update<K extends keyof T & string>(
-    collection: K,
-    id: DocumentId,
-    data: Partial<Input<T[K]["schema"]>>,
-  ): void;
+  getSnapshot(): StoreSnapshot;
 
-  remove<K extends keyof T & string>(collection: K, id: DocumentId): void;
-
+  // Writes
   transact<K extends (keyof T & string)[], R>(
     collectionNames: [...K],
     callback: (handles: TransactionHandles<T, K>) => R,
   ): R;
 
-  getSnapshot(): StoreSnapshot;
   merge(snapshot: StoreSnapshot, options?: { silent?: boolean }): void;
+
+  // Subscriptions
   onChange(listener: (event: StoreChangeEvent<T>) => void): () => void;
 };
 
@@ -137,14 +132,6 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   };
 
   return {
-    transact: transactFn,
-
-    add(collectionName, data) {
-      transactFn([collectionName], ([handle]) => {
-        handle.add(data);
-      });
-    },
-
     get(collectionName, id) {
       if (state.tombstones[id]) return undefined;
       const collectionDocs = getDocs(collectionName);
@@ -169,17 +156,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
       return resultDocs;
     },
 
-    update(collectionName, id, data) {
-      transactFn([collectionName], ([handle]) => {
-        handle.update(id, data);
-      });
-    },
-
-    remove(collectionName, id) {
-      transactFn([collectionName], ([handle]) => {
-        handle.remove(id);
-      });
-    },
+    transact: transactFn,
 
     getSnapshot(): StoreSnapshot {
       const collectionsSnapshot: Record<string, Collection> = {};
