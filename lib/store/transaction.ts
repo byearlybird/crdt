@@ -82,9 +82,9 @@ function createTransactionHandle<C extends CollectionConfig<AnyObject>>(
 }
 
 export type TransactionDependencies<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  getConfig: (name: string) => CollectionConfig<AnyObject>;
-  getCollectionDocuments: (name: string) => Record<DocumentId, Document>;
-  getTombstones: () => Tombstones;
+  configs: Map<string, CollectionConfig<AnyObject>>;
+  documents: Record<string, Record<DocumentId, Document>>;
+  tombstones: Tombstones;
   tick: () => string;
   notifyListeners: (event: StoreChangeEvent<T>) => void;
   applyMerge: (collectionName: string, documents: Record<DocumentId, Document>) => void;
@@ -103,13 +103,16 @@ export function executeTransaction<
   // Clone documents for each specified collection
   const txDocuments: Record<string, Record<DocumentId, Document>> = {};
   for (const collectionName of collectionNames) {
-    const collectionDocs = deps.getCollectionDocuments(collectionName);
+    const collectionDocs = deps.documents[collectionName];
+    if (!collectionDocs) {
+      throw new Error(`Collection "${collectionName}" not found`);
+    }
     // Shallow copy of the documents record
     txDocuments[collectionName] = { ...collectionDocs };
   }
 
   // Clone tombstones (shallow copy)
-  const txTombstones: Tombstones = { ...deps.getTombstones() };
+  const txTombstones: Tombstones = { ...deps.tombstones };
 
   // Track which collections have changes
   const dirtyCollections = new Set<string>();
@@ -120,7 +123,10 @@ export function executeTransaction<
 
   // Create handles for each collection
   const handles = collectionNames.map((collectionName) => {
-    const collectionConfig = deps.getConfig(collectionName);
+    const collectionConfig = deps.configs.get(collectionName);
+    if (!collectionConfig) {
+      throw new Error(`Collection "${collectionName}" not found`);
+    }
     const txDocs = txDocuments[collectionName]!; // Safe: we just set it above
     return createTransactionHandle(
       collectionConfig,

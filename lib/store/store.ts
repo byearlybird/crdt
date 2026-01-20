@@ -109,15 +109,9 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     callback: (handles: TransactionHandles<T, K>) => R,
   ): R => {
     const deps: TransactionDependencies<T> = {
-      getConfig,
-      getCollectionDocuments: (name: string) => {
-        const docs = state.documents[name];
-        if (!docs) {
-          throw new Error(`Collection "${name}" not found`);
-        }
-        return docs;
-      },
-      getTombstones: () => state.tombstones,
+      configs,
+      documents: state.documents,
+      tombstones: state.tombstones,
       tick,
       notifyListeners: (event) => {
         listeners.forEach((listener) => listener(event));
