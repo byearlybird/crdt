@@ -26,17 +26,11 @@ export type StoreChangeEvent<T extends Record<string, CollectionConfig<AnyObject
 };
 
 export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  // Read-only (optimized, no copy overhead)
-  read<K extends (keyof T & string)[], R>(
-    collectionNames: [...K],
-    callback: (handles: ReadHandles<T, K>) => R,
-  ): R;
+  // Read-only query (optimized, no copy overhead, lazy collection access)
+  query<R>(callback: (handles: ReadHandles<T>) => R): R;
 
-  // Read-write transaction (full mutations, rollback on error)
-  transact<K extends (keyof T & string)[], R>(
-    collectionNames: [...K],
-    callback: (handles: MutateHandles<T, K>) => R,
-  ): R;
+  // Read-write transaction (full mutations, rollback on error, lazy collection access)
+  transact<R>(callback: (handles: MutateHandles<T>) => R): R;
 
   // Other methods
   getSnapshot(): StoreSnapshot;
@@ -91,22 +85,16 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     },
   };
 
-  const readFn = <K extends (keyof T & string)[], R>(
-    collectionNames: [...K],
-    callback: (handles: ReadHandles<T, K>) => R,
-  ): R => {
-    return executeTransaction("read", collectionNames, callback, deps);
+  const queryFn = <R>(callback: (handles: ReadHandles<T>) => R): R => {
+    return executeTransaction("read", callback, deps);
   };
 
-  const transactFn = <K extends (keyof T & string)[], R>(
-    collectionNames: [...K],
-    callback: (handles: MutateHandles<T, K>) => R,
-  ): R => {
-    return executeTransaction("mutate", collectionNames, callback, deps);
+  const transactFn = <R>(callback: (handles: MutateHandles<T>) => R): R => {
+    return executeTransaction("mutate", callback, deps);
   };
 
   return {
-    read: readFn,
+    query: queryFn,
     transact: transactFn,
 
     getSnapshot(): StoreSnapshot {

@@ -18,17 +18,15 @@ export type MutateHandle<T extends CollectionConfig<AnyObject>> = ReadHandle<T> 
   remove(id: DocumentId): void;
 };
 
-// Maps collection names to read-only handles
-export type ReadHandles<
-  T extends Record<string, CollectionConfig<AnyObject>>,
-  K extends (keyof T & string)[],
-> = { [I in keyof K]: ReadHandle<T[K[I] & keyof T]> };
+// Maps collection names to read-only handles (all collections available via proxy)
+export type ReadHandles<T extends Record<string, CollectionConfig<AnyObject>>> = {
+  [N in keyof T & string]: ReadHandle<T[N]>;
+};
 
-// Maps collection names to read-write handles
-export type MutateHandles<
-  T extends Record<string, CollectionConfig<AnyObject>>,
-  K extends (keyof T & string)[],
-> = { [I in keyof K]: MutateHandle<T[K[I] & keyof T]> };
+// Maps collection names to read-write handles (all collections available via proxy)
+export type MutateHandles<T extends Record<string, CollectionConfig<AnyObject>>> = {
+  [N in keyof T & string]: MutateHandle<T[N]>;
+};
 
 function createReadHandle<C extends CollectionConfig<AnyObject>>(
   txDocs: Record<DocumentId, Document>,
@@ -110,28 +108,19 @@ export type TransactionDependencies<T extends Record<string, CollectionConfig<An
 
 export function executeTransaction<
   T extends Record<string, CollectionConfig<AnyObject>>,
-  K extends (keyof T & string)[],
   R,
   Mode extends "read" | "mutate" = "mutate",
 >(
   mode: Mode,
-  collectionNames: [...K],
-  callback: (handles: Mode extends "read" ? ReadHandles<T, K> : MutateHandles<T, K>) => R,
+  callback: (handles: Mode extends "read" ? ReadHandles<T> : MutateHandles<T>) => R,
   deps: TransactionDependencies<T>,
 ): R {
   const readonly = mode === "read";
 
-  // For read-only: use original documents (no copy)
-  // For mutate: clone documents for rollback capability
+  // Lazy initialization: track which collections have been accessed
+  const accessedCollections = new Set<string>();
   const txDocuments: Record<string, Record<DocumentId, Document>> = {};
-  for (const collectionName of collectionNames) {
-    const collectionDocs = deps.documents[collectionName];
-    if (!collectionDocs) {
-      throw new Error(`Collection "${collectionName}" not found`);
-    }
-    // Only copy if we might mutate
-    txDocuments[collectionName] = readonly ? collectionDocs : { ...collectionDocs };
-  }
+  const handleCache: Record<string, any> = {};
 
   // Clone tombstones only if we might mutate
   const txTombstones: Tombstones = readonly ? deps.tombstones : { ...deps.tombstones };
@@ -143,34 +132,81 @@ export function executeTransaction<
     dirtyCollections.add(collectionName);
   };
 
-  // Create handles for each collection
-  const handles = collectionNames.map((collectionName) => {
+  // Lazy initialization function
+  const initializeCollection = (collectionName: string): void => {
+    if (accessedCollections.has(collectionName)) {
+      return; // Already initialized
+    }
+
+    accessedCollections.add(collectionName);
+
+    const collectionDocs = deps.documents[collectionName];
+    if (!collectionDocs) {
+      throw new Error(`Collection "${collectionName}" not found`);
+    }
+
+    // For read-only: use original documents (no copy)
+    // For mutate: clone documents for rollback capability
+    txDocuments[collectionName] = readonly ? collectionDocs : { ...collectionDocs };
+
     const collectionConfig = deps.configs.get(collectionName);
     if (!collectionConfig) {
       throw new Error(`Collection "${collectionName}" not found`);
     }
-    const txDocs = txDocuments[collectionName]!; // Safe: we just set it above
 
+    const txDocs = txDocuments[collectionName]!;
+
+    // Create and cache the handle
     if (readonly) {
-      return createReadHandle(txDocs, txTombstones);
+      handleCache[collectionName] = createReadHandle(txDocs, txTombstones);
     } else {
-      return createMutateHandle(collectionConfig, txDocs, txTombstones, deps.tick, () =>
-        recordChange(collectionName),
+      handleCache[collectionName] = createMutateHandle(
+        collectionConfig,
+        txDocs,
+        txTombstones,
+        deps.tick,
+        () => recordChange(collectionName),
       );
     }
-  }) as Mode extends "read" ? ReadHandles<T, K> : MutateHandles<T, K>;
+  };
+
+  // Create proxy that intercepts property access
+  const proxy = new Proxy(
+    {} as Mode extends "read" ? ReadHandles<T> : MutateHandles<T>,
+    {
+      get(_target, prop: string | symbol) {
+        // Handle symbol properties (like Symbol.iterator, etc.)
+        if (typeof prop !== "string") {
+          return undefined;
+        }
+
+        // Check if it's a valid collection name
+        if (!deps.configs.has(prop)) {
+          throw new Error(`Collection "${prop}" not found`);
+        }
+
+        // Lazy initialize if not already done
+        if (!accessedCollections.has(prop)) {
+          initializeCollection(prop);
+        }
+
+        // Return cached handle
+        return handleCache[prop];
+      },
+    },
+  );
 
   // Execute callback and capture return value
   // On error: discard clones (automatic - just don't merge, execution stops here)
-  const result = callback(handles);
+  const result = callback(proxy);
 
   // On success: merge cloned state back (only for mutate mode)
   if (!readonly) {
     // Merge tombstones
     deps.applyTombstones(txTombstones);
 
-    // Merge collections
-    for (const collectionName of collectionNames) {
+    // Merge collections that were accessed
+    for (const collectionName of accessedCollections) {
       deps.applyMerge(collectionName, txDocuments[collectionName]!);
     }
 
