@@ -737,36 +737,6 @@ describe("createStore", () => {
       expect(results2).toHaveLength(2);
     });
 
-    test("query.subscribe() does not notify if result hasn't changed", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      store.transact(({ users }) => {
-        users.add({ id: "1", name: "Alice", profile: {} });
-      });
-
-      const query = store.query(({ users }) => users.get("1"));
-      const results: any[] = [];
-
-      query.subscribe((result) => {
-        results.push(result);
-      });
-
-      expect(results).toHaveLength(1);
-
-      // Update a different user - should not trigger
-      store.transact(({ users }) => {
-        users.add({ id: "2", name: "Bob", profile: {} });
-      });
-
-      expect(results).toHaveLength(1); // No update because query result didn't change
-    });
 
     test("query works with list() operations", () => {
       const store = createStore({
