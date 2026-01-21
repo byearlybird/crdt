@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { mergeCollections, mergeCollectionRecords, type Collection } from "./collection";
+import { mergeCollections, type Collection } from "./collection";
 import { makeStamp } from "./clock";
 import { makeDocument } from "./document";
 import { mergeTombstones } from "./tombstone";
@@ -147,49 +147,5 @@ describe("mergeCollections", () => {
     const result = mergeCollections(target, source, {});
 
     expect(result).toEqual({});
-  });
-});
-
-describe("mergeCollectionRecords", () => {
-  test("merges multiple collection records", () => {
-    const stamp1 = makeStamp(1000, 1);
-    const stamp2 = makeStamp(2000, 1);
-
-    const target: Record<string, Collection> = {
-      users: {
-        "1": makeDocument({ name: "Alice" }, stamp1),
-      },
-    };
-
-    const source: Record<string, Collection> = {
-      users: {
-        "2": makeDocument({ name: "Bob" }, stamp2),
-      },
-      notes: {
-        "note-1": makeDocument({ content: "Hello" }, stamp2),
-      },
-    };
-
-    const result = mergeCollectionRecords(target, source, {});
-
-    expect(result["users"]?.["1"]).toBeDefined();
-    expect(result["users"]?.["2"]).toBeDefined();
-    expect(result["notes"]?.["note-1"]).toBeDefined();
-  });
-
-  test("adds new collections from source", () => {
-    const stamp = makeStamp(1000, 1);
-
-    const target: Record<string, Collection> = {};
-    const source: Record<string, Collection> = {
-      users: {
-        "1": makeDocument({ name: "Alice" }, stamp),
-      },
-    };
-
-    const result = mergeCollectionRecords(target, source, {});
-
-    expect(result["users"]).toBeDefined();
-    expect(result["users"]?.["1"]).toBeDefined();
   });
 });

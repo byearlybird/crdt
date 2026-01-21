@@ -33,21 +33,3 @@ export function mergeCollections(
 
   return mergedCollection;
 }
-export function mergeCollectionRecords(
-  target: Record<string, Collection>,
-  source: Record<string, Collection>,
-  tombstones: Tombstones,
-): Record<string, Collection> {
-  const result: Record<string, Collection> = { ...target };
-
-  for (const [collectionName, sourceCollection] of Object.entries(source)) {
-    const targetCollection = result[collectionName];
-    if (targetCollection) {
-      result[collectionName] = mergeCollections(targetCollection, sourceCollection, tombstones);
-    } else {
-      result[collectionName] = sourceCollection;
-    }
-  }
-
-  return result;
-}
