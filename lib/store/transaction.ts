@@ -1,37 +1,16 @@
 import { validate } from "./schema";
 import { makeDocument, parseDocument, mergeDocuments, type DocumentId } from "../core";
 import type { Document } from "../core/document";
-import type {
-  Input,
-  Output,
-  AnyObject,
-  CollectionConfig,
-  StoreConfig,
-  CollectionName,
-} from "./schema";
+import type { Input, AnyObject, CollectionConfig, StoreConfig, CollectionName } from "./schema";
 import type { Tombstones } from "../core/tombstone";
 import type { StoreChangeEvent } from "./store";
-import {
-  createReadHandle,
-  getCollectionConfig,
-  getCollectionDocuments,
-  createHandleProxy,
-  type HandleCache,
-} from "./handles";
-
-export type ReadHandle<T extends CollectionConfig<AnyObject>> = {
-  get(id: DocumentId): Output<T["schema"]> | undefined;
-  list(): Output<T["schema"]>[];
-};
+import { createHandleProxy } from "./handles";
+import { createReadHandle, type ReadHandle } from "./read";
 
 export type MutateHandle<T extends CollectionConfig<AnyObject>> = ReadHandle<T> & {
   add(data: Input<T["schema"]>): void;
   update(id: DocumentId, data: Partial<Input<T["schema"]>>): void;
   remove(id: DocumentId): void;
-};
-
-export type ReadHandles<T extends StoreConfig> = {
-  [N in CollectionName<T>]: ReadHandle<T[N]>;
 };
 
 export type MutateHandles<T extends StoreConfig> = {
@@ -79,7 +58,7 @@ function createMutateHandle<C extends CollectionConfig<AnyObject>>(
   };
 }
 
-export type TransactionDependencies<T extends StoreConfig> = {
+export type TransactionDependencies = {
   configs: Map<string, CollectionConfig<AnyObject>>;
   documents: Record<string, Record<DocumentId, Document>>;
   tombstones: Tombstones;
@@ -87,7 +66,6 @@ export type TransactionDependencies<T extends StoreConfig> = {
 };
 
 export type TransactionChanges<T extends StoreConfig> = {
-  accessed: string[];
   documents: Record<string, Record<DocumentId, Document>>;
   tombstones: Tombstones;
   event: StoreChangeEvent<T>;
@@ -98,81 +76,48 @@ export type TransactionResult<T extends StoreConfig, R> = {
   changes: TransactionChanges<T> | null;
 };
 
-type TransactionState = {
-  accessed: Set<string>;
-  documents: Record<string, Record<DocumentId, Document>>;
-  tombstones: Tombstones;
-  changed: Set<string>;
-  handleCache: HandleCache;
-};
+export function executeTransaction<T extends StoreConfig, R>(
+  callback: (handles: MutateHandles<T>) => R,
+  deps: TransactionDependencies,
+): TransactionResult<T, R> {
+  const documents: Record<string, Record<DocumentId, Document>> = {};
+  const tombstones: Tombstones = { ...deps.tombstones };
+  const changed = new Set<string>();
 
-function initializeCollection(
-  collectionName: string,
-  state: TransactionState,
-  deps: TransactionDependencies<any>,
-): void {
-  if (state.accessed.has(collectionName)) {
-    return;
-  }
+  const handles = createHandleProxy<MutateHandles<T>>(deps.configs, (collectionName, target) => {
+    // Copy-on-write: isolate collection documents for mutation
+    documents[collectionName] = { ...deps.documents[collectionName]! };
+    const config = deps.configs.get(collectionName)!;
 
-  state.accessed.add(collectionName);
+    target[collectionName] = createMutateHandle(
+      config,
+      documents[collectionName]!,
+      tombstones,
+      deps.tick,
+      () => changed.add(collectionName),
+    );
+  });
 
-  const sourceDocs = getCollectionDocuments(collectionName, deps.documents);
-  state.documents[collectionName] = { ...sourceDocs };
+  const value = callback(handles);
 
-  const config = getCollectionConfig(collectionName, deps.configs);
-  const documents = state.documents[collectionName]!;
-
-  state.handleCache[collectionName] = createMutateHandle(
-    config,
-    documents,
-    state.tombstones,
-    deps.tick,
-    () => state.changed.add(collectionName),
-  );
-}
-
-function buildChanges<T extends StoreConfig>(
-  state: TransactionState,
-): TransactionChanges<T> | null {
-  if (state.changed.size === 0) {
-    return null;
+  // Build changes only if something was modified
+  if (changed.size === 0) {
+    return { value, changes: null };
   }
 
   const event: StoreChangeEvent<T> = {};
-  for (const collectionName of state.changed) {
+  const changedDocuments: Record<string, Record<DocumentId, Document>> = {};
+  for (const collectionName of changed) {
     event[collectionName as keyof T] = true;
+    changedDocuments[collectionName] = documents[collectionName]!;
   }
 
   return {
-    accessed: Array.from(state.accessed),
-    documents: state.documents,
-    tombstones: state.tombstones,
-    event,
+    value,
+    changes: {
+      documents: changedDocuments,
+      tombstones,
+      event,
+    },
   };
-}
-
-export function executeTransaction<T extends StoreConfig, R>(
-  callback: (handles: MutateHandles<T>) => R,
-  deps: TransactionDependencies<T>,
-): TransactionResult<T, R> {
-  const state: TransactionState = {
-    accessed: new Set<string>(),
-    documents: {},
-    tombstones: { ...deps.tombstones },
-    changed: new Set<string>(),
-    handleCache: {},
-  };
-
-  const handles = createHandleProxy<MutateHandles<T>>(
-    deps.configs,
-    state.accessed,
-    state.handleCache,
-    (collectionName) => initializeCollection(collectionName, state, deps),
-  );
-  const value = callback(handles);
-
-  const changes = buildChanges<T>(state);
-
-  return { value, changes };
 }

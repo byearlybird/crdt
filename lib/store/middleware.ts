@@ -1,10 +1,10 @@
 import type { StoreConfig } from "./schema";
-import type { StoreChangeEvent, StoreSnapshot } from "./store";
+import type { StoreChangeEvent, StoreState } from "./store";
 
 export type MiddlewareContext<T extends StoreConfig> = {
   subscribe: (listener: (event: StoreChangeEvent<T>) => void) => () => void;
-  getSnapshot: () => StoreSnapshot;
-  setSnapshot: (snapshot: StoreSnapshot, options?: { silent?: boolean }) => void;
+  getState: () => StoreState;
+  setState: (snapshot: StoreState, options?: { silent?: boolean }) => void;
 };
 
 export type StoreMiddleware<T extends StoreConfig> = (
@@ -14,9 +14,9 @@ export type StoreMiddleware<T extends StoreConfig> = (
 export type MiddlewareManager<T extends StoreConfig> = {
   use: (middleware: StoreMiddleware<T>) => void;
   init: (
-    onChange: (listener: (event: StoreChangeEvent<T>) => void) => () => void,
-    getSnapshot: () => StoreSnapshot,
-    setSnapshot: (snapshot: StoreSnapshot, options?: { silent?: boolean }) => void,
+    listen: (listener: (event: StoreChangeEvent<T>) => void) => () => void,
+    getState: () => StoreState,
+    setState: (snapshot: StoreState, options?: { silent?: boolean }) => void,
   ) => Promise<void>;
   dispose: () => Promise<void>;
 };
@@ -35,24 +35,24 @@ export function createMiddlewareManager<T extends StoreConfig>(): MiddlewareMana
   }
 
   async function init(
-    onChange: (listener: (event: StoreChangeEvent<T>) => void) => () => void,
-    getSnapshot: () => StoreSnapshot,
-    setSnapshot: (snapshot: StoreSnapshot, options?: { silent?: boolean }) => void,
+    listen: (listener: (event: StoreChangeEvent<T>) => void) => () => void,
+    getState: () => StoreState,
+    setState: (snapshot: StoreState, options?: { silent?: boolean }) => void,
   ): Promise<void> {
     if (isInitialized) {
       throw new Error("Middleware already initialized");
     }
 
     const subscribe = (listener: (event: StoreChangeEvent<T>) => void) => {
-      const unsubscribe = onChange(listener);
+      const unsubscribe = listen(listener);
       unsubscribeFns.push(unsubscribe);
       return unsubscribe;
     };
 
     const context: MiddlewareContext<T> = {
       subscribe,
-      getSnapshot,
-      setSnapshot,
+      getState,
+      setState,
     };
 
     for (const middleware of middlewares) {

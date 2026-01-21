@@ -1,4 +1,4 @@
-import { mergeCollections, type Collection, type StoreSnapshot } from "../core";
+import { mergeCollections, type Collection, type StoreState } from "../core";
 import type { Clock } from "../core/clock";
 import { advanceClock, makeStamp } from "../core/clock";
 import type { AnyObject, CollectionConfig, StoreConfig } from "./schema";
@@ -6,14 +6,13 @@ import type { Tombstones } from "../core/tombstone";
 import { mergeTombstones } from "../core/tombstone";
 import {
   executeTransaction,
-  type ReadHandles,
   type MutateHandles,
   type TransactionDependencies,
 } from "./transaction";
-import { createReadHandle, createHandleProxy, type HandleCache } from "./handles";
+import { createReadHandles, type ReadHandles } from "./read";
 import { createMiddlewareManager, type StoreMiddleware } from "./middleware";
 
-export type { StoreSnapshot } from "../core";
+export type { StoreState } from "../core";
 
 export type StoreChangeEvent<T extends StoreConfig> = {
   [K in keyof T]?: true;
@@ -61,33 +60,20 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     state.collections[name] = {};
   }
 
-  const getDeps = (): TransactionDependencies<T> => ({
+  const getDeps = (): TransactionDependencies => ({
     configs,
     documents: state.collections,
     tombstones: state.tombstones,
     tick,
   });
 
-  const onChange = (listener: (event: StoreChangeEvent<T>) => void): (() => void) => {
+  const listen = (listener: (event: StoreChangeEvent<T>) => void): (() => void) => {
     listeners.add(listener);
     return () => listeners.delete(listener);
   };
 
   const read = <R>(callback: (handles: ReadHandles<T>) => R): R => {
-    const accessed = new Set<string>();
-    const handleCache: HandleCache = {};
-
-    const handles = createHandleProxy<ReadHandles<T>>(
-      configs,
-      accessed,
-      handleCache,
-      (collectionName) => {
-        accessed.add(collectionName);
-        const documents = state.collections[collectionName] ?? {};
-        handleCache[collectionName] = createReadHandle(documents, state.tombstones);
-      },
-    );
-
+    const handles = createReadHandles<T>(configs, state);
     return callback(handles);
   };
 
@@ -97,7 +83,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     if (result.changes) {
       state.tombstones = mergeTombstones(state.tombstones, result.changes.tombstones);
 
-      for (const collectionName of result.changes.accessed) {
+      for (const collectionName of Object.keys(result.changes.documents)) {
         const current = state.collections[collectionName]!;
         const updated = result.changes.documents[collectionName]!;
         state.collections[collectionName] = mergeCollections(current, updated, state.tombstones);
@@ -109,7 +95,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     return result.value;
   };
 
-  const getSnapshot = (): StoreSnapshot => {
+  const getState = (): StoreState => {
     return {
       clock: state.clock,
       collections: { ...state.collections },
@@ -117,37 +103,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     };
   };
 
-  const merge = (snapshot: StoreSnapshot, options?: { silent?: boolean }): void => {
-    advance(snapshot.clock.ms, snapshot.clock.seq);
-    state.tombstones = mergeTombstones(state.tombstones, snapshot.tombstones);
-
-    const event: StoreChangeEvent<T> = {};
-
-    for (const [name, collectionData] of Object.entries(snapshot.collections)) {
-      if (!state.collections[name]) {
-        state.collections[name] = {};
-      }
-
-      const filtered: Collection = {};
-      for (const [id, doc] of Object.entries(collectionData)) {
-        if (!state.tombstones[id]) {
-          filtered[id] = doc;
-        }
-      }
-
-      const current = state.collections[name];
-      const merged = mergeCollections(current, filtered, state.tombstones);
-      state.collections[name] = merged;
-
-      event[name as keyof T] = true;
-    }
-
-    if (!options?.silent && Object.keys(event).length > 0) {
-      notifyListeners(event, listeners);
-    }
-  };
-
-  const setSnapshot = (snapshot: StoreSnapshot, options?: { silent?: boolean }): void => {
+  const setState = (snapshot: StoreState, options?: { silent?: boolean }): void => {
     advance(snapshot.clock.ms, snapshot.clock.seq);
     state.tombstones = snapshot.tombstones;
 
@@ -169,7 +125,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
       throw new Error("Store already initialized");
     }
 
-    await middlewareManager.init(onChange, getSnapshot, setSnapshot);
+    await middlewareManager.init(listen, getState, setState);
 
     isInitialized = true;
   };

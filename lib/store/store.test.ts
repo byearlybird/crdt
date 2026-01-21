@@ -435,7 +435,7 @@ describe("middleware", () => {
     expect(changes).toContain("users");
   });
 
-  test("middleware can load data via setSnapshot", async () => {
+  test("middleware can load data via setState", async () => {
     const snapshot = {
       clock: { ms: 1000, seq: 0 },
       collections: {
@@ -450,8 +450,8 @@ describe("middleware", () => {
       tombstones: {},
     };
 
-    const middleware = ({ setSnapshot }: any) => {
-      setSnapshot(snapshot, { silent: true });
+    const middleware = ({ setState }: any) => {
+      setState(snapshot, { silent: true });
     };
 
     const store = createStore({
@@ -473,10 +473,10 @@ describe("middleware", () => {
     });
   });
 
-  test("middleware can access getSnapshot", async () => {
+  test("middleware can access getState", async () => {
     let capturedSnapshot: any = null;
-    const middleware = ({ getSnapshot }: any) => {
-      capturedSnapshot = getSnapshot();
+    const middleware = ({ getState }: any) => {
+      capturedSnapshot = getState();
     };
 
     const store = createStore({
@@ -631,7 +631,7 @@ describe("middleware", () => {
     expect(disposeOrder).toEqual(["async"]);
   });
 
-  test("setSnapshot replaces store state", () => {
+  test("setState replaces store state", () => {
     const store = createStore({
       collections: {
         users: {
@@ -661,17 +661,17 @@ describe("middleware", () => {
       tombstones: {},
     };
 
-    // Use middleware to access setSnapshot
-    let setSnapshotFn: any = null;
-    const middleware = ({ setSnapshot }: any) => {
-      setSnapshotFn = setSnapshot;
+    // Use middleware to access setState
+    let setStateFn: any = null;
+    const middleware = ({ setState }: any) => {
+      setStateFn = setState;
     };
 
     store.use(middleware);
     store.init();
 
     // Apply new snapshot
-    setSnapshotFn(newSnapshot, { silent: true });
+    setStateFn(newSnapshot, { silent: true });
 
     // Verify old data is gone and new data is present
     expect(store.read(({ users }) => users.get("1"))).toBeUndefined();
@@ -682,7 +682,7 @@ describe("middleware", () => {
     });
   });
 
-  test("setSnapshot advances clock", () => {
+  test("setState advances clock", () => {
     const store = createStore({
       collections: {
         users: {
@@ -692,17 +692,17 @@ describe("middleware", () => {
       },
     });
 
-    let setSnapshotFn: any = null;
-    let getSnapshotFn: any = null;
-    const middleware = ({ setSnapshot, getSnapshot }: any) => {
-      setSnapshotFn = setSnapshot;
-      getSnapshotFn = getSnapshot;
+    let setStateFn: any = null;
+    let getStateFn: any = null;
+    const middleware = ({ setState, getState }: any) => {
+      setStateFn = setState;
+      getStateFn = getState;
     };
 
     store.use(middleware);
     store.init();
 
-    const initial = getSnapshotFn();
+    const initial = getStateFn();
     const initialMs = initial.clock.ms;
 
     const newSnapshot = {
@@ -711,14 +711,14 @@ describe("middleware", () => {
       tombstones: {},
     };
 
-    setSnapshotFn(newSnapshot, { silent: true });
+    setStateFn(newSnapshot, { silent: true });
 
-    const after = getSnapshotFn();
+    const after = getStateFn();
     expect(after.clock.ms).toBe(initialMs + 1000);
     expect(after.clock.seq).toBeGreaterThanOrEqual(5);
   });
 
-  test("setSnapshot notifies listeners unless silent", () => {
+  test("setState notifies listeners unless silent", () => {
     const store = createStore({
       collections: {
         users: {
@@ -731,9 +731,9 @@ describe("middleware", () => {
     let notified = false;
     let unsubscribe: (() => void) | null = null;
 
-    let setSnapshotFn: any = null;
-    const middleware = ({ setSnapshot, subscribe }: any) => {
-      setSnapshotFn = setSnapshot;
+    let setStateFn: any = null;
+    const middleware = ({ setState, subscribe }: any) => {
+      setStateFn = setState;
       unsubscribe = subscribe((event: any) => {
         if (Object.keys(event).length > 0) {
           notified = true;
@@ -760,12 +760,12 @@ describe("middleware", () => {
 
     // Silent should not notify
     notified = false;
-    setSnapshotFn(snapshot, { silent: true });
+    setStateFn(snapshot, { silent: true });
     expect(notified).toBe(false);
 
     // Not silent should notify
     notified = false;
-    setSnapshotFn(snapshot, { silent: false });
+    setStateFn(snapshot, { silent: false });
     expect(notified).toBe(true);
 
     if (unsubscribe) {
@@ -974,7 +974,7 @@ describe("mergeSnapshots", () => {
 
     const result = mergeSnapshots(local, remote);
     // Document should not be added because it's tombstoned
-    expect(result.merged.collections.users["1"]).toBeUndefined();
+    expect(result.merged.collections  ["users"]?["1"]).toBeUndefined();
     expect(result.diff.collections.users).toBeUndefined(); // No changes
   });
 

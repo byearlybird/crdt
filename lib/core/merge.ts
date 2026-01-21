@@ -5,7 +5,7 @@ import { advanceClock } from "./clock";
 import { mergeCollections } from "./collection";
 import { mergeTombstones } from "./tombstone";
 
-export type StoreSnapshot = {
+export type StoreState = {
   clock: Clock;
   collections: Record<string, Collection>;
   tombstones: Tombstones;
@@ -22,13 +22,13 @@ export type SnapshotDiff = {
 };
 
 export type MergeResult = {
-  merged: StoreSnapshot;
+  merged: StoreState;
   diff: SnapshotDiff;
 };
 
 export function mergeSnapshots(
-  local: StoreSnapshot,
-  remote: StoreSnapshot,
+  local: StoreState,
+  remote: StoreState,
 ): MergeResult {
   // Merge clocks
   const mergedClock = advanceClock(local.clock, remote.clock);

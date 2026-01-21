@@ -156,11 +156,11 @@ Snapshots and merging are available through middleware. Here's an example using 
 
 ```typescript
 // Create a sync middleware
-const syncMiddleware = ({ getSnapshot, merge, subscribe }) => {
+const syncMiddleware = ({ getState, merge, subscribe }) => {
   // Subscribe to changes and send snapshots to server
   subscribe((event) => {
     if (Object.keys(event).length > 0) {
-      const snapshot = getSnapshot();
+      const snapshot = getState();
       sendToServer(snapshot);
     }
   });
@@ -295,7 +295,7 @@ const schema = type({ id: "string", name: "string" });
 - `transact(callback)` - Execute mutations within a transaction. The callback receives handles for each collection with `add()`, `update()`, and `remove()` methods.
 - `read(callback)` - Read data synchronously. The callback receives read-only handles for each collection with `get(id)` and `list()` methods.
 - `subscribe(query, subscriber)` - Subscribe to a query. The subscriber is called whenever the query's dependencies change.
-- `use(middleware)` - Add middleware to the store (chainable). Middleware can access `getSnapshot()`, `merge()`, and `subscribe()`.
+- `use(middleware)` - Add middleware to the store (chainable). Middleware can access `getState()`, `merge()`, and `subscribe()`.
 - `init()` - Initialize the store and run middleware (async).
 - `dispose()` - Clean up middleware subscriptions (async).
 
