@@ -11,8 +11,8 @@ export function makeDocument(fields: Record<string, any>, stamp: string): Docume
   return flatten(fields, (value) => ({ "~value": value, "~stamp": stamp }));
 }
 
-export function parseDocument(document: Document): Record<string, any> {
-  return unflatten(document, (field) => field["~value"]);
+export function parseDocument<T = Record<string, any>>(document: Document): T {
+  return unflatten(document, (field) => field["~value"]) as T;
 }
 
 export function mergeDocuments(target: Document, source: Document): Document {

@@ -1,7 +1,7 @@
 import { mergeCollections, type Collection } from "../core";
 import type { Clock } from "../core/clock";
 import { advanceClock, makeStamp } from "../core/clock";
-import type { AnyObject, CollectionConfig } from "./schema";
+import type { AnyObject, CollectionConfig, StoreConfig } from "./schema";
 import type { Tombstones } from "../core/tombstone";
 import { mergeTombstones } from "../core/tombstone";
 import {
@@ -21,21 +21,21 @@ export type StoreSnapshot = {
   tombstones: Tombstones;
 };
 
-export type StoreChangeEvent<T extends Record<string, CollectionConfig<AnyObject>>> = {
+export type StoreChangeEvent<T extends StoreConfig> = {
   [K in keyof T]?: true;
 };
 
-export type MiddlewareContext<T extends Record<string, CollectionConfig<AnyObject>>> = {
+export type MiddlewareContext<T extends StoreConfig> = {
   subscribe: (listener: (event: StoreChangeEvent<T>) => void) => () => void;
   getSnapshot: () => StoreSnapshot;
   merge: (snapshot: StoreSnapshot, options?: { silent?: boolean }) => void;
 };
 
-export type StoreMiddleware<T extends Record<string, CollectionConfig<AnyObject>>> = (
+export type StoreMiddleware<T extends StoreConfig> = (
   context: MiddlewareContext<T>,
 ) => (() => void | Promise<void>) | void | Promise<void>;
 
-export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
+export type StoreAPI<T extends StoreConfig> = {
   // One-off read (returns value directly, no reactivity)
   read<R>(callback: (handles: ReadHandles<T>) => R): R;
 
@@ -51,7 +51,7 @@ export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
   dispose(): Promise<void>;
 };
 
-export function createStore<T extends Record<string, CollectionConfig<AnyObject>>>(config: {
+export function createStore<T extends StoreConfig>(config: {
   collections: T;
 }): StoreAPI<T> {
   const state = {
