@@ -1,6 +1,6 @@
 import { parseDocument, type DocumentId } from "../core";
 import type { Document } from "../core/document";
-import type { AnyObject, CollectionConfig } from "./schema";
+import type { AnyObject, CollectionConfig, StoreConfig } from "./schema";
 import type { Tombstones } from "../core/tombstone";
 import type { ReadHandles } from "./transaction";
 
@@ -17,7 +17,7 @@ type ActiveQuery<R> = {
   execute: () => R;
 };
 
-export type QueryDependencies<T extends Record<string, CollectionConfig<AnyObject>>> = {
+export type QueryDependencies<T extends StoreConfig> = {
   configs: Map<string, CollectionConfig<AnyObject>>;
   documents: Record<string, Record<DocumentId, Document>>;
   tombstones: Tombstones;
@@ -49,10 +49,7 @@ function createReadHandle(
   };
 }
 
-export function createQuery<
-  T extends Record<string, CollectionConfig<AnyObject>>,
-  R,
->(
+export function createQuery<T extends StoreConfig, R>(
   callback: (handles: ReadHandles<T>) => R,
   deps: QueryDependencies<T>,
   queryManager: QueryManager,

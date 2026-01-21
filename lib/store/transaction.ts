@@ -1,7 +1,7 @@
 import { validate } from "./schema";
 import { makeDocument, parseDocument, mergeDocuments, type DocumentId } from "../core";
 import type { Document } from "../core/document";
-import type { Input, Output, AnyObject, CollectionConfig } from "./schema";
+import type { Input, Output, AnyObject, CollectionConfig, StoreConfig, CollectionName } from "./schema";
 import type { Tombstones } from "../core/tombstone";
 import type { StoreChangeEvent } from "./store";
 
@@ -19,13 +19,13 @@ export type MutateHandle<T extends CollectionConfig<AnyObject>> = ReadHandle<T> 
 };
 
 // Maps collection names to read-only handles (all collections available via proxy)
-export type ReadHandles<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  [N in keyof T & string]: ReadHandle<T[N]>;
+export type ReadHandles<T extends StoreConfig> = {
+  [N in CollectionName<T>]: ReadHandle<T[N]>;
 };
 
 // Maps collection names to read-write handles (all collections available via proxy)
-export type MutateHandles<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  [N in keyof T & string]: MutateHandle<T[N]>;
+export type MutateHandles<T extends StoreConfig> = {
+  [N in CollectionName<T>]: MutateHandle<T[N]>;
 };
 
 function createReadHandle<C extends CollectionConfig<AnyObject>>(
@@ -37,14 +37,14 @@ function createReadHandle<C extends CollectionConfig<AnyObject>>(
       if (txTombstones[id]) return undefined;
       const doc = txDocs[id];
       if (!doc) return undefined;
-      return parseDocument(doc) as Output<C["schema"]>;
+      return parseDocument<Output<C["schema"]>>(doc);
     },
 
     list() {
       const resultDocs: Output<C["schema"]>[] = [];
       for (const [id, doc] of Object.entries(txDocs)) {
         if (doc && !txTombstones[id]) {
-          const parsed = parseDocument(doc) as Output<C["schema"]>;
+          const parsed = parseDocument<Output<C["schema"]>>(doc);
           resultDocs.push(parsed);
         }
       }
@@ -94,7 +94,7 @@ function createMutateHandle<C extends CollectionConfig<AnyObject>>(
   };
 }
 
-export type TransactionDependencies<T extends Record<string, CollectionConfig<AnyObject>>> = {
+export type TransactionDependencies<T extends StoreConfig> = {
   configs: Map<string, CollectionConfig<AnyObject>>;
   documents: Record<string, Record<DocumentId, Document>>;
   tombstones: Tombstones;
@@ -105,7 +105,7 @@ export type TransactionDependencies<T extends Record<string, CollectionConfig<An
 };
 
 export function executeTransaction<
-  T extends Record<string, CollectionConfig<AnyObject>>,
+  T extends StoreConfig,
   R,
   Mode extends "read" | "mutate" = "mutate",
 >(

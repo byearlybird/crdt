@@ -21,13 +21,6 @@ export function validate<T extends StandardSchemaV1>(
  */
 export type AnyObject = StandardSchemaV1<Record<string, any>>;
 
-export type SchemaWithId<T extends AnyObject> =
-  StandardSchemaV1.InferOutput<T> extends {
-    id: any;
-  }
-    ? T
-    : never;
-
 export type Output<T extends AnyObject> = StandardSchemaV1.InferOutput<T>;
 
 export type Input<T extends AnyObject> = StandardSchemaV1.InferInput<T>;
@@ -36,3 +29,13 @@ export type CollectionConfig<T extends AnyObject> = {
   schema: T;
   keyPath: keyof Output<T> & string;
 };
+
+/**
+ * Configuration for all collections in a store
+ */
+export type StoreConfig = Record<string, CollectionConfig<AnyObject>>;
+
+/**
+ * Valid collection name from a store config
+ */
+export type CollectionName<T extends StoreConfig> = keyof T & string;
