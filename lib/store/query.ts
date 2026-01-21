@@ -36,14 +36,12 @@ function createReadHandle(
       if (!doc) return undefined;
       return parseDocument(doc);
     },
-    list(options?: { where?: (item: any) => boolean }) {
+    list() {
       const resultDocs: any[] = [];
       for (const [id, doc] of Object.entries(txDocs)) {
         if (doc && !txTombstones[id]) {
           const parsed = parseDocument(doc);
-          if (!options?.where || options.where(parsed)) {
-            resultDocs.push(parsed);
-          }
+          resultDocs.push(parsed);
         }
       }
       return resultDocs;

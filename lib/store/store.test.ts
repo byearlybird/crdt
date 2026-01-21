@@ -243,7 +243,7 @@ describe("createStore", () => {
 
     // Demonstrate filtering with standard array methods
     const adults = store
-      .query(({ users }) => users.list({ where: (user) => (user.profile?.age ?? 0) >= 30 }))
+      .query(({ users }) => users.list().filter((user) => (user.profile?.age ?? 0) >= 30))
       .result();
     expect(adults).toHaveLength(2);
     expect(adults.find((u) => u.name === "Alice")).toBeDefined();
@@ -789,7 +789,7 @@ describe("createStore", () => {
       });
 
       const query = store.query(({ users }) =>
-        users.list({ where: (user) => (user.profile?.age ?? 0) >= 30 }),
+        users.list().filter((user) => (user.profile?.age ?? 0) >= 30),
       );
       const results: any[] = [];
 
