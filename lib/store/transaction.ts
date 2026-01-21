@@ -8,7 +8,7 @@ import type { StoreChangeEvent } from "./store";
 // Read-only handle for a single collection (no mutations)
 export type ReadHandle<T extends CollectionConfig<AnyObject>> = {
   get(id: DocumentId): Output<T["schema"]> | undefined;
-  list(options?: { where?: (item: Output<T["schema"]>) => boolean }): Output<T["schema"]>[];
+  list(): Output<T["schema"]>[];
 };
 
 // Read-write handle for a single collection (includes mutations)
@@ -40,14 +40,12 @@ function createReadHandle<C extends CollectionConfig<AnyObject>>(
       return parseDocument(doc) as Output<C["schema"]>;
     },
 
-    list(options) {
+    list() {
       const resultDocs: Output<C["schema"]>[] = [];
       for (const [id, doc] of Object.entries(txDocs)) {
         if (doc && !txTombstones[id]) {
           const parsed = parseDocument(doc) as Output<C["schema"]>;
-          if (!options?.where || options.where(parsed)) {
-            resultDocs.push(parsed);
-          }
+          resultDocs.push(parsed);
         }
       }
       return resultDocs;

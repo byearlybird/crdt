@@ -23,33 +23,6 @@ export type QueryDependencies<T extends Record<string, CollectionConfig<AnyObjec
   tombstones: Tombstones;
 };
 
-// Helper to check if two values are deeply equal
-function deepEqual(a: any, b: any): boolean {
-  if (a === b) return true;
-  if (a == null || b == null) return false;
-  if (typeof a !== typeof b) return false;
-  if (typeof a !== "object") return false;
-
-  if (Array.isArray(a) !== Array.isArray(b)) return false;
-
-  if (Array.isArray(a)) {
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) {
-      if (!deepEqual(a[i], b[i])) return false;
-    }
-    return true;
-  }
-
-  const keysA = Object.keys(a);
-  const keysB = Object.keys(b);
-  if (keysA.length !== keysB.length) return false;
-
-  for (const key of keysA) {
-    if (!keysB.includes(key)) return false;
-    if (!deepEqual(a[key], b[key])) return false;
-  }
-  return true;
-}
 
 // Helper function to create read handle
 function createReadHandle(
@@ -63,14 +36,12 @@ function createReadHandle(
       if (!doc) return undefined;
       return parseDocument(doc);
     },
-    list(options?: { where?: (item: any) => boolean }) {
+    list() {
       const resultDocs: any[] = [];
       for (const [id, doc] of Object.entries(txDocs)) {
         if (doc && !txTombstones[id]) {
           const parsed = parseDocument(doc);
-          if (!options?.where || options.where(parsed)) {
-            resultDocs.push(parsed);
-          }
+          resultDocs.push(parsed);
         }
       }
       return resultDocs;
@@ -216,11 +187,8 @@ export class QueryManager {
 
       if (shouldReexecute && query.subscribers.size > 0) {
         const newResult = query.execute();
-        // Only notify if result actually changed
-        if (!deepEqual(query.lastResult, newResult)) {
-          query.lastResult = newResult;
-          query.subscribers.forEach((subscriber) => subscriber(newResult));
-        }
+        query.lastResult = newResult;
+        query.subscribers.forEach((subscriber) => subscriber(newResult));
       }
     }
   }

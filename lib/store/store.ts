@@ -14,8 +14,6 @@ import { createQuery, QueryManager, type QueryObject } from "./query";
 
 // Re-export transaction types for public API
 export type { ReadHandle, MutateHandle, ReadHandles, MutateHandles } from "./transaction";
-// Re-export query types for public API
-export type { QueryObject } from "./query";
 
 export type StoreSnapshot = {
   clock: Clock;
@@ -33,14 +31,16 @@ export type MiddlewareContext<T extends Record<string, CollectionConfig<AnyObjec
   merge: (snapshot: StoreSnapshot, options?: { silent?: boolean }) => void;
 };
 
-export type StoreMiddleware<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  init?: (context: MiddlewareContext<T>) => Promise<void> | void;
-  dispose?: () => Promise<void> | void;
-};
+export type StoreMiddleware<T extends Record<string, CollectionConfig<AnyObject>>> = (
+  context: MiddlewareContext<T>,
+) => (() => void | Promise<void>) | void | Promise<void>;
 
 export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  // Read-only reactive query (returns query object with result() and subscribe())
-  query<R>(callback: (handles: ReadHandles<T>) => R): QueryObject<R>;
+  // One-off read (returns value directly, no reactivity)
+  read<R>(callback: (handles: ReadHandles<T>) => R): R;
+
+  // Reactive subscription (re-executes when dependencies change)
+  subscribe<R>(query: (handles: ReadHandles<T>) => R, subscriber: (value: R) => void): () => void;
 
   // Read-write transaction (full mutations, rollback on error, lazy collection access)
   transact<R>(callback: (handles: MutateHandles<T>) => R): R;
@@ -68,6 +68,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   const middlewares: StoreMiddleware<T>[] = [];
   let isInitialized = false;
   const unsubscribeFns: (() => void)[] = [];
+  const cleanupFns: (() => void | Promise<void>)[] = [];
 
   const advance = (ms: number, seq: number): void => {
     state.clock = advanceClock(state.clock, { ms, seq });
@@ -115,12 +116,25 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     },
   };
 
-  const queryFn = <R>(callback: (handles: ReadHandles<T>) => R): QueryObject<R> => {
-    return createQuery(
+  const readFn = <R>(callback: (handles: ReadHandles<T>) => R): R => {
+    const query = createQuery(
       callback,
       { configs, documents: state.collections, tombstones: state.tombstones },
       queryManager,
     );
+    return query.result();
+  };
+
+  const subscribeFn = <R>(
+    query: (handles: ReadHandles<T>) => R,
+    subscriber: (value: R) => void,
+  ): (() => void) => {
+    const queryObject = createQuery(
+      query,
+      { configs, documents: state.collections, tombstones: state.tombstones },
+      queryManager,
+    );
+    return queryObject.subscribe(subscriber);
   };
 
   const transactFn = <R>(callback: (handles: MutateHandles<T>) => R): R => {
@@ -209,10 +223,11 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
       merge: mergeFn,
     };
 
-    // Initialize all middleware sequentially in registration order
+    // Call all middleware sequentially and collect cleanup functions
     for (const middleware of middlewares) {
-      if (middleware.init) {
-        await middleware.init(context);
+      const cleanup = await middleware(context);
+      if (cleanup) {
+        cleanupFns.push(cleanup);
       }
     }
 
@@ -220,13 +235,13 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   };
 
   const disposeFn = async (): Promise<void> => {
-    // Dispose in reverse order
-    const reversed = [...middlewares].reverse();
-    for (const middleware of reversed) {
-      if (middleware.dispose) {
-        await middleware.dispose();
-      }
+    // Run cleanups in reverse order
+    const reversed = [...cleanupFns].reverse();
+    for (const cleanup of reversed) {
+      await cleanup();
     }
+
+    cleanupFns.length = 0;
 
     // Unsubscribe all middleware subscriptions
     unsubscribeFns.forEach((fn) => fn());
@@ -236,7 +251,8 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   };
 
   const storeAPI: StoreAPI<T> = {
-    query: queryFn,
+    read: readFn,
+    subscribe: subscribeFn,
     transact: transactFn,
     use(middleware: StoreMiddleware<T>): StoreAPI<T> {
       if (isInitialized) {
