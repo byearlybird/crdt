@@ -7,6 +7,37 @@ export function isDeleted(id: DocumentId, tombstones: Tombstones): boolean {
   return tombstones[id] !== undefined;
 }
 
+export type HandleCache = Record<string, unknown>;
+
+/**
+ * Creates a Proxy that lazily initializes collection handles on first access.
+ * Shared by both transactions and queries.
+ */
+export function createHandleProxy<T>(
+  configs: Map<string, CollectionConfig<AnyObject>>,
+  accessed: Set<string>,
+  handleCache: HandleCache,
+  onAccess: (collectionName: string) => void,
+): T {
+  return new Proxy({} as T, {
+    get(_target, prop: string | symbol) {
+      if (typeof prop !== "string") {
+        return undefined;
+      }
+
+      if (!configs.has(prop)) {
+        throw new Error(`Collection "${prop}" not found`);
+      }
+
+      if (!accessed.has(prop)) {
+        onAccess(prop);
+      }
+
+      return handleCache[prop];
+    },
+  });
+}
+
 export function createReadHandle<C extends CollectionConfig<AnyObject>>(
   documents: Record<DocumentId, Document>,
   tombstones: Tombstones,

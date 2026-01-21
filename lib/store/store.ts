@@ -1,4 +1,4 @@
-import { mergeCollections, type Collection } from "../core";
+import { mergeCollections, type Collection, type StoreSnapshot } from "../core";
 import type { Clock } from "../core/clock";
 import { advanceClock, makeStamp } from "../core/clock";
 import type { AnyObject, CollectionConfig, StoreConfig } from "./schema";
@@ -13,11 +13,7 @@ import {
 import { createQuery } from "./query";
 import { createMiddlewareManager, type StoreMiddleware } from "./middleware";
 
-export type StoreSnapshot = {
-  clock: Clock;
-  collections: Record<string, Collection>;
-  tombstones: Tombstones;
-};
+export type { StoreSnapshot } from "../core";
 
 export type StoreChangeEvent<T extends StoreConfig> = {
   [K in keyof T]?: true;
@@ -66,12 +62,12 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     state.collections[name] = {};
   }
 
-  const deps: TransactionDependencies<T> = {
+  const getDeps = (): TransactionDependencies<T> => ({
     configs,
     documents: state.collections,
     tombstones: state.tombstones,
     tick,
-  };
+  });
 
   const onChange = (listener: (event: StoreChangeEvent<T>) => void): (() => void) => {
     listeners.add(listener);
@@ -100,7 +96,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
   };
 
   const transact = <R>(callback: (handles: MutateHandles<T>) => R): R => {
-    const result = executeTransaction("mutate", callback, deps);
+    const result = executeTransaction("mutate", callback, getDeps());
 
     if (result.changes) {
       state.tombstones = mergeTombstones(state.tombstones, result.changes.tombstones);
@@ -155,12 +151,29 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     }
   };
 
+  const setSnapshot = (snapshot: StoreSnapshot, options?: { silent?: boolean }): void => {
+    advance(snapshot.clock.ms, snapshot.clock.seq);
+    state.tombstones = snapshot.tombstones;
+
+    const event: StoreChangeEvent<T> = {};
+
+    // Replace collections - ensure all collections from snapshot exist
+    for (const [name, collectionData] of Object.entries(snapshot.collections)) {
+      state.collections[name] = collectionData;
+      event[name as keyof T] = true;
+    }
+
+    if (!options?.silent && Object.keys(event).length > 0) {
+      notifyListeners(event, listeners);
+    }
+  };
+
   const init = async (): Promise<void> => {
     if (isInitialized) {
       throw new Error("Store already initialized");
     }
 
-    await middlewareManager.init(onChange, getSnapshot, merge);
+    await middlewareManager.init(onChange, getSnapshot, setSnapshot);
 
     isInitialized = true;
   };

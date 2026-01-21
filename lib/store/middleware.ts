@@ -4,7 +4,7 @@ import type { StoreChangeEvent, StoreSnapshot } from "./store";
 export type MiddlewareContext<T extends StoreConfig> = {
   subscribe: (listener: (event: StoreChangeEvent<T>) => void) => () => void;
   getSnapshot: () => StoreSnapshot;
-  merge: (snapshot: StoreSnapshot, options?: { silent?: boolean }) => void;
+  setSnapshot: (snapshot: StoreSnapshot, options?: { silent?: boolean }) => void;
 };
 
 export type StoreMiddleware<T extends StoreConfig> = (
@@ -16,7 +16,7 @@ export type MiddlewareManager<T extends StoreConfig> = {
   init: (
     onChange: (listener: (event: StoreChangeEvent<T>) => void) => () => void,
     getSnapshot: () => StoreSnapshot,
-    merge: (snapshot: StoreSnapshot, options?: { silent?: boolean }) => void,
+    setSnapshot: (snapshot: StoreSnapshot, options?: { silent?: boolean }) => void,
   ) => Promise<void>;
   dispose: () => Promise<void>;
 };
@@ -37,7 +37,7 @@ export function createMiddlewareManager<T extends StoreConfig>(): MiddlewareMana
   async function init(
     onChange: (listener: (event: StoreChangeEvent<T>) => void) => () => void,
     getSnapshot: () => StoreSnapshot,
-    merge: (snapshot: StoreSnapshot, options?: { silent?: boolean }) => void,
+    setSnapshot: (snapshot: StoreSnapshot, options?: { silent?: boolean }) => void,
   ): Promise<void> {
     if (isInitialized) {
       throw new Error("Middleware already initialized");
@@ -52,7 +52,7 @@ export function createMiddlewareManager<T extends StoreConfig>(): MiddlewareMana
     const context: MiddlewareContext<T> = {
       subscribe,
       getSnapshot,
-      merge,
+      setSnapshot,
     };
 
     for (const middleware of middlewares) {

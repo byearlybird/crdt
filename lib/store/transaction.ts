@@ -12,10 +12,11 @@ import type {
 import type { Tombstones } from "../core/tombstone";
 import type { StoreChangeEvent } from "./store";
 import {
-  isDeleted,
   createReadHandle,
   getCollectionConfig,
   getCollectionDocuments,
+  createHandleProxy,
+  type HandleCache,
 } from "./handles";
 
 export type ReadHandle<T extends CollectionConfig<AnyObject>> = {
@@ -102,7 +103,7 @@ type TransactionState = {
   documents: Record<string, Record<DocumentId, Document>>;
   tombstones: Tombstones;
   changed: Set<string>;
-  handleCache: Record<string, any>;
+  handleCache: HandleCache;
 };
 
 function initializeCollection(
@@ -134,30 +135,6 @@ function initializeCollection(
       () => state.changed.add(collectionName),
     );
   }
-}
-
-function createHandleProxy<T extends StoreConfig, Mode extends "read" | "mutate">(
-  state: TransactionState,
-  deps: TransactionDependencies<T>,
-  isReadOnly: boolean,
-): Mode extends "read" ? ReadHandles<T> : MutateHandles<T> {
-  return new Proxy({} as Mode extends "read" ? ReadHandles<T> : MutateHandles<T>, {
-    get(_target, prop: string | symbol) {
-      if (typeof prop !== "string") {
-        return undefined;
-      }
-
-      if (!deps.configs.has(prop)) {
-        throw new Error(`Collection "${prop}" not found`);
-      }
-
-      if (!state.accessed.has(prop)) {
-        initializeCollection(prop, state, deps, isReadOnly);
-      }
-
-      return state.handleCache[prop];
-    },
-  });
 }
 
 function buildChanges<T extends StoreConfig>(
@@ -199,7 +176,13 @@ export function executeTransaction<
     handleCache: {},
   };
 
-  const handles = createHandleProxy<T, Mode>(state, deps, isReadOnly);
+  type Handles = Mode extends "read" ? ReadHandles<T> : MutateHandles<T>;
+  const handles = createHandleProxy<Handles>(
+    deps.configs,
+    state.accessed,
+    state.handleCache,
+    (collectionName) => initializeCollection(collectionName, state, deps, isReadOnly),
+  );
   const value = callback(handles);
 
   const changes = isReadOnly ? null : buildChanges<T>(state);

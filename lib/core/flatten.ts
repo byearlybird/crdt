@@ -48,13 +48,13 @@ export function unflatten<T = unknown, R = unknown>(
     const keys = path.split(".");
     const mappedValue = mapper ? mapper(value, path) : value;
 
-    let current: any = result;
+    let current: Record<string, unknown> = result;
     for (let i = 0; i < keys.length - 1; i++) {
       const key = keys[i]!;
       if (!(key in current)) {
         current[key] = {};
       }
-      current = current[key];
+      current = current[key] as Record<string, unknown>;
     }
 
     const finalKey = keys[keys.length - 1]!;

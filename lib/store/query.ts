@@ -4,7 +4,12 @@ import type { AnyObject, CollectionConfig, StoreConfig } from "./schema";
 import type { Tombstones } from "../core/tombstone";
 import type { ReadHandles } from "./transaction";
 import type { StoreChangeEvent } from "./store";
-import { createReadHandle, getCollectionDocuments } from "./handles";
+import {
+  createReadHandle,
+  getCollectionDocuments,
+  createHandleProxy,
+  type HandleCache,
+} from "./handles";
 
 export type QueryObject<R> = {
   result(): R;
@@ -29,50 +34,21 @@ export type QueryDependencies<_T extends StoreConfig> = {
 type QueryState = {
   accessed: Set<string>;
   documents: Record<string, Record<DocumentId, Document>>;
-  handleCache: Record<string, any>;
+  handleCache: HandleCache;
 };
 
-function initializeCollection(
+function initializeQueryCollection(
   collectionName: string,
   state: QueryState,
   dependencies: Set<string>,
   deps: QueryDependencies<any>,
 ): void {
-  if (state.accessed.has(collectionName)) {
-    return;
-  }
-
   state.accessed.add(collectionName);
   dependencies.add(collectionName);
 
   const documents = getCollectionDocuments(collectionName, deps.documents);
   state.documents[collectionName] = documents;
-
   state.handleCache[collectionName] = createReadHandle(documents, deps.tombstones);
-}
-
-function createHandleProxy<T extends StoreConfig>(
-  state: QueryState,
-  dependencies: Set<string>,
-  deps: QueryDependencies<T>,
-): ReadHandles<T> {
-  return new Proxy({} as ReadHandles<T>, {
-    get(_target, prop: string | symbol) {
-      if (typeof prop !== "string") {
-        return undefined;
-      }
-
-      if (!deps.configs.has(prop)) {
-        throw new Error(`Collection "${prop}" not found`);
-      }
-
-      if (!state.accessed.has(prop)) {
-        initializeCollection(prop, state, dependencies, deps);
-      }
-
-      return state.handleCache[prop];
-    },
-  });
 }
 
 export function createQuery<T extends StoreConfig, R>(
@@ -94,7 +70,12 @@ export function createQuery<T extends StoreConfig, R>(
       handleCache: {},
     };
 
-    const handles = createHandleProxy(state, dependencies, deps);
+    const handles = createHandleProxy<ReadHandles<T>>(
+      deps.configs,
+      state.accessed,
+      state.handleCache,
+      (collectionName) => initializeQueryCollection(collectionName, state, dependencies, deps),
+    );
     return callback(handles);
   };
 

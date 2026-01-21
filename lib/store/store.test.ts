@@ -1,6 +1,7 @@
 import { describe, test, expect } from "vitest";
 import { z } from "zod";
 import { createStore } from "./store";
+import { mergeSnapshots } from "../core";
 
 const userSchema = z.object({
   id: z.string(),
@@ -723,7 +724,7 @@ describe("middleware", () => {
     expect(changes).toContain("users");
   });
 
-  test("middleware can load data via merge", async () => {
+  test("middleware can load data via setSnapshot", async () => {
     const snapshot = {
       clock: { ms: 1000, seq: 0 },
       collections: {
@@ -738,8 +739,8 @@ describe("middleware", () => {
       tombstones: {},
     };
 
-    const middleware = ({ merge }: any) => {
-      merge(snapshot, { silent: true });
+    const middleware = ({ setSnapshot }: any) => {
+      setSnapshot(snapshot, { silent: true });
     };
 
     const store = createStore({
@@ -917,5 +918,406 @@ describe("middleware", () => {
 
     await disposePromise;
     expect(disposeOrder).toEqual(["async"]);
+  });
+
+  test("setSnapshot replaces store state", () => {
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    });
+
+    // Add initial data
+    store.transact(({ users }) => {
+      users.add({ id: "1", name: "Alice", profile: {} });
+    });
+
+    // Create a new snapshot with different data
+    const newSnapshot = {
+      clock: { ms: 2000, seq: 0 },
+      collections: {
+        users: {
+          "2": {
+            id: { "~value": "2", "~stamp": "2000:0" },
+            name: { "~value": "Bob", "~stamp": "2000:0" },
+            profile: { "~value": {}, "~stamp": "2000:0" },
+          },
+        },
+      },
+      tombstones: {},
+    };
+
+    // Use middleware to access setSnapshot
+    let setSnapshotFn: any = null;
+    const middleware = ({ setSnapshot }: any) => {
+      setSnapshotFn = setSnapshot;
+    };
+
+    store.use(middleware);
+    store.init();
+
+    // Apply new snapshot
+    setSnapshotFn(newSnapshot, { silent: true });
+
+    // Verify old data is gone and new data is present
+    expect(store.read(({ users }) => users.get("1"))).toBeUndefined();
+    expect(store.read(({ users }) => users.get("2"))).toEqual({
+      id: "2",
+      name: "Bob",
+      profile: {},
+    });
+  });
+
+  test("setSnapshot advances clock", () => {
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    });
+
+    let setSnapshotFn: any = null;
+    let getSnapshotFn: any = null;
+    const middleware = ({ setSnapshot, getSnapshot }: any) => {
+      setSnapshotFn = setSnapshot;
+      getSnapshotFn = getSnapshot;
+    };
+
+    store.use(middleware);
+    store.init();
+
+    const initial = getSnapshotFn();
+    const initialMs = initial.clock.ms;
+
+    const newSnapshot = {
+      clock: { ms: initialMs + 1000, seq: 5 },
+      collections: { users: {} },
+      tombstones: {},
+    };
+
+    setSnapshotFn(newSnapshot, { silent: true });
+
+    const after = getSnapshotFn();
+    expect(after.clock.ms).toBe(initialMs + 1000);
+    expect(after.clock.seq).toBeGreaterThanOrEqual(5);
+  });
+
+  test("setSnapshot notifies listeners unless silent", () => {
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    });
+
+    let notified = false;
+    const unsubscribe = store.subscribe(
+      ({ users }) => users.list(),
+      () => {
+        notified = true;
+      },
+    );
+
+    // Reset notified after initial subscription (which triggers immediately)
+    notified = false;
+
+    let setSnapshotFn: any = null;
+    const middleware = ({ setSnapshot }: any) => {
+      setSnapshotFn = setSnapshot;
+    };
+
+    store.use(middleware);
+    store.init();
+
+    const snapshot = {
+      clock: { ms: 1000, seq: 0 },
+      collections: {
+        users: {
+          "1": {
+            id: { "~value": "1", "~stamp": "1000:0" },
+            name: { "~value": "Alice", "~stamp": "1000:0" },
+            profile: { "~value": {}, "~stamp": "1000:0" },
+          },
+        },
+      },
+      tombstones: {},
+    };
+
+    // Silent should not notify
+    setSnapshotFn(snapshot, { silent: true });
+    expect(notified).toBe(false);
+
+    // Not silent should notify
+    notified = false;
+    setSnapshotFn(snapshot, { silent: false });
+    expect(notified).toBe(true);
+
+    unsubscribe();
+  });
+});
+
+describe("mergeSnapshots", () => {
+  test("merges two empty snapshots", () => {
+    const local = {
+      clock: { ms: 1000, seq: 0 },
+      collections: {},
+      tombstones: {},
+    };
+
+    const remote = {
+      clock: { ms: 1000, seq: 0 },
+      collections: {},
+      tombstones: {},
+    };
+
+    const result = mergeSnapshots(local, remote);
+    expect(result.merged.clock).toEqual({ ms: 1000, seq: 1 });
+    expect(result.merged.collections).toEqual({});
+    expect(result.merged.tombstones).toEqual({});
+    expect(result.diff.collections).toEqual({});
+  });
+
+  test("merges snapshots with new documents", () => {
+    const local = {
+      clock: { ms: 1000, seq: 0 },
+      collections: {
+        users: {
+          "1": {
+            id: { "~value": "1", "~stamp": "1000:0" },
+            name: { "~value": "Alice", "~stamp": "1000:0" },
+            profile: { "~value": {}, "~stamp": "1000:0" },
+          },
+        },
+      },
+      tombstones: {},
+    };
+
+    const remote = {
+      clock: { ms: 2000, seq: 0 },
+      collections: {
+        users: {
+          "2": {
+            id: { "~value": "2", "~stamp": "2000:0" },
+            name: { "~value": "Bob", "~stamp": "2000:0" },
+            profile: { "~value": {}, "~stamp": "2000:0" },
+          },
+        },
+      },
+      tombstones: {},
+    };
+
+    const result = mergeSnapshots(local, remote);
+    expect(result.merged.collections.users["1"]).toBeDefined();
+    expect(result.merged.collections.users["2"]).toBeDefined();
+    expect(result.diff.collections.users).toEqual({
+      added: ["2"],
+      updated: [],
+      removed: [],
+    });
+  });
+
+  test("merges snapshots with overlapping documents", () => {
+    const local = {
+      clock: { ms: 1000, seq: 0 },
+      collections: {
+        users: {
+          "1": {
+            id: { "~value": "1", "~stamp": "1000:0" },
+            name: { "~value": "Alice", "~stamp": "1000:0" },
+            profile: { "~value": {}, "~stamp": "1000:0" },
+          },
+        },
+      },
+      tombstones: {},
+    };
+
+    const remote = {
+      clock: { ms: 2000, seq: 0 },
+      collections: {
+        users: {
+          "1": {
+            id: { "~value": "1", "~stamp": "2000:0" },
+            name: { "~value": "Alice Updated", "~stamp": "2000:0" },
+            profile: { "~value": {}, "~stamp": "2000:0" },
+          },
+        },
+      },
+      tombstones: {},
+    };
+
+    const result = mergeSnapshots(local, remote);
+    expect(result.merged.collections.users["1"].name["~stamp"]).toBe("2000:0");
+    expect(result.diff.collections.users).toEqual({
+      added: [],
+      updated: ["1"],
+      removed: [],
+    });
+  });
+
+  test("handles tombstoned documents", () => {
+    const local = {
+      clock: { ms: 1000, seq: 0 },
+      collections: {
+        users: {
+          "1": {
+            id: { "~value": "1", "~stamp": "1000:0" },
+            name: { "~value": "Alice", "~stamp": "1000:0" },
+            profile: { "~value": {}, "~stamp": "1000:0" },
+          },
+        },
+      },
+      tombstones: {},
+    };
+
+    const remote = {
+      clock: { ms: 2000, seq: 0 },
+      collections: {
+        users: {},
+      },
+      tombstones: {
+        "1": "2000:0",
+      },
+    };
+
+    const result = mergeSnapshots(local, remote);
+    expect(result.merged.tombstones["1"]).toBe("2000:0");
+    expect(result.merged.collections.users["1"]).toBeUndefined();
+    expect(result.diff.collections.users).toEqual({
+      added: [],
+      updated: [],
+      removed: ["1"],
+    });
+  });
+
+  test("advances clock correctly", () => {
+    const local = {
+      clock: { ms: 1000, seq: 5 },
+      collections: {},
+      tombstones: {},
+    };
+
+    const remote = {
+      clock: { ms: 2000, seq: 3 },
+      collections: {},
+      tombstones: {},
+    };
+
+    const result = mergeSnapshots(local, remote);
+    expect(result.merged.clock).toEqual({ ms: 2000, seq: 3 });
+  });
+
+  test("merges tombstones correctly", () => {
+    const local = {
+      clock: { ms: 1000, seq: 0 },
+      collections: {},
+      tombstones: {
+        "1": "1000:0",
+        "2": "1500:0",
+      },
+    };
+
+    const remote = {
+      clock: { ms: 2000, seq: 0 },
+      collections: {},
+      tombstones: {
+        "2": "2000:0",
+        "3": "2000:0",
+      },
+    };
+
+    const result = mergeSnapshots(local, remote);
+    expect(result.merged.tombstones["1"]).toBe("1000:0");
+    expect(result.merged.tombstones["2"]).toBe("2000:0"); // Later timestamp wins
+    expect(result.merged.tombstones["3"]).toBe("2000:0");
+  });
+
+  test("filters tombstoned documents from remote collections", () => {
+    const local = {
+      clock: { ms: 1000, seq: 0 },
+      collections: {},
+      tombstones: {},
+    };
+
+    const remote = {
+      clock: { ms: 2000, seq: 0 },
+      collections: {
+        users: {
+          "1": {
+            id: { "~value": "1", "~stamp": "2000:0" },
+            name: { "~value": "Alice", "~stamp": "2000:0" },
+            profile: { "~value": {}, "~stamp": "2000:0" },
+          },
+        },
+      },
+      tombstones: {
+        "1": "2000:0",
+      },
+    };
+
+    const result = mergeSnapshots(local, remote);
+    // Document should not be added because it's tombstoned
+    expect(result.merged.collections.users["1"]).toBeUndefined();
+    expect(result.diff.collections.users).toBeUndefined(); // No changes
+  });
+
+  test("handles multiple collections", () => {
+    const local = {
+      clock: { ms: 1000, seq: 0 },
+      collections: {
+        users: {
+          "1": {
+            id: { "~value": "1", "~stamp": "1000:0" },
+            name: { "~value": "Alice", "~stamp": "1000:0" },
+            profile: { "~value": {}, "~stamp": "1000:0" },
+          },
+        },
+        notes: {
+          "1": {
+            id: { "~value": "1", "~stamp": "1000:0" },
+            content: { "~value": "Note 1", "~stamp": "1000:0" },
+          },
+        },
+      },
+      tombstones: {},
+    };
+
+    const remote = {
+      clock: { ms: 2000, seq: 0 },
+      collections: {
+        users: {
+          "2": {
+            id: { "~value": "2", "~stamp": "2000:0" },
+            name: { "~value": "Bob", "~stamp": "2000:0" },
+            profile: { "~value": {}, "~stamp": "2000:0" },
+          },
+        },
+        notes: {
+          "1": {
+            id: { "~value": "1", "~stamp": "2000:0" },
+            content: { "~value": "Note 1 Updated", "~stamp": "2000:0" },
+          },
+        },
+      },
+      tombstones: {},
+    };
+
+    const result = mergeSnapshots(local, remote);
+    expect(result.diff.collections.users).toEqual({
+      added: ["2"],
+      updated: [],
+      removed: [],
+    });
+    expect(result.diff.collections.notes).toEqual({
+      added: [],
+      updated: ["1"],
+      removed: [],
+    });
   });
 });
