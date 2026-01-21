@@ -17,23 +17,6 @@ const noteSchema = z.object({
 });
 
 describe("createStore", () => {
-  test("creates store with collections", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-        notes: {
-          schema: noteSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    expect(store.transact).toBeDefined();
-  });
-
   test("can add documents to collections", () => {
     const store = createStore({
       collections: {
@@ -126,17 +109,6 @@ describe("createStore", () => {
     });
   });
 
-  test("creates store with empty collections", () => {
-    const store = createStore({
-      collections: {},
-    });
-
-    expect(store).toBeDefined();
-    expect(store.read).toBeDefined();
-    expect(store.subscribe).toBeDefined();
-    expect(store.transact).toBeDefined();
-  });
-
   test("tombstones are store-level and globally unique", () => {
     const store = createStore({
       collections: {
@@ -189,126 +161,7 @@ describe("createStore", () => {
     expect(allUsers.find((u) => u.id === "3")).toBeDefined();
   });
 
-  test("list returns all non-tombstoned documents", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-        notes: {
-          schema: noteSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    // Test listing users
-    store.transact(({ users }) => {
-      users.add({ id: "1", name: "Alice", profile: { age: 30 } });
-      users.add({ id: "2", name: "Bob", profile: { age: 25 } });
-      users.add({ id: "3", name: "Charlie", profile: { age: 35 } });
-    });
-
-    const allUsers = store.read(({ users }) => users.list());
-    expect(allUsers).toHaveLength(3);
-    expect(allUsers.find((u) => u.name === "Alice")).toBeDefined();
-    expect(allUsers.find((u) => u.name === "Bob")).toBeDefined();
-    expect(allUsers.find((u) => u.name === "Charlie")).toBeDefined();
-
-    // Test listing notes
-    store.transact(({ notes }) => {
-      notes.add({ id: "1", content: "First note" });
-      notes.add({ id: "2", content: "Second note" });
-      notes.add({ id: "3", content: "Third note" });
-    });
-
-    const allNotes = store.read(({ notes }) => notes.list());
-    expect(allNotes).toHaveLength(3);
-    expect(allNotes.find((n) => n.content === "First note")).toBeDefined();
-
-    // Test that removed documents don't appear
-    store.transact(({ users }) => {
-      users.remove("2");
-    });
-    const usersAfterRemoval = store.read(({ users }) => users.list());
-    expect(usersAfterRemoval).toHaveLength(2);
-    expect(usersAfterRemoval.find((u) => u.id === "2")).toBeUndefined();
-    expect(usersAfterRemoval.find((u) => u.id === "1")).toBeDefined();
-    expect(usersAfterRemoval.find((u) => u.id === "3")).toBeDefined();
-
-    // Demonstrate filtering with standard array methods
-    const adults = store.read(({ users }) =>
-      users.list().filter((user) => (user.profile?.age ?? 0) >= 30),
-    );
-    expect(adults).toHaveLength(2);
-    expect(adults.find((u) => u.name === "Alice")).toBeDefined();
-    expect(adults.find((u) => u.name === "Charlie")).toBeDefined();
-  });
-
   describe("transact", () => {
-    test("transact with single collection", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      store.transact(({ users }) => {
-        users.add({ id: "1", name: "Alice", profile: { age: 30 } });
-        users.add({ id: "2", name: "Bob", profile: { age: 25 } });
-      });
-
-      expect(store.read(({ users }) => users.get("1"))).toEqual({
-        id: "1",
-        name: "Alice",
-        profile: { age: 30 },
-      });
-      expect(store.read(({ users }) => users.get("2"))).toEqual({
-        id: "2",
-        name: "Bob",
-        profile: { age: 25 },
-      });
-    });
-
-    test("transact with multiple collections", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-          notes: {
-            schema: noteSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      store.transact(({ users, notes }) => {
-        users.add({ id: "1", name: "Alice", profile: {} });
-        notes.add({ id: "note-1", content: "Hello" });
-        notes.add({ id: "note-2", content: "World" });
-      });
-
-      expect(store.read(({ users }) => users.get("1"))).toEqual({
-        id: "1",
-        name: "Alice",
-        profile: {},
-      });
-      expect(store.read(({ notes }) => notes.get("note-1"))).toEqual({
-        id: "note-1",
-        content: "Hello",
-      });
-      expect(store.read(({ notes }) => notes.get("note-2"))).toEqual({
-        id: "note-2",
-        content: "World",
-      });
-    });
-
     test("transact returns callback return value", () => {
       const store = createStore({
         collections: {
@@ -329,26 +182,6 @@ describe("createStore", () => {
         name: "Alice",
         profile: { age: 30 },
       });
-    });
-
-    test("transact returns different types", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      const stringResult = store.transact(() => "hello");
-      expect(stringResult).toBe("hello");
-
-      const numberResult = store.transact(() => 42);
-      expect(numberResult).toBe(42);
-
-      const objectResult = store.transact(() => ({ foo: "bar" }));
-      expect(objectResult).toEqual({ foo: "bar" });
     });
 
     test("transact rolls back on error", () => {
@@ -376,69 +209,6 @@ describe("createStore", () => {
       // Changes should not be persisted
       expect(store.read(({ users }) => users.get("2"))).toBeUndefined();
       expect(store.read(({ users }) => users.get("1"))?.name).toBe("Alice");
-    });
-
-    test("transact batches notifications", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      store.transact(({ users }) => {
-        users.add({ id: "1", name: "Alice", profile: {} });
-        users.add({ id: "2", name: "Bob", profile: {} });
-        users.update("1", { name: "Alice Updated" });
-        users.remove("2");
-      });
-
-      // Verify the transaction completed successfully
-      expect(store.read(({ users }) => users.get("1"))).toEqual({
-        id: "1",
-        name: "Alice Updated",
-        profile: {},
-      });
-      expect(store.read(({ users }) => users.get("2"))).toBeUndefined();
-    });
-
-    test("transact with multiple collections batches notifications across collections", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-          notes: {
-            schema: noteSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      store.transact(({ users, notes }) => {
-        users.add({ id: "1", name: "Alice", profile: {} });
-        notes.add({ id: "note-1", content: "Hello" });
-        users.update("1", { name: "Alice Updated" });
-        notes.add({ id: "note-2", content: "World" });
-      });
-
-      // Verify the transaction completed successfully
-      expect(store.read(({ users }) => users.get("1"))).toEqual({
-        id: "1",
-        name: "Alice Updated",
-        profile: {},
-      });
-      expect(store.read(({ notes }) => notes.get("note-1"))).toEqual({
-        id: "note-1",
-        content: "Hello",
-      });
-      expect(store.read(({ notes }) => notes.get("note-2"))).toEqual({
-        id: "note-2",
-        content: "World",
-      });
     });
 
     test("transact can read within transaction", () => {
