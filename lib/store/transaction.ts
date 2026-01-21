@@ -11,6 +11,12 @@ import type {
 } from "./schema";
 import type { Tombstones } from "../core/tombstone";
 import type { StoreChangeEvent } from "./store";
+import {
+  isDeleted,
+  createReadHandle,
+  getCollectionConfig,
+  getCollectionDocuments,
+} from "./handles";
 
 export type ReadHandle<T extends CollectionConfig<AnyObject>> = {
   get(id: DocumentId): Output<T["schema"]> | undefined;
@@ -30,34 +36,6 @@ export type ReadHandles<T extends StoreConfig> = {
 export type MutateHandles<T extends StoreConfig> = {
   [N in CollectionName<T>]: MutateHandle<T[N]>;
 };
-
-function isDeleted(id: DocumentId, tombstones: Tombstones): boolean {
-  return tombstones[id] !== undefined;
-}
-
-function createReadHandle<C extends CollectionConfig<AnyObject>>(
-  documents: Record<DocumentId, Document>,
-  tombstones: Tombstones,
-): ReadHandle<C> {
-  return {
-    get(id) {
-      if (isDeleted(id, tombstones)) return undefined;
-      const document = documents[id];
-      if (!document) return undefined;
-      return parseDocument<Output<C["schema"]>>(document);
-    },
-
-    list() {
-      const results: Output<C["schema"]>[] = [];
-      for (const [id, document] of Object.entries(documents)) {
-        if (document && !isDeleted(id, tombstones)) {
-          results.push(parseDocument<Output<C["schema"]>>(document));
-        }
-      }
-      return results;
-    },
-  };
-}
 
 function createMutateHandle<C extends CollectionConfig<AnyObject>>(
   config: C,
@@ -117,28 +95,6 @@ type TransactionState = {
   changed: Set<string>;
   handleCache: Record<string, any>;
 };
-
-function getCollectionConfig(
-  collectionName: string,
-  configs: Map<string, CollectionConfig<AnyObject>>,
-): CollectionConfig<AnyObject> {
-  const config = configs.get(collectionName);
-  if (!config) {
-    throw new Error(`Collection "${collectionName}" not found`);
-  }
-  return config;
-}
-
-function getCollectionDocuments(
-  collectionName: string,
-  documents: Record<string, Record<DocumentId, Document>>,
-): Record<DocumentId, Document> {
-  const collectionDocs = documents[collectionName];
-  if (!collectionDocs) {
-    throw new Error(`Collection "${collectionName}" not found`);
-  }
-  return collectionDocs;
-}
 
 function initializeCollection(
   collectionName: string,

@@ -1,8 +1,9 @@
-import { parseDocument, type DocumentId } from "../core";
+import type { DocumentId } from "../core";
 import type { Document } from "../core/document";
 import type { AnyObject, CollectionConfig, StoreConfig } from "./schema";
 import type { Tombstones } from "../core/tombstone";
 import type { ReadHandles } from "./transaction";
+import { createReadHandle, getCollectionDocuments } from "./handles";
 
 export type QueryObject<R> = {
   result(): R;
@@ -23,57 +24,11 @@ export type QueryDependencies<T extends StoreConfig> = {
   tombstones: Tombstones;
 };
 
-function isDeleted(id: DocumentId, tombstones: Tombstones): boolean {
-  return tombstones[id] !== undefined;
-}
-
-function createReadHandle(documents: Record<DocumentId, Document>, tombstones: Tombstones) {
-  return {
-    get(id: DocumentId) {
-      if (isDeleted(id, tombstones)) return undefined;
-      const document = documents[id];
-      if (!document) return undefined;
-      return parseDocument(document);
-    },
-    list() {
-      const results: any[] = [];
-      for (const [id, document] of Object.entries(documents)) {
-        if (document && !isDeleted(id, tombstones)) {
-          results.push(parseDocument(document));
-        }
-      }
-      return results;
-    },
-  };
-}
-
 type QueryState = {
   accessed: Set<string>;
   documents: Record<string, Record<DocumentId, Document>>;
   handleCache: Record<string, any>;
 };
-
-function getCollectionConfig(
-  collectionName: string,
-  configs: Map<string, CollectionConfig<AnyObject>>,
-): CollectionConfig<AnyObject> {
-  const config = configs.get(collectionName);
-  if (!config) {
-    throw new Error(`Collection "${collectionName}" not found`);
-  }
-  return config;
-}
-
-function getCollectionDocuments(
-  collectionName: string,
-  documents: Record<string, Record<DocumentId, Document>>,
-): Record<DocumentId, Document> {
-  const docs = documents[collectionName];
-  if (!docs) {
-    throw new Error(`Collection "${collectionName}" not found`);
-  }
-  return docs;
-}
 
 function initializeCollection(
   collectionName: string,
