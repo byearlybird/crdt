@@ -102,17 +102,6 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     documents: state.collections,
     tombstones: state.tombstones,
     tick,
-    notifyListeners: (event) => {
-      notifyListenersAndQueries(event, listeners, queryManager);
-    },
-    applyMerge: (collectionName, documents) => {
-      const current = state.collections[collectionName]!;
-      const merged = mergeCollections(current, documents, state.tombstones);
-      state.collections[collectionName] = merged;
-    },
-    applyTombstones: (tombstones) => {
-      state.tombstones = mergeTombstones(state.tombstones, tombstones);
-    },
   };
 
   const read = <R>(callback: (handles: ReadHandles<T>) => R): R => {
@@ -137,7 +126,21 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
   };
 
   const transact = <R>(callback: (handles: MutateHandles<T>) => R): R => {
-    return executeTransaction("mutate", callback, deps);
+    const result = executeTransaction("mutate", callback, deps);
+
+    if (result.changes) {
+      state.tombstones = mergeTombstones(state.tombstones, result.changes.tombstones);
+
+      for (const collectionName of result.changes.accessed) {
+        const current = state.collections[collectionName]!;
+        const updated = result.changes.documents[collectionName]!;
+        state.collections[collectionName] = mergeCollections(current, updated, state.tombstones);
+      }
+
+      notifyListenersAndQueries(result.changes.event, listeners, queryManager);
+    }
+
+    return result.value;
   };
 
   const getSnapshot = (): StoreSnapshot => {

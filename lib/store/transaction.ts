@@ -83,9 +83,18 @@ export type TransactionDependencies<T extends StoreConfig> = {
   documents: Record<string, Record<DocumentId, Document>>;
   tombstones: Tombstones;
   tick: () => string;
-  notifyListeners: (event: StoreChangeEvent<T>) => void;
-  applyMerge: (collectionName: string, documents: Record<DocumentId, Document>) => void;
-  applyTombstones: (tombstones: Tombstones) => void;
+};
+
+export type TransactionChanges<T extends StoreConfig> = {
+  accessed: string[];
+  documents: Record<string, Record<DocumentId, Document>>;
+  tombstones: Tombstones;
+  event: StoreChangeEvent<T>;
+};
+
+export type TransactionResult<T extends StoreConfig, R> = {
+  value: R;
+  changes: TransactionChanges<T> | null;
 };
 
 type TransactionState = {
@@ -151,25 +160,24 @@ function createHandleProxy<T extends StoreConfig, Mode extends "read" | "mutate"
   });
 }
 
-function commitTransaction<T extends StoreConfig>(
+function buildChanges<T extends StoreConfig>(
   state: TransactionState,
-  deps: TransactionDependencies<T>,
-): void {
-  deps.applyTombstones(state.tombstones);
-
-  for (const collectionName of state.accessed) {
-    deps.applyMerge(collectionName, state.documents[collectionName]!);
-  }
-
+): TransactionChanges<T> | null {
   if (state.changed.size === 0) {
-    return;
+    return null;
   }
 
   const event: StoreChangeEvent<T> = {};
   for (const collectionName of state.changed) {
     event[collectionName as keyof T] = true;
   }
-  deps.notifyListeners(event);
+
+  return {
+    accessed: Array.from(state.accessed),
+    documents: state.documents,
+    tombstones: state.tombstones,
+    event,
+  };
 }
 
 export function executeTransaction<
@@ -180,7 +188,7 @@ export function executeTransaction<
   mode: Mode,
   callback: (handles: Mode extends "read" ? ReadHandles<T> : MutateHandles<T>) => R,
   deps: TransactionDependencies<T>,
-): R {
+): TransactionResult<T, R> {
   const isReadOnly = mode === "read";
 
   const state: TransactionState = {
@@ -192,11 +200,9 @@ export function executeTransaction<
   };
 
   const handles = createHandleProxy<T, Mode>(state, deps, isReadOnly);
-  const result = callback(handles);
+  const value = callback(handles);
 
-  if (!isReadOnly) {
-    commitTransaction(state, deps);
-  }
+  const changes = isReadOnly ? null : buildChanges<T>(state);
 
-  return result;
+  return { value, changes };
 }
