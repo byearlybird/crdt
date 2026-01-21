@@ -12,10 +12,7 @@ export function mergeCollections(
   tombstones: Tombstones,
 ): Collection {
   const mergedCollection: Record<DocumentId, Document> = {};
-  const allDocumentIds = new Set([
-    ...Object.keys(target),
-    ...Object.keys(source),
-  ]);
+  const allDocumentIds = new Set([...Object.keys(target), ...Object.keys(source)]);
 
   for (const id of allDocumentIds) {
     const targetDoc = target[id];
