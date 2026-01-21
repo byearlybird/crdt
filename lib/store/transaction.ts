@@ -1,38 +1,39 @@
 import { validate } from "./schema";
-import {
-  makeDocument,
-  parseDocument,
-  mergeDocuments,
-  type Collection,
-  type DocumentId,
-} from "../core";
+import { makeDocument, parseDocument, mergeDocuments, type DocumentId } from "../core";
 import type { Document } from "../core/document";
 import type { Input, Output, AnyObject, CollectionConfig } from "./schema";
 import type { Tombstones } from "../core/tombstone";
 import type { StoreChangeEvent } from "./store";
 
-// Handle for a single collection within a transaction
-export type TransactionHandle<T extends CollectionConfig<AnyObject>> = {
+// Read-only handle for a single collection (no mutations)
+export type ReadHandle<T extends CollectionConfig<AnyObject>> = {
   get(id: DocumentId): Output<T["schema"]> | undefined;
-  list(): Output<T["schema"]>[];
+  list(options?: { where?: (item: Output<T["schema"]>) => boolean }): Output<T["schema"]>[];
+};
+
+// Read-write handle for a single collection (includes mutations)
+export type MutateHandle<T extends CollectionConfig<AnyObject>> = ReadHandle<T> & {
   add(data: Input<T["schema"]>): void;
   update(id: DocumentId, data: Partial<Input<T["schema"]>>): void;
   remove(id: DocumentId): void;
 };
 
-// Maps collection names to their handles - enables type inference
-export type TransactionHandles<
+// Maps collection names to read-only handles
+export type ReadHandles<
   T extends Record<string, CollectionConfig<AnyObject>>,
   K extends (keyof T & string)[],
-> = { [I in keyof K]: TransactionHandle<T[K[I] & keyof T]> };
+> = { [I in keyof K]: ReadHandle<T[K[I] & keyof T]> };
 
-function createTransactionHandle<C extends CollectionConfig<AnyObject>>(
-  collectionConfig: C,
+// Maps collection names to read-write handles
+export type MutateHandles<
+  T extends Record<string, CollectionConfig<AnyObject>>,
+  K extends (keyof T & string)[],
+> = { [I in keyof K]: MutateHandle<T[K[I] & keyof T]> };
+
+function createReadHandle<C extends CollectionConfig<AnyObject>>(
   txDocs: Record<DocumentId, Document>,
   txTombstones: Tombstones,
-  txTick: () => string,
-  recordChange: () => void,
-): TransactionHandle<C> {
+): ReadHandle<C> {
   return {
     get(id) {
       if (txTombstones[id]) return undefined;
@@ -41,16 +42,32 @@ function createTransactionHandle<C extends CollectionConfig<AnyObject>>(
       return parseDocument(doc) as Output<C["schema"]>;
     },
 
-    list() {
+    list(options) {
       const resultDocs: Output<C["schema"]>[] = [];
       for (const [id, doc] of Object.entries(txDocs)) {
         if (doc && !txTombstones[id]) {
           const parsed = parseDocument(doc) as Output<C["schema"]>;
-          resultDocs.push(parsed);
+          if (!options?.where || options.where(parsed)) {
+            resultDocs.push(parsed);
+          }
         }
       }
       return resultDocs;
     },
+  };
+}
+
+function createMutateHandle<C extends CollectionConfig<AnyObject>>(
+  collectionConfig: C,
+  txDocs: Record<DocumentId, Document>,
+  txTombstones: Tombstones,
+  txTick: () => string,
+  recordChange: () => void,
+): MutateHandle<C> {
+  const readHandle = createReadHandle<C>(txDocs, txTombstones);
+
+  return {
+    ...readHandle,
 
     add(data) {
       const valid = validate(collectionConfig.schema, data);
@@ -95,26 +112,31 @@ export function executeTransaction<
   T extends Record<string, CollectionConfig<AnyObject>>,
   K extends (keyof T & string)[],
   R,
+  Mode extends "read" | "mutate" = "mutate",
 >(
+  mode: Mode,
   collectionNames: [...K],
-  callback: (handles: TransactionHandles<T, K>) => R,
+  callback: (handles: Mode extends "read" ? ReadHandles<T, K> : MutateHandles<T, K>) => R,
   deps: TransactionDependencies<T>,
 ): R {
-  // Clone documents for each specified collection
+  const readonly = mode === "read";
+
+  // For read-only: use original documents (no copy)
+  // For mutate: clone documents for rollback capability
   const txDocuments: Record<string, Record<DocumentId, Document>> = {};
   for (const collectionName of collectionNames) {
     const collectionDocs = deps.documents[collectionName];
     if (!collectionDocs) {
       throw new Error(`Collection "${collectionName}" not found`);
     }
-    // Shallow copy of the documents record
-    txDocuments[collectionName] = { ...collectionDocs };
+    // Only copy if we might mutate
+    txDocuments[collectionName] = readonly ? collectionDocs : { ...collectionDocs };
   }
 
-  // Clone tombstones (shallow copy)
-  const txTombstones: Tombstones = { ...deps.tombstones };
+  // Clone tombstones only if we might mutate
+  const txTombstones: Tombstones = readonly ? deps.tombstones : { ...deps.tombstones };
 
-  // Track which collections have changes
+  // Track which collections have changes (only for mutate mode)
   const dirtyCollections = new Set<string>();
 
   const recordChange = (collectionName: string) => {
@@ -128,38 +150,40 @@ export function executeTransaction<
       throw new Error(`Collection "${collectionName}" not found`);
     }
     const txDocs = txDocuments[collectionName]!; // Safe: we just set it above
-    return createTransactionHandle(
-      collectionConfig,
-      txDocs,
-      txTombstones,
-      deps.tick,
-      () => recordChange(collectionName),
-    );
-  }) as TransactionHandles<T, typeof collectionNames>;
+
+    if (readonly) {
+      return createReadHandle(txDocs, txTombstones);
+    } else {
+      return createMutateHandle(collectionConfig, txDocs, txTombstones, deps.tick, () =>
+        recordChange(collectionName),
+      );
+    }
+  }) as Mode extends "read" ? ReadHandles<T, K> : MutateHandles<T, K>;
 
   // Execute callback and capture return value
   // On error: discard clones (automatic - just don't merge, execution stops here)
   const result = callback(handles);
 
-  // On success: merge cloned state back
+  // On success: merge cloned state back (only for mutate mode)
+  if (!readonly) {
+    // Merge tombstones
+    deps.applyTombstones(txTombstones);
 
-  // Merge tombstones
-  deps.applyTombstones(txTombstones);
+    // Merge collections
+    for (const collectionName of collectionNames) {
+      deps.applyMerge(collectionName, txDocuments[collectionName]!);
+    }
 
-  // Merge collections
-  for (const collectionName of collectionNames) {
-    deps.applyMerge(collectionName, txDocuments[collectionName]!);
-  }
+    // Build event with dirty collections
+    const event: StoreChangeEvent<T> = {};
+    for (const collectionName of dirtyCollections) {
+      event[collectionName as keyof T] = true;
+    }
 
-  // Build event with dirty collections
-  const event: StoreChangeEvent<T> = {};
-  for (const collectionName of dirtyCollections) {
-    event[collectionName as keyof T] = true;
-  }
-
-  // Notify listeners once with batched event (only if there are changes)
-  if (dirtyCollections.size > 0) {
-    deps.notifyListeners(event);
+    // Notify listeners once with batched event (only if there are changes)
+    if (dirtyCollections.size > 0) {
+      deps.notifyListeners(event);
+    }
   }
 
   // Return the callback's return value

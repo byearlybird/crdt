@@ -31,8 +31,6 @@ describe("createStore", () => {
       },
     });
 
-    expect(store.get).toBeDefined();
-    expect(store.list).toBeDefined();
     expect(store.transact).toBeDefined();
     expect(store.getSnapshot).toBeDefined();
     expect(store.merge).toBeDefined();
@@ -57,7 +55,7 @@ describe("createStore", () => {
       });
     });
 
-    const result = store.get("users", "1");
+    const result = store.read(["users"], ([users]) => users.get("1"));
     expect(result).toEqual({
       id: "1",
       name: "Alice",
@@ -91,8 +89,8 @@ describe("createStore", () => {
       users.remove("1");
     });
 
-    expect(store.get("users", "1")).toBeUndefined();
-    expect(store.get("users", "2")).toEqual({
+    expect(store.read(["users"], ([users]) => users.get("1"))).toBeUndefined();
+    expect(store.read(["users"], ([users]) => users.get("2"))).toEqual({
       id: "2",
       name: "Bob",
       profile: {},
@@ -123,7 +121,7 @@ describe("createStore", () => {
       });
     });
 
-    const result = store.get("users", "1");
+    const result = store.read(["users"], ([users]) => users.get("1"));
     expect(result).toEqual({
       id: "1",
       name: "Alice",
@@ -315,7 +313,7 @@ describe("createStore", () => {
     });
 
     // Should be undefined (tombstoned)
-    expect(store.get("users", "123")).toBeUndefined();
+    expect(store.read(["users"], ([users]) => users.get("123"))).toBeUndefined();
 
     // Snapshot should have store-level tombstones
     const snapshot = store.getSnapshot();
@@ -343,13 +341,13 @@ describe("createStore", () => {
       users.add({ id: "3", name: "Charlie", profile: {} });
     });
 
-    expect(store.list("users")).toHaveLength(3);
+    expect(store.read(["users"], ([users]) => users.list())).toHaveLength(3);
 
     store.transact(["users"], ([users]) => {
       users.remove("2");
     });
 
-    const allUsers = store.list("users");
+    const allUsers = store.read(["users"], ([users]) => users.list());
     expect(allUsers).toHaveLength(2);
     expect(allUsers.find((u) => u.id === "2")).toBeUndefined();
     expect(allUsers.find((u) => u.id === "1")).toBeDefined();
@@ -385,8 +383,8 @@ describe("createStore", () => {
     store2.merge(snapshot1);
 
     // User should still be tombstoned after merge
-    expect(store2.get("users", "1")).toBeUndefined();
-    expect(store2.list("users")).toHaveLength(0);
+    expect(store2.read(["users"], ([users]) => users.get("1"))).toBeUndefined();
+    expect(store2.read(["users"], ([users]) => users.list())).toHaveLength(0);
 
     const snapshot2 = store2.getSnapshot();
     expect(snapshot2.tombstones).toHaveProperty("1");
@@ -413,7 +411,7 @@ describe("createStore", () => {
       users.add({ id: "3", name: "Charlie", profile: { age: 35 } });
     });
 
-    const allUsers = store.list("users");
+    const allUsers = store.read(["users"], ([users]) => users.list());
     expect(allUsers).toHaveLength(3);
     expect(allUsers.find((u) => u.name === "Alice")).toBeDefined();
     expect(allUsers.find((u) => u.name === "Bob")).toBeDefined();
@@ -426,7 +424,7 @@ describe("createStore", () => {
       notes.add({ id: "3", content: "Third note" });
     });
 
-    const allNotes = store.list("notes");
+    const allNotes = store.read(["notes"], ([notes]) => notes.list());
     expect(allNotes).toHaveLength(3);
     expect(allNotes.find((n) => n.content === "First note")).toBeDefined();
 
@@ -434,14 +432,16 @@ describe("createStore", () => {
     store.transact(["users"], ([users]) => {
       users.remove("2");
     });
-    const usersAfterRemoval = store.list("users");
+    const usersAfterRemoval = store.read(["users"], ([users]) => users.list());
     expect(usersAfterRemoval).toHaveLength(2);
     expect(usersAfterRemoval.find((u) => u.id === "2")).toBeUndefined();
     expect(usersAfterRemoval.find((u) => u.id === "1")).toBeDefined();
     expect(usersAfterRemoval.find((u) => u.id === "3")).toBeDefined();
 
     // Demonstrate filtering with standard array methods
-    const adults = store.list("users").filter((user) => (user.profile?.age ?? 0) >= 30);
+    const adults = store.read(["users"], ([users]) =>
+      users.list({ where: (user) => (user.profile?.age ?? 0) >= 30 }),
+    );
     expect(adults).toHaveLength(2);
     expect(adults.find((u) => u.name === "Alice")).toBeDefined();
     expect(adults.find((u) => u.name === "Charlie")).toBeDefined();
@@ -480,12 +480,12 @@ describe("createStore", () => {
     expect(events).toHaveLength(0);
 
     // But the data should still be merged
-    expect(store2.get("users", "1")).toEqual({
+    expect(store2.read(["users"], ([users]) => users.get("1"))).toEqual({
       id: "1",
       name: "Alice",
       profile: { age: 30 },
     });
-    expect(store2.get("users", "2")).toEqual({
+    expect(store2.read(["users"], ([users]) => users.get("2"))).toEqual({
       id: "2",
       name: "Bob",
       profile: { age: 25 },
@@ -525,7 +525,7 @@ describe("createStore", () => {
     expect(events[0]).toEqual({ users: true });
 
     // Data should be merged
-    expect(store2.get("users", "1")).toEqual({
+    expect(store2.read(["users"], ([users]) => users.get("1"))).toEqual({
       id: "1",
       name: "Alice",
       profile: { age: 30 },
@@ -565,7 +565,7 @@ describe("createStore", () => {
     expect(events[0]).toEqual({ users: true });
 
     // Data should be merged
-    expect(store2.get("users", "1")).toEqual({
+    expect(store2.read(["users"], ([users]) => users.get("1"))).toEqual({
       id: "1",
       name: "Alice",
       profile: { age: 30 },
@@ -607,12 +607,12 @@ describe("createStore", () => {
     expect(events).toHaveLength(0);
 
     // But the data should still be merged for both collections
-    expect(store2.get("users", "1")).toEqual({
+    expect(store2.read(["users"], ([users]) => users.get("1"))).toEqual({
       id: "1",
       name: "Alice",
       profile: { age: 30 },
     });
-    expect(store2.get("notes", "note-1")).toEqual({
+    expect(store2.read(["notes"], ([notes]) => notes.get("note-1"))).toEqual({
       id: "note-1",
       content: "First note",
     });
@@ -634,12 +634,12 @@ describe("createStore", () => {
         users.add({ id: "2", name: "Bob", profile: { age: 25 } });
       });
 
-      expect(store.get("users", "1")).toEqual({
+      expect(store.read(["users"], ([users]) => users.get("1"))).toEqual({
         id: "1",
         name: "Alice",
         profile: { age: 30 },
       });
-      expect(store.get("users", "2")).toEqual({
+      expect(store.read(["users"], ([users]) => users.get("2"))).toEqual({
         id: "2",
         name: "Bob",
         profile: { age: 25 },
@@ -666,16 +666,16 @@ describe("createStore", () => {
         notes.add({ id: "note-2", content: "World" });
       });
 
-      expect(store.get("users", "1")).toEqual({
+      expect(store.read(["users"], ([users]) => users.get("1"))).toEqual({
         id: "1",
         name: "Alice",
         profile: {},
       });
-      expect(store.get("notes", "note-1")).toEqual({
+      expect(store.read(["notes"], ([notes]) => notes.get("note-1"))).toEqual({
         id: "note-1",
         content: "Hello",
       });
-      expect(store.get("notes", "note-2")).toEqual({
+      expect(store.read(["notes"], ([notes]) => notes.get("note-2"))).toEqual({
         id: "note-2",
         content: "World",
       });
@@ -746,8 +746,8 @@ describe("createStore", () => {
       }).toThrow("Transaction failed");
 
       // Changes should not be persisted
-      expect(store.get("users", "2")).toBeUndefined();
-      expect(store.get("users", "1")?.name).toBe("Alice");
+      expect(store.read(["users"], ([users]) => users.get("2"))).toBeUndefined();
+      expect(store.read(["users"], ([users]) => users.get("1"))?.name).toBe("Alice");
     });
 
     test("transact batches notifications", () => {
@@ -855,8 +855,7 @@ describe("createStore", () => {
       });
 
       expect(result).toBe(2); // Should see only the 2 existing users
-      expect(store.get("users", "3")).toBeDefined(); // But the new one should be added
+      expect(store.read(["users"], ([users]) => users.get("3"))).toBeDefined(); // But the new one should be added
     });
-
   });
 });

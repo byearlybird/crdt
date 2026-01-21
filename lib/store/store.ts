@@ -1,23 +1,19 @@
-import {
-  parseDocument,
-  mergeCollections,
-  type Collection,
-  type DocumentId,
-} from "../core";
+import { mergeCollections, type Collection, type DocumentId } from "../core";
 import type { Clock } from "../core/clock";
 import { advanceClock, makeStamp } from "../core/clock";
-import type { Input, Output, AnyObject, CollectionConfig } from "./schema";
+import type { AnyObject, CollectionConfig } from "./schema";
 import type { Tombstones } from "../core/tombstone";
 import { mergeTombstones } from "../core/tombstone";
 import type { Document } from "../core/document";
 import {
   executeTransaction,
-  type TransactionHandles,
+  type ReadHandles,
+  type MutateHandles,
   type TransactionDependencies,
 } from "./transaction";
 
 // Re-export transaction types for public API
-export type { TransactionHandles } from "./transaction";
+export type { ReadHandle, MutateHandle, ReadHandles, MutateHandles } from "./transaction";
 
 export type StoreSnapshot = {
   clock: Clock;
@@ -30,25 +26,21 @@ export type StoreChangeEvent<T extends Record<string, CollectionConfig<AnyObject
 };
 
 export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  // Reads
-  get<K extends keyof T & string>(
-    collection: K,
-    id: DocumentId,
-  ): Output<T[K]["schema"]> | undefined;
-
-  list<K extends keyof T & string>(collection: K): Output<T[K]["schema"]>[];
-
-  getSnapshot(): StoreSnapshot;
-
-  // Writes
-  transact<K extends (keyof T & string)[], R>(
+  // Read-only (optimized, no copy overhead)
+  read<K extends (keyof T & string)[], R>(
     collectionNames: [...K],
-    callback: (handles: TransactionHandles<T, K>) => R,
+    callback: (handles: ReadHandles<T, K>) => R,
   ): R;
 
-  merge(snapshot: StoreSnapshot, options?: { silent?: boolean }): void;
+  // Read-write transaction (full mutations, rollback on error)
+  transact<K extends (keyof T & string)[], R>(
+    collectionNames: [...K],
+    callback: (handles: MutateHandles<T, K>) => R,
+  ): R;
 
-  // Subscriptions
+  // Other methods
+  getSnapshot(): StoreSnapshot;
+  merge(snapshot: StoreSnapshot, options?: { silent?: boolean }): void;
   onChange(listener: (event: StoreChangeEvent<T>) => void): () => void;
 };
 
@@ -73,89 +65,53 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     return makeStamp(state.clock.ms, state.clock.seq);
   };
 
-  const getConfig = <K extends keyof T & string>(
-    collectionName: K,
-  ): CollectionConfig<AnyObject> => {
-    const config = configs.get(collectionName);
-
-    if (!config) {
-      throw new Error(`Collection "${collectionName}" not found`);
-    }
-
-    return config;
-  };
-
-  const getDocs = <K extends keyof T & string>(collectionName: K): Record<DocumentId, Document> => {
-    const docs = state.documents[collectionName];
-    if (!docs) {
-      throw new Error(`Collection "${collectionName}" not found`);
-    }
-    return docs;
-  };
-
   // Initialize collections
   for (const [name, collectionConfig] of Object.entries(config.collections)) {
     configs.set(name, collectionConfig);
     state.documents[name] = {};
   }
 
+  const deps: TransactionDependencies<T> = {
+    configs,
+    documents: state.documents,
+    tombstones: state.tombstones,
+    tick,
+    notifyListeners: (event) => {
+      listeners.forEach((listener) => listener(event));
+    },
+    applyMerge: (collectionName, txDocuments) => {
+      const currentCollection: Collection = {
+        documents: state.documents[collectionName]!,
+      };
+
+      const txCollection: Collection = {
+        documents: txDocuments,
+      };
+
+      const merged = mergeCollections(currentCollection, txCollection, state.tombstones);
+      state.documents[collectionName] = merged.documents;
+    },
+    applyTombstones: (txTombstones) => {
+      state.tombstones = mergeTombstones(state.tombstones, txTombstones);
+    },
+  };
+
+  const readFn = <K extends (keyof T & string)[], R>(
+    collectionNames: [...K],
+    callback: (handles: ReadHandles<T, K>) => R,
+  ): R => {
+    return executeTransaction("read", collectionNames, callback, deps);
+  };
+
   const transactFn = <K extends (keyof T & string)[], R>(
     collectionNames: [...K],
-    callback: (handles: TransactionHandles<T, K>) => R,
+    callback: (handles: MutateHandles<T, K>) => R,
   ): R => {
-    const deps: TransactionDependencies<T> = {
-      configs,
-      documents: state.documents,
-      tombstones: state.tombstones,
-      tick,
-      notifyListeners: (event) => {
-        listeners.forEach((listener) => listener(event));
-      },
-      applyMerge: (collectionName, txDocuments) => {
-        const currentCollection: Collection = {
-          documents: state.documents[collectionName]!,
-        };
-
-        const txCollection: Collection = {
-          documents: txDocuments,
-        };
-
-        const merged = mergeCollections(currentCollection, txCollection, state.tombstones);
-        state.documents[collectionName] = merged.documents;
-      },
-      applyTombstones: (txTombstones) => {
-        state.tombstones = mergeTombstones(state.tombstones, txTombstones);
-      },
-    };
-
-    return executeTransaction(collectionNames, callback, deps);
+    return executeTransaction("mutate", collectionNames, callback, deps);
   };
 
   return {
-    get(collectionName, id) {
-      if (state.tombstones[id]) return undefined;
-      const collectionDocs = getDocs(collectionName);
-      const doc = collectionDocs[id];
-
-      if (!doc) return undefined;
-
-      return parseDocument(doc) as Output<T[typeof collectionName]["schema"]>;
-    },
-
-    list(collectionName) {
-      const collectionDocs = getDocs(collectionName);
-      const resultDocs: Output<T[typeof collectionName]["schema"]>[] = [];
-
-      for (const [id, doc] of Object.entries(collectionDocs)) {
-        if (doc && !state.tombstones[id]) {
-          const parsed = parseDocument(doc) as Output<T[typeof collectionName]["schema"]>;
-          resultDocs.push(parsed);
-        }
-      }
-
-      return resultDocs;
-    },
-
+    read: readFn,
     transact: transactFn,
 
     getSnapshot(): StoreSnapshot {
