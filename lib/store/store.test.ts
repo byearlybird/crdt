@@ -52,7 +52,7 @@ describe("createStore", () => {
       });
     });
 
-    const result = store.query(({ users }) => users.get("1")).result();
+    const result = store.read(({ users }) => users.get("1"));
     expect(result).toEqual({
       id: "1",
       name: "Alice",
@@ -86,8 +86,8 @@ describe("createStore", () => {
       users.remove("1");
     });
 
-    expect(store.query(({ users }) => users.get("1")).result()).toBeUndefined();
-    expect(store.query(({ users }) => users.get("2")).result()).toEqual({
+    expect(store.read(({ users }) => users.get("1"))).toBeUndefined();
+    expect(store.read(({ users }) => users.get("2"))).toEqual({
       id: "2",
       name: "Bob",
       profile: {},
@@ -118,7 +118,7 @@ describe("createStore", () => {
       });
     });
 
-    const result = store.query(({ users }) => users.get("1")).result();
+    const result = store.read(({ users }) => users.get("1"));
     expect(result).toEqual({
       id: "1",
       name: "Alice",
@@ -133,7 +133,8 @@ describe("createStore", () => {
     });
 
     expect(store).toBeDefined();
-    expect(store.query).toBeDefined();
+    expect(store.read).toBeDefined();
+    expect(store.subscribe).toBeDefined();
     expect(store.transact).toBeDefined();
   });
 
@@ -160,7 +161,7 @@ describe("createStore", () => {
     });
 
     // Should be undefined (tombstoned)
-    expect(store.query(({ users }) => users.get("123")).result()).toBeUndefined();
+    expect(store.read(({ users }) => users.get("123"))).toBeUndefined();
   });
 
   test("removed documents don't appear in list", () => {
@@ -179,13 +180,13 @@ describe("createStore", () => {
       users.add({ id: "3", name: "Charlie", profile: {} });
     });
 
-    expect(store.query(({ users }) => users.list()).result()).toHaveLength(3);
+    expect(store.read(({ users }) => users.list())).toHaveLength(3);
 
     store.transact(({ users }) => {
       users.remove("2");
     });
 
-    const allUsers = store.query(({ users }) => users.list()).result();
+    const allUsers = store.read(({ users }) => users.list());
     expect(allUsers).toHaveLength(2);
     expect(allUsers.find((u) => u.id === "2")).toBeUndefined();
     expect(allUsers.find((u) => u.id === "1")).toBeDefined();
@@ -214,7 +215,7 @@ describe("createStore", () => {
       users.add({ id: "3", name: "Charlie", profile: { age: 35 } });
     });
 
-    const allUsers = store.query(({ users }) => users.list()).result();
+    const allUsers = store.read(({ users }) => users.list());
     expect(allUsers).toHaveLength(3);
     expect(allUsers.find((u) => u.name === "Alice")).toBeDefined();
     expect(allUsers.find((u) => u.name === "Bob")).toBeDefined();
@@ -227,7 +228,7 @@ describe("createStore", () => {
       notes.add({ id: "3", content: "Third note" });
     });
 
-    const allNotes = store.query(({ notes }) => notes.list()).result();
+    const allNotes = store.read(({ notes }) => notes.list());
     expect(allNotes).toHaveLength(3);
     expect(allNotes.find((n) => n.content === "First note")).toBeDefined();
 
@@ -235,16 +236,16 @@ describe("createStore", () => {
     store.transact(({ users }) => {
       users.remove("2");
     });
-    const usersAfterRemoval = store.query(({ users }) => users.list()).result();
+    const usersAfterRemoval = store.read(({ users }) => users.list());
     expect(usersAfterRemoval).toHaveLength(2);
     expect(usersAfterRemoval.find((u) => u.id === "2")).toBeUndefined();
     expect(usersAfterRemoval.find((u) => u.id === "1")).toBeDefined();
     expect(usersAfterRemoval.find((u) => u.id === "3")).toBeDefined();
 
     // Demonstrate filtering with standard array methods
-    const adults = store
-      .query(({ users }) => users.list().filter((user) => (user.profile?.age ?? 0) >= 30))
-      .result();
+    const adults = store.read(({ users }) =>
+      users.list().filter((user) => (user.profile?.age ?? 0) >= 30),
+    );
     expect(adults).toHaveLength(2);
     expect(adults.find((u) => u.name === "Alice")).toBeDefined();
     expect(adults.find((u) => u.name === "Charlie")).toBeDefined();
@@ -270,12 +271,12 @@ describe("createStore", () => {
         users.add({ id: "2", name: "Bob", profile: { age: 25 } });
       });
 
-      expect(store.query(({ users }) => users.get("1")).result()).toEqual({
+      expect(store.read(({ users }) => users.get("1"))).toEqual({
         id: "1",
         name: "Alice",
         profile: { age: 30 },
       });
-      expect(store.query(({ users }) => users.get("2")).result()).toEqual({
+      expect(store.read(({ users }) => users.get("2"))).toEqual({
         id: "2",
         name: "Bob",
         profile: { age: 25 },
@@ -302,16 +303,16 @@ describe("createStore", () => {
         notes.add({ id: "note-2", content: "World" });
       });
 
-      expect(store.query(({ users }) => users.get("1")).result()).toEqual({
+      expect(store.read(({ users }) => users.get("1"))).toEqual({
         id: "1",
         name: "Alice",
         profile: {},
       });
-      expect(store.query(({ notes }) => notes.get("note-1")).result()).toEqual({
+      expect(store.read(({ notes }) => notes.get("note-1"))).toEqual({
         id: "note-1",
         content: "Hello",
       });
-      expect(store.query(({ notes }) => notes.get("note-2")).result()).toEqual({
+      expect(store.read(({ notes }) => notes.get("note-2"))).toEqual({
         id: "note-2",
         content: "World",
       });
@@ -382,8 +383,8 @@ describe("createStore", () => {
       }).toThrow("Transaction failed");
 
       // Changes should not be persisted
-      expect(store.query(({ users }) => users.get("2")).result()).toBeUndefined();
-      expect(store.query(({ users }) => users.get("1")).result()?.name).toBe("Alice");
+      expect(store.read(({ users }) => users.get("2"))).toBeUndefined();
+      expect(store.read(({ users }) => users.get("1"))?.name).toBe("Alice");
     });
 
     test("transact batches notifications", () => {
@@ -404,12 +405,12 @@ describe("createStore", () => {
       });
 
       // Verify the transaction completed successfully
-      expect(store.query(({ users }) => users.get("1")).result()).toEqual({
+      expect(store.read(({ users }) => users.get("1"))).toEqual({
         id: "1",
         name: "Alice Updated",
         profile: {},
       });
-      expect(store.query(({ users }) => users.get("2")).result()).toBeUndefined();
+      expect(store.read(({ users }) => users.get("2"))).toBeUndefined();
     });
 
     test("transact with multiple collections batches notifications across collections", () => {
@@ -434,16 +435,16 @@ describe("createStore", () => {
       });
 
       // Verify the transaction completed successfully
-      expect(store.query(({ users }) => users.get("1")).result()).toEqual({
+      expect(store.read(({ users }) => users.get("1"))).toEqual({
         id: "1",
         name: "Alice Updated",
         profile: {},
       });
-      expect(store.query(({ notes }) => notes.get("note-1")).result()).toEqual({
+      expect(store.read(({ notes }) => notes.get("note-1"))).toEqual({
         id: "note-1",
         content: "Hello",
       });
-      expect(store.query(({ notes }) => notes.get("note-2")).result()).toEqual({
+      expect(store.read(({ notes }) => notes.get("note-2"))).toEqual({
         id: "note-2",
         content: "World",
       });
@@ -496,12 +497,12 @@ describe("createStore", () => {
       });
 
       expect(result).toBe(2); // Should see only the 2 existing users
-      expect(store.query(({ users }) => users.get("3")).result()).toBeDefined(); // But the new one should be added
+      expect(store.read(({ users }) => users.get("3"))).toBeDefined(); // But the new one should be added
     });
   });
 
-  describe("reactive queries", () => {
-    test("query.result() returns current results", () => {
+  describe("read and subscribe", () => {
+    test("read() returns current results", () => {
       const store = createStore({
         collections: {
           users: {
@@ -515,8 +516,7 @@ describe("createStore", () => {
         users.add({ id: "1", name: "Alice", profile: {} });
       });
 
-      const query = store.query(({ users }) => users.get("1"));
-      expect(query.result()).toEqual({
+      expect(store.read(({ users }) => users.get("1"))).toEqual({
         id: "1",
         name: "Alice",
         profile: {},
@@ -526,14 +526,14 @@ describe("createStore", () => {
         users.update("1", { name: "Alice Updated" });
       });
 
-      expect(query.result()).toEqual({
+      expect(store.read(({ users }) => users.get("1"))).toEqual({
         id: "1",
         name: "Alice Updated",
         profile: {},
       });
     });
 
-    test("query.subscribe() receives initial result and updates", () => {
+    test("subscribe() receives initial result and updates", () => {
       const store = createStore({
         collections: {
           users: {
@@ -547,12 +547,14 @@ describe("createStore", () => {
         users.add({ id: "1", name: "Alice", profile: {} });
       });
 
-      const query = store.query(({ users }) => users.get("1"));
       const results: any[] = [];
 
-      const unsubscribe = query.subscribe((result) => {
-        results.push(result);
-      });
+      const unsubscribe = store.subscribe(
+        ({ users }) => users.get("1"),
+        (result) => {
+          results.push(result);
+        },
+      );
 
       // Should receive initial result
       expect(results).toHaveLength(1);
@@ -577,7 +579,7 @@ describe("createStore", () => {
       unsubscribe();
     });
 
-    test("query.subscribe() only updates when dependencies change", () => {
+    test("subscribe() only updates when dependencies change", () => {
       const store = createStore({
         collections: {
           users: {
@@ -596,12 +598,14 @@ describe("createStore", () => {
         notes.add({ id: "note-1", content: "First note" });
       });
 
-      const query = store.query(({ users }) => users.get("1"));
       const results: any[] = [];
 
-      query.subscribe((result) => {
-        results.push(result);
-      });
+      store.subscribe(
+        ({ users }) => users.get("1"),
+        (result) => {
+          results.push(result);
+        },
+      );
 
       expect(results).toHaveLength(1);
 
@@ -620,7 +624,7 @@ describe("createStore", () => {
       expect(results).toHaveLength(2); // Updated
     });
 
-    test("query.subscribe() tracks multiple collection dependencies", () => {
+    test("subscribe() tracks multiple collection dependencies", () => {
       const store = createStore({
         collections: {
           users: {
@@ -639,15 +643,16 @@ describe("createStore", () => {
         notes.add({ id: "note-1", content: "First note" });
       });
 
-      const query = store.query(({ users, notes }) => ({
-        user: users.get("1"),
-        note: notes.get("note-1"),
-      }));
-
       const results: any[] = [];
-      query.subscribe((result) => {
-        results.push(result);
-      });
+      store.subscribe(
+        ({ users, notes }) => ({
+          user: users.get("1"),
+          note: notes.get("note-1"),
+        }),
+        (result) => {
+          results.push(result);
+        },
+      );
 
       expect(results).toHaveLength(1);
 
@@ -666,7 +671,7 @@ describe("createStore", () => {
       expect(results).toHaveLength(3);
     });
 
-    test("query.subscribe() unsubscribe stops receiving updates", () => {
+    test("subscribe() unsubscribe stops receiving updates", () => {
       const store = createStore({
         collections: {
           users: {
@@ -680,12 +685,14 @@ describe("createStore", () => {
         users.add({ id: "1", name: "Alice", profile: {} });
       });
 
-      const query = store.query(({ users }) => users.get("1"));
       const results: any[] = [];
 
-      const unsubscribe = query.subscribe((result) => {
-        results.push(result);
-      });
+      const unsubscribe = store.subscribe(
+        ({ users }) => users.get("1"),
+        (result) => {
+          results.push(result);
+        },
+      );
 
       expect(results).toHaveLength(1);
 
@@ -700,7 +707,7 @@ describe("createStore", () => {
       expect(results).toHaveLength(1); // No new result
     });
 
-    test("query.subscribe() multiple subscribers all receive updates", () => {
+    test("subscribe() multiple subscribers all receive updates", () => {
       const store = createStore({
         collections: {
           users: {
@@ -714,17 +721,22 @@ describe("createStore", () => {
         users.add({ id: "1", name: "Alice", profile: {} });
       });
 
-      const query = store.query(({ users }) => users.get("1"));
       const results1: any[] = [];
       const results2: any[] = [];
 
-      query.subscribe((result) => {
-        results1.push(result);
-      });
+      store.subscribe(
+        ({ users }) => users.get("1"),
+        (result) => {
+          results1.push(result);
+        },
+      );
 
-      query.subscribe((result) => {
-        results2.push(result);
-      });
+      store.subscribe(
+        ({ users }) => users.get("1"),
+        (result) => {
+          results2.push(result);
+        },
+      );
 
       expect(results1).toHaveLength(1);
       expect(results2).toHaveLength(1);
@@ -738,7 +750,7 @@ describe("createStore", () => {
     });
 
 
-    test("query works with list() operations", () => {
+    test("subscribe() works with list() operations", () => {
       const store = createStore({
         collections: {
           users: {
@@ -753,12 +765,14 @@ describe("createStore", () => {
         users.add({ id: "2", name: "Bob", profile: {} });
       });
 
-      const query = store.query(({ users }) => users.list());
       const results: any[] = [];
 
-      query.subscribe((result) => {
-        results.push(result);
-      });
+      store.subscribe(
+        ({ users }) => users.list(),
+        (result) => {
+          results.push(result);
+        },
+      );
 
       expect(results).toHaveLength(1);
       expect(results[0]).toHaveLength(2);
@@ -772,7 +786,7 @@ describe("createStore", () => {
       expect(results[1]).toHaveLength(3);
     });
 
-    test("query works with filtered list() operations", () => {
+    test("subscribe() works with filtered list() operations", () => {
       const store = createStore({
         collections: {
           users: {
@@ -788,14 +802,14 @@ describe("createStore", () => {
         users.add({ id: "3", name: "Charlie", profile: { age: 35 } });
       });
 
-      const query = store.query(({ users }) =>
-        users.list().filter((user) => (user.profile?.age ?? 0) >= 30),
-      );
       const results: any[] = [];
 
-      query.subscribe((result) => {
-        results.push(result);
-      });
+      store.subscribe(
+        ({ users }) => users.list().filter((user) => (user.profile?.age ?? 0) >= 30),
+        (result) => {
+          results.push(result);
+        },
+      );
 
       expect(results).toHaveLength(1);
       expect(results[0]).toHaveLength(2); // Alice and Charlie
@@ -979,7 +993,7 @@ describe("middleware", () => {
 
     await store.init();
 
-    const user = store.query(({ users }) => users.get("1")).result();
+    const user = store.read(({ users }) => users.get("1"));
     expect(user).toEqual({
       id: "1",
       name: "Alice",
@@ -1088,7 +1102,7 @@ describe("middleware", () => {
       users.add({ id: "1", name: "Alice", profile: {} });
     });
 
-    const user = store.query(({ users }) => users.get("1")).result();
+    const user = store.read(({ users }) => users.get("1"));
     expect(user).toEqual({
       id: "1",
       name: "Alice",

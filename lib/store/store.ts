@@ -14,8 +14,6 @@ import { createQuery, QueryManager, type QueryObject } from "./query";
 
 // Re-export transaction types for public API
 export type { ReadHandle, MutateHandle, ReadHandles, MutateHandles } from "./transaction";
-// Re-export query types for public API
-export type { QueryObject } from "./query";
 
 export type StoreSnapshot = {
   clock: Clock;
@@ -38,8 +36,11 @@ export type StoreMiddleware<T extends Record<string, CollectionConfig<AnyObject>
 ) => (() => void | Promise<void>) | void | Promise<void>;
 
 export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  // Read-only reactive query (returns query object with result() and subscribe())
-  query<R>(callback: (handles: ReadHandles<T>) => R): QueryObject<R>;
+  // One-off read (returns value directly, no reactivity)
+  read<R>(callback: (handles: ReadHandles<T>) => R): R;
+
+  // Reactive subscription (re-executes when dependencies change)
+  subscribe<R>(query: (handles: ReadHandles<T>) => R, subscriber: (value: R) => void): () => void;
 
   // Read-write transaction (full mutations, rollback on error, lazy collection access)
   transact<R>(callback: (handles: MutateHandles<T>) => R): R;
@@ -115,12 +116,25 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     },
   };
 
-  const queryFn = <R>(callback: (handles: ReadHandles<T>) => R): QueryObject<R> => {
-    return createQuery(
+  const readFn = <R>(callback: (handles: ReadHandles<T>) => R): R => {
+    const query = createQuery(
       callback,
       { configs, documents: state.collections, tombstones: state.tombstones },
       queryManager,
     );
+    return query.result();
+  };
+
+  const subscribeFn = <R>(
+    query: (handles: ReadHandles<T>) => R,
+    subscriber: (value: R) => void,
+  ): (() => void) => {
+    const queryObject = createQuery(
+      query,
+      { configs, documents: state.collections, tombstones: state.tombstones },
+      queryManager,
+    );
+    return queryObject.subscribe(subscriber);
   };
 
   const transactFn = <R>(callback: (handles: MutateHandles<T>) => R): R => {
@@ -237,7 +251,8 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   };
 
   const storeAPI: StoreAPI<T> = {
-    query: queryFn,
+    read: readFn,
+    subscribe: subscribeFn,
     transact: transactFn,
     use(middleware: StoreMiddleware<T>): StoreAPI<T> {
       if (isInitialized) {
