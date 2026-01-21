@@ -10,7 +10,7 @@ import {
   type MutateHandles,
   type TransactionDependencies,
 } from "./transaction";
-import { createQuery } from "./query";
+import { createReadHandle, createHandleProxy, type HandleCache } from "./handles";
 import { createMiddlewareManager, type StoreMiddleware } from "./middleware";
 
 export type { StoreSnapshot } from "../core";
@@ -21,7 +21,6 @@ export type StoreChangeEvent<T extends StoreConfig> = {
 
 export type StoreAPI<T extends StoreConfig> = {
   read<R>(callback: (handles: ReadHandles<T>) => R): R;
-  subscribe<R>(query: (handles: ReadHandles<T>) => R, subscriber: (value: R) => void): () => void;
   transact<R>(callback: (handles: MutateHandles<T>) => R): R;
   use(middleware: StoreMiddleware<T>): StoreAPI<T>;
   init(): Promise<void>;
@@ -75,28 +74,25 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
   };
 
   const read = <R>(callback: (handles: ReadHandles<T>) => R): R => {
-    const query = createQuery(
-      callback,
-      { configs, documents: state.collections, tombstones: state.tombstones },
-      onChange,
-    );
-    return query.result();
-  };
+    const accessed = new Set<string>();
+    const handleCache: HandleCache = {};
 
-  const subscribe = <R>(
-    query: (handles: ReadHandles<T>) => R,
-    subscriber: (value: R) => void,
-  ): (() => void) => {
-    const queryObject = createQuery(
-      query,
-      { configs, documents: state.collections, tombstones: state.tombstones },
-      onChange,
+    const handles = createHandleProxy<ReadHandles<T>>(
+      configs,
+      accessed,
+      handleCache,
+      (collectionName) => {
+        accessed.add(collectionName);
+        const documents = state.collections[collectionName] ?? {};
+        handleCache[collectionName] = createReadHandle(documents, state.tombstones);
+      },
     );
-    return queryObject.subscribe(subscriber);
+
+    return callback(handles);
   };
 
   const transact = <R>(callback: (handles: MutateHandles<T>) => R): R => {
-    const result = executeTransaction("mutate", callback, getDeps());
+    const result = executeTransaction(callback, getDeps());
 
     if (result.changes) {
       state.tombstones = mergeTombstones(state.tombstones, result.changes.tombstones);
@@ -185,7 +181,6 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
 
   return {
     read,
-    subscribe,
     transact,
     use(middleware: StoreMiddleware<T>): StoreAPI<T> {
       middlewareManager.use(middleware);

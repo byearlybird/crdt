@@ -263,7 +263,7 @@ describe("createStore", () => {
     });
   });
 
-  describe("read and subscribe", () => {
+  describe("read", () => {
     test("read() returns current results", () => {
       const store = createStore({
         collections: {
@@ -293,295 +293,6 @@ describe("createStore", () => {
         name: "Alice Updated",
         profile: {},
       });
-    });
-
-    test("subscribe() receives initial result and updates", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      store.transact(({ users }) => {
-        users.add({ id: "1", name: "Alice", profile: {} });
-      });
-
-      const results: any[] = [];
-
-      const unsubscribe = store.subscribe(
-        ({ users }) => users.get("1"),
-        (result) => {
-          results.push(result);
-        },
-      );
-
-      // Should receive initial result
-      expect(results).toHaveLength(1);
-      expect(results[0]).toEqual({
-        id: "1",
-        name: "Alice",
-        profile: {},
-      });
-
-      // Update should trigger subscription
-      store.transact(({ users }) => {
-        users.update("1", { name: "Alice Updated" });
-      });
-
-      expect(results).toHaveLength(2);
-      expect(results[1]).toEqual({
-        id: "1",
-        name: "Alice Updated",
-        profile: {},
-      });
-
-      unsubscribe();
-    });
-
-    test("subscribe() only updates when dependencies change", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-          notes: {
-            schema: noteSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      store.transact(({ users, notes }) => {
-        users.add({ id: "1", name: "Alice", profile: {} });
-        notes.add({ id: "note-1", content: "First note" });
-      });
-
-      const results: any[] = [];
-
-      store.subscribe(
-        ({ users }) => users.get("1"),
-        (result) => {
-          results.push(result);
-        },
-      );
-
-      expect(results).toHaveLength(1);
-
-      // Update notes collection - should NOT trigger query update
-      store.transact(({ notes }) => {
-        notes.add({ id: "note-2", content: "Second note" });
-      });
-
-      expect(results).toHaveLength(1); // No update
-
-      // Update users collection - SHOULD trigger query update
-      store.transact(({ users }) => {
-        users.update("1", { name: "Alice Updated" });
-      });
-
-      expect(results).toHaveLength(2); // Updated
-    });
-
-    test("subscribe() tracks multiple collection dependencies", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-          notes: {
-            schema: noteSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      store.transact(({ users, notes }) => {
-        users.add({ id: "1", name: "Alice", profile: {} });
-        notes.add({ id: "note-1", content: "First note" });
-      });
-
-      const results: any[] = [];
-      store.subscribe(
-        ({ users, notes }) => ({
-          user: users.get("1"),
-          note: notes.get("note-1"),
-        }),
-        (result) => {
-          results.push(result);
-        },
-      );
-
-      expect(results).toHaveLength(1);
-
-      // Update users - should trigger
-      store.transact(({ users }) => {
-        users.update("1", { name: "Alice Updated" });
-      });
-
-      expect(results).toHaveLength(2);
-
-      // Update notes - should also trigger
-      store.transact(({ notes }) => {
-        notes.update("note-1", { content: "Updated note" });
-      });
-
-      expect(results).toHaveLength(3);
-    });
-
-    test("subscribe() unsubscribe stops receiving updates", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      store.transact(({ users }) => {
-        users.add({ id: "1", name: "Alice", profile: {} });
-      });
-
-      const results: any[] = [];
-
-      const unsubscribe = store.subscribe(
-        ({ users }) => users.get("1"),
-        (result) => {
-          results.push(result);
-        },
-      );
-
-      expect(results).toHaveLength(1);
-
-      // Unsubscribe
-      unsubscribe();
-
-      // Update should NOT trigger subscription
-      store.transact(({ users }) => {
-        users.update("1", { name: "Alice Updated" });
-      });
-
-      expect(results).toHaveLength(1); // No new result
-    });
-
-    test("subscribe() multiple subscribers all receive updates", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      store.transact(({ users }) => {
-        users.add({ id: "1", name: "Alice", profile: {} });
-      });
-
-      const results1: any[] = [];
-      const results2: any[] = [];
-
-      store.subscribe(
-        ({ users }) => users.get("1"),
-        (result) => {
-          results1.push(result);
-        },
-      );
-
-      store.subscribe(
-        ({ users }) => users.get("1"),
-        (result) => {
-          results2.push(result);
-        },
-      );
-
-      expect(results1).toHaveLength(1);
-      expect(results2).toHaveLength(1);
-
-      store.transact(({ users }) => {
-        users.update("1", { name: "Alice Updated" });
-      });
-
-      expect(results1).toHaveLength(2);
-      expect(results2).toHaveLength(2);
-    });
-
-    test("subscribe() works with list() operations", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      store.transact(({ users }) => {
-        users.add({ id: "1", name: "Alice", profile: {} });
-        users.add({ id: "2", name: "Bob", profile: {} });
-      });
-
-      const results: any[] = [];
-
-      store.subscribe(
-        ({ users }) => users.list(),
-        (result) => {
-          results.push(result);
-        },
-      );
-
-      expect(results).toHaveLength(1);
-      expect(results[0]).toHaveLength(2);
-
-      // Add a new user
-      store.transact(({ users }) => {
-        users.add({ id: "3", name: "Charlie", profile: {} });
-      });
-
-      expect(results).toHaveLength(2);
-      expect(results[1]).toHaveLength(3);
-    });
-
-    test("subscribe() works with filtered list() operations", () => {
-      const store = createStore({
-        collections: {
-          users: {
-            schema: userSchema,
-            keyPath: "id",
-          },
-        },
-      });
-
-      store.transact(({ users }) => {
-        users.add({ id: "1", name: "Alice", profile: { age: 30 } });
-        users.add({ id: "2", name: "Bob", profile: { age: 25 } });
-        users.add({ id: "3", name: "Charlie", profile: { age: 35 } });
-      });
-
-      const results: any[] = [];
-
-      store.subscribe(
-        ({ users }) => users.list().filter((user) => (user.profile?.age ?? 0) >= 30),
-        (result) => {
-          results.push(result);
-        },
-      );
-
-      expect(results).toHaveLength(1);
-      expect(results[0]).toHaveLength(2); // Alice and Charlie
-
-      // Update Bob's age to 30 - should now be included
-      store.transact(({ users }) => {
-        users.update("2", { profile: { age: 30 } });
-      });
-
-      expect(results).toHaveLength(2);
-      expect(results[1]).toHaveLength(3); // All three now
     });
   });
 });
@@ -1018,19 +729,16 @@ describe("middleware", () => {
     });
 
     let notified = false;
-    const unsubscribe = store.subscribe(
-      ({ users }) => users.list(),
-      () => {
-        notified = true;
-      },
-    );
-
-    // Reset notified after initial subscription (which triggers immediately)
-    notified = false;
+    let unsubscribe: (() => void) | null = null;
 
     let setSnapshotFn: any = null;
-    const middleware = ({ setSnapshot }: any) => {
+    const middleware = ({ setSnapshot, subscribe }: any) => {
       setSnapshotFn = setSnapshot;
+      unsubscribe = subscribe((event: any) => {
+        if (Object.keys(event).length > 0) {
+          notified = true;
+        }
+      });
     };
 
     store.use(middleware);
@@ -1051,6 +759,7 @@ describe("middleware", () => {
     };
 
     // Silent should not notify
+    notified = false;
     setSnapshotFn(snapshot, { silent: true });
     expect(notified).toBe(false);
 
@@ -1059,7 +768,9 @@ describe("middleware", () => {
     setSnapshotFn(snapshot, { silent: false });
     expect(notified).toBe(true);
 
-    unsubscribe();
+    if (unsubscribe) {
+      unsubscribe();
+    }
   });
 });
 

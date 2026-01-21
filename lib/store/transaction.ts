@@ -110,7 +110,6 @@ function initializeCollection(
   collectionName: string,
   state: TransactionState,
   deps: TransactionDependencies<any>,
-  isReadOnly: boolean,
 ): void {
   if (state.accessed.has(collectionName)) {
     return;
@@ -119,22 +118,18 @@ function initializeCollection(
   state.accessed.add(collectionName);
 
   const sourceDocs = getCollectionDocuments(collectionName, deps.documents);
-  state.documents[collectionName] = isReadOnly ? sourceDocs : { ...sourceDocs };
+  state.documents[collectionName] = { ...sourceDocs };
 
   const config = getCollectionConfig(collectionName, deps.configs);
   const documents = state.documents[collectionName]!;
 
-  if (isReadOnly) {
-    state.handleCache[collectionName] = createReadHandle(documents, state.tombstones);
-  } else {
-    state.handleCache[collectionName] = createMutateHandle(
-      config,
-      documents,
-      state.tombstones,
-      deps.tick,
-      () => state.changed.add(collectionName),
-    );
-  }
+  state.handleCache[collectionName] = createMutateHandle(
+    config,
+    documents,
+    state.tombstones,
+    deps.tick,
+    () => state.changed.add(collectionName),
+  );
 }
 
 function buildChanges<T extends StoreConfig>(
@@ -157,35 +152,27 @@ function buildChanges<T extends StoreConfig>(
   };
 }
 
-export function executeTransaction<
-  T extends StoreConfig,
-  R,
-  Mode extends "read" | "mutate" = "mutate",
->(
-  mode: Mode,
-  callback: (handles: Mode extends "read" ? ReadHandles<T> : MutateHandles<T>) => R,
+export function executeTransaction<T extends StoreConfig, R>(
+  callback: (handles: MutateHandles<T>) => R,
   deps: TransactionDependencies<T>,
 ): TransactionResult<T, R> {
-  const isReadOnly = mode === "read";
-
   const state: TransactionState = {
     accessed: new Set<string>(),
     documents: {},
-    tombstones: isReadOnly ? deps.tombstones : { ...deps.tombstones },
+    tombstones: { ...deps.tombstones },
     changed: new Set<string>(),
     handleCache: {},
   };
 
-  type Handles = Mode extends "read" ? ReadHandles<T> : MutateHandles<T>;
-  const handles = createHandleProxy<Handles>(
+  const handles = createHandleProxy<MutateHandles<T>>(
     deps.configs,
     state.accessed,
     state.handleCache,
-    (collectionName) => initializeCollection(collectionName, state, deps, isReadOnly),
+    (collectionName) => initializeCollection(collectionName, state, deps),
   );
   const value = callback(handles);
 
-  const changes = isReadOnly ? null : buildChanges<T>(state);
+  const changes = buildChanges<T>(state);
 
   return { value, changes };
 }

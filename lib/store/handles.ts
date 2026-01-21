@@ -11,7 +11,7 @@ export type HandleCache = Record<string, unknown>;
 
 /**
  * Creates a Proxy that lazily initializes collection handles on first access.
- * Shared by both transactions and queries.
+ * Used by both transactions and read operations.
  */
 export function createHandleProxy<T>(
   configs: Map<string, CollectionConfig<AnyObject>>,
