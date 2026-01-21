@@ -142,26 +142,34 @@ function notifySubscribers<R>(query: ActiveQuery<R>, result: R): void {
   query.subscribers.forEach((subscriber) => subscriber(result));
 }
 
-export class QueryManager {
-  private activeQueries = new Set<ActiveQuery<any>>();
+export type QueryManager = {
+  addQuery<R>(query: ActiveQuery<R>): void;
+  removeQuery<R>(query: ActiveQuery<R>): void;
+  reexecuteQueries(changedCollections: Set<string>): void;
+};
 
-  addQuery<R>(query: ActiveQuery<R>): void {
-    this.activeQueries.add(query);
-  }
+export function createQueryManager(): QueryManager {
+  const activeQueries = new Set<ActiveQuery<any>>();
 
-  removeQuery<R>(query: ActiveQuery<R>): void {
-    this.activeQueries.delete(query);
-  }
+  return {
+    addQuery(query) {
+      activeQueries.add(query);
+    },
 
-  reexecuteQueries(changedCollections: Set<string>): void {
-    for (const query of this.activeQueries) {
-      const hasChanges = hasDependencyChanged(query.dependencies, changedCollections);
-      const hasSubscribers = query.subscribers.size > 0;
+    removeQuery(query) {
+      activeQueries.delete(query);
+    },
 
-      if (hasChanges && hasSubscribers) {
-        const result = query.execute();
-        notifySubscribers(query, result);
+    reexecuteQueries(changedCollections) {
+      for (const query of activeQueries) {
+        const hasChanges = hasDependencyChanged(query.dependencies, changedCollections);
+        const hasSubscribers = query.subscribers.size > 0;
+
+        if (hasChanges && hasSubscribers) {
+          const result = query.execute();
+          notifySubscribers(query, result);
+        }
       }
-    }
-  }
+    },
+  };
 }

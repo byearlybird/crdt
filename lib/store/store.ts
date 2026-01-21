@@ -10,7 +10,7 @@ import {
   type MutateHandles,
   type TransactionDependencies,
 } from "./transaction";
-import { createQuery, QueryManager, type QueryObject } from "./query";
+import { createQuery, createQueryManager, type QueryManager, type QueryObject } from "./query";
 
 // Re-export transaction types for public API
 export type { ReadHandle, MutateHandle, ReadHandles, MutateHandles } from "./transaction";
@@ -76,7 +76,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
 
   const configs = new Map<string, CollectionConfig<AnyObject>>();
   const listeners = new Set<(event: StoreChangeEvent<T>) => void>();
-  const queryManager = new QueryManager();
+  const queryManager = createQueryManager();
 
   const middlewares: StoreMiddleware<T>[] = [];
   let isInitialized = false;
