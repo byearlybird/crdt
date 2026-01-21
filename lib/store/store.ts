@@ -27,6 +27,17 @@ export type StoreChangeEvent<T extends Record<string, CollectionConfig<AnyObject
   [K in keyof T]?: true;
 };
 
+export type MiddlewareContext<T extends Record<string, CollectionConfig<AnyObject>>> = {
+  subscribe: (listener: (event: StoreChangeEvent<T>) => void) => () => void;
+  getSnapshot: () => StoreSnapshot;
+  merge: (snapshot: StoreSnapshot, options?: { silent?: boolean }) => void;
+};
+
+export type StoreMiddleware<T extends Record<string, CollectionConfig<AnyObject>>> = {
+  init?: (context: MiddlewareContext<T>) => Promise<void> | void;
+  dispose?: () => Promise<void> | void;
+};
+
 export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
   // Read-only reactive query (returns query object with result() and subscribe())
   query<R>(callback: (handles: ReadHandles<T>) => R): QueryObject<R>;
@@ -34,10 +45,10 @@ export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
   // Read-write transaction (full mutations, rollback on error, lazy collection access)
   transact<R>(callback: (handles: MutateHandles<T>) => R): R;
 
-  // Other methods
-  getSnapshot(): StoreSnapshot;
-  merge(snapshot: StoreSnapshot, options?: { silent?: boolean }): void;
-  onChange(listener: (event: StoreChangeEvent<T>) => void): () => void;
+  // Middleware methods
+  use(middleware: StoreMiddleware<T>): StoreAPI<T>;
+  init(): Promise<void>;
+  dispose(): Promise<void>;
 };
 
 export function createStore<T extends Record<string, CollectionConfig<AnyObject>>>(config: {
@@ -52,6 +63,11 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   const configs = new Map<string, CollectionConfig<AnyObject>>();
   const listeners = new Set<(event: StoreChangeEvent<T>) => void>();
   const queryManager = new QueryManager();
+
+  // Middleware state
+  const middlewares: StoreMiddleware<T>[] = [];
+  let isInitialized = false;
+  const unsubscribeFns: (() => void)[] = [];
 
   const advance = (ms: number, seq: number): void => {
     state.clock = advanceClock(state.clock, { ms, seq });
@@ -111,74 +127,127 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     return executeTransaction("mutate", callback, deps);
   };
 
-  return {
+  const getSnapshotFn = (): StoreSnapshot => {
+    const collectionsSnapshot: Record<string, Collection> = {};
+    for (const [name, collection] of Object.entries(state.collections)) {
+      collectionsSnapshot[name] = collection;
+    }
+    return {
+      clock: state.clock,
+      collections: collectionsSnapshot,
+      tombstones: state.tombstones,
+    };
+  };
+
+  const mergeFn = (snapshot: StoreSnapshot, options?: { silent?: boolean }): void => {
+    advance(snapshot.clock.ms, snapshot.clock.seq);
+
+    state.tombstones = mergeTombstones(state.tombstones, snapshot.tombstones);
+
+    const event: StoreChangeEvent<T> = {};
+
+    for (const [name, collectionData] of Object.entries(snapshot.collections)) {
+      // Initialize collection if it doesn't exist
+      if (!state.collections[name]) {
+        state.collections[name] = {};
+      }
+
+      // Filter out tombstoned documents before merging
+      const filteredCollection: Collection = {};
+      for (const [id, doc] of Object.entries(collectionData)) {
+        if (!state.tombstones[id]) {
+          filteredCollection[id] = doc;
+        }
+      }
+
+      // Merge collections using core mergeCollections function
+      const currentCollection: Collection = state.collections[name];
+      const sourceCollection: Collection = filteredCollection;
+
+      const merged = mergeCollections(currentCollection, sourceCollection, state.tombstones);
+      state.collections[name] = merged;
+
+      // Mark collection as dirty
+      event[name as keyof T] = true;
+    }
+
+    // Notify listeners once with batched event (only if there are changes and not silent)
+    if (!options?.silent && Object.keys(event).length > 0) {
+      listeners.forEach((listener) => listener(event));
+
+      // Re-execute queries that depend on changed collections
+      const changedCollections = new Set<string>();
+      for (const key in event) {
+        if (event[key]) {
+          changedCollections.add(key);
+        }
+      }
+      if (changedCollections.size > 0) {
+        queryManager.reexecuteQueries(changedCollections);
+      }
+    }
+  };
+
+  const onChangeFn = (listener: (event: StoreChangeEvent<T>) => void): (() => void) => {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  };
+
+  const initFn = async (): Promise<void> => {
+    if (isInitialized) {
+      throw new Error("Store already initialized");
+    }
+
+    // Create context for middleware
+    const context: MiddlewareContext<T> = {
+      subscribe: (listener) => {
+        const unsub = onChangeFn(listener);
+        unsubscribeFns.push(unsub);
+        return unsub;
+      },
+      getSnapshot: getSnapshotFn,
+      merge: mergeFn,
+    };
+
+    // Initialize all middleware sequentially in registration order
+    for (const middleware of middlewares) {
+      if (middleware.init) {
+        await middleware.init(context);
+      }
+    }
+
+    isInitialized = true;
+  };
+
+  const disposeFn = async (): Promise<void> => {
+    // Dispose in reverse order
+    const reversed = [...middlewares].reverse();
+    for (const middleware of reversed) {
+      if (middleware.dispose) {
+        await middleware.dispose();
+      }
+    }
+
+    // Unsubscribe all middleware subscriptions
+    unsubscribeFns.forEach((fn) => fn());
+    unsubscribeFns.length = 0;
+
+    isInitialized = false;
+  };
+
+  const storeAPI: StoreAPI<T> = {
     query: queryFn,
     transact: transactFn,
-
-    getSnapshot(): StoreSnapshot {
-      const collectionsSnapshot: Record<string, Collection> = {};
-      for (const [name, collection] of Object.entries(state.collections)) {
-        collectionsSnapshot[name] = collection;
+    use(middleware: StoreMiddleware<T>): StoreAPI<T> {
+      if (isInitialized) {
+        throw new Error("Cannot add middleware after initialization");
       }
-      return {
-        clock: state.clock,
-        collections: collectionsSnapshot,
-        tombstones: state.tombstones,
-      };
+      middlewares.push(middleware);
+      return storeAPI;
     },
-
-    merge(snapshot: StoreSnapshot, options?: { silent?: boolean }): void {
-      advance(snapshot.clock.ms, snapshot.clock.seq);
-
-      state.tombstones = mergeTombstones(state.tombstones, snapshot.tombstones);
-
-      const event: StoreChangeEvent<T> = {};
-
-      for (const [name, collectionData] of Object.entries(snapshot.collections)) {
-        // Initialize collection if it doesn't exist
-        if (!state.collections[name]) {
-          state.collections[name] = {};
-        }
-
-        // Filter out tombstoned documents before merging
-        const filteredCollection: Collection = {};
-        for (const [id, doc] of Object.entries(collectionData)) {
-          if (!state.tombstones[id]) {
-            filteredCollection[id] = doc;
-          }
-        }
-
-        // Merge collections using core mergeCollections function
-        const currentCollection: Collection = state.collections[name];
-        const sourceCollection: Collection = filteredCollection;
-
-        const merged = mergeCollections(currentCollection, sourceCollection, state.tombstones);
-        state.collections[name] = merged;
-
-        // Mark collection as dirty
-        event[name as keyof T] = true;
-      }
-
-      // Notify listeners once with batched event (only if there are changes and not silent)
-      if (!options?.silent && Object.keys(event).length > 0) {
-        listeners.forEach((listener) => listener(event));
-
-        // Re-execute queries that depend on changed collections
-        const changedCollections = new Set<string>();
-        for (const key in event) {
-          if (event[key]) {
-            changedCollections.add(key);
-          }
-        }
-        if (changedCollections.size > 0) {
-          queryManager.reexecuteQueries(changedCollections);
-        }
-      }
-    },
-
-    onChange(listener: (event: StoreChangeEvent<T>) => void): () => void {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
+    init: initFn,
+    dispose: disposeFn,
   };
+
+  return storeAPI;
 }

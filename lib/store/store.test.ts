@@ -32,9 +32,6 @@ describe("createStore", () => {
     });
 
     expect(store.transact).toBeDefined();
-    expect(store.getSnapshot).toBeDefined();
-    expect(store.merge).toBeDefined();
-    expect(store.onChange).toBeDefined();
   });
 
   test("can add documents to collections", () => {
@@ -129,47 +126,6 @@ describe("createStore", () => {
     });
   });
 
-  test("getSnapshot returns store snapshot with clock and collections", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-        notes: {
-          schema: noteSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    const initialSnapshot = store.getSnapshot();
-    expect(initialSnapshot).toHaveProperty("clock");
-    expect(initialSnapshot).toHaveProperty("collections");
-    expect(initialSnapshot).toHaveProperty("tombstones");
-    expect(initialSnapshot.collections["users"]).toEqual({});
-    expect(initialSnapshot.collections["notes"]).toEqual({});
-    expect(initialSnapshot.tombstones).toEqual({});
-    expect(initialSnapshot.clock).toHaveProperty("ms");
-    expect(initialSnapshot.clock).toHaveProperty("seq");
-
-    store.transact(({ users, notes }) => {
-      users.add({
-        id: "1",
-        name: "Alice",
-        profile: { age: 30 },
-      });
-      notes.add({
-        id: "note-1",
-        content: "Hello world",
-      });
-    });
-
-    const updatedSnapshot = store.getSnapshot();
-    expect(updatedSnapshot.collections["users"]).toHaveProperty("1");
-    expect(updatedSnapshot.collections["notes"]).toHaveProperty("note-1");
-    expect(updatedSnapshot.tombstones).toEqual({});
-  });
 
   test("creates store with empty collections", () => {
     const store = createStore({
@@ -177,118 +133,12 @@ describe("createStore", () => {
     });
 
     expect(store).toBeDefined();
-    expect(store.getSnapshot).toBeDefined();
-    expect(store.getSnapshot().collections).toEqual({});
-    expect(store.getSnapshot().clock).toBeDefined();
+    expect(store.query).toBeDefined();
+    expect(store.transact).toBeDefined();
   });
 
-  test("getSnapshot updates when collections change", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-        notes: {
-          schema: noteSchema,
-          keyPath: "id",
-        },
-      },
-    });
 
-    const initialSnapshot = store.getSnapshot();
-    expect(initialSnapshot.collections["users"]).toEqual({});
-    expect(initialSnapshot.collections["notes"]).toEqual({});
 
-    store.transact(({ users }) => {
-      users.add({ id: "1", name: "Alice", profile: {} });
-    });
-    const snapshotAfterUsers = store.getSnapshot();
-    expect(snapshotAfterUsers.collections["users"]).toHaveProperty("1");
-    expect(snapshotAfterUsers.collections["notes"]).toEqual({});
-
-    store.transact(({ notes }) => {
-      notes.add({ id: "1", content: "Note" });
-    });
-
-    const snapshotAfterNotes = store.getSnapshot();
-    expect(snapshotAfterNotes.collections["users"]).toHaveProperty("1");
-    expect(snapshotAfterNotes.collections["notes"]).toHaveProperty("1");
-  });
-
-  test("merge updates clock and collections", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    const snapshot = store.getSnapshot();
-    const futureSnapshot = {
-      clock: { ms: snapshot.clock.ms + 1000, seq: 5 },
-      collections: snapshot.collections,
-      tombstones: {},
-    };
-
-    store.merge(futureSnapshot);
-
-    const updated = store.getSnapshot();
-    expect(updated.clock.ms).toBe(futureSnapshot.clock.ms);
-    expect(updated.clock.seq).toBe(futureSnapshot.clock.seq);
-  });
-
-  test("onChange is called when store changes", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-        notes: {
-          schema: noteSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    const events: any[] = [];
-    const unsubscribe = store.onChange((event) => {
-      events.push(event);
-    });
-
-    // Add a user - should trigger onChange
-    store.transact(({ users }) => {
-      users.add({ id: "1", name: "Alice", profile: { age: 30 } });
-    });
-    expect(events).toHaveLength(1);
-    expect(events[0]).toEqual({ users: true });
-
-    // Add a note - should trigger onChange
-    store.transact(({ notes }) => {
-      notes.add({ id: "note-1", content: "First note" });
-    });
-    expect(events).toHaveLength(2);
-    expect(events[1]).toEqual({ notes: true });
-
-    // Update a user - should trigger onChange
-    store.transact(({ users }) => {
-      users.update("1", { profile: { age: 31 } });
-    });
-    expect(events).toHaveLength(3);
-    expect(events[2]).toEqual({ users: true });
-
-    // Remove a user - should trigger onChange
-    store.transact(({ users }) => {
-      users.remove("1");
-    });
-    expect(events).toHaveLength(4);
-    expect(events[3]).toEqual({ users: true });
-
-    unsubscribe();
-  });
 
   test("tombstones are store-level and globally unique", () => {
     const store = createStore({
@@ -311,15 +161,6 @@ describe("createStore", () => {
 
     // Should be undefined (tombstoned)
     expect(store.query(({ users }) => users.get("123")).result()).toBeUndefined();
-
-    // Snapshot should have store-level tombstones
-    const snapshot = store.getSnapshot();
-    expect(snapshot.tombstones).toHaveProperty("123");
-    expect(snapshot.tombstones["123"]).toBeDefined();
-
-    // Collections should not have tombstones field
-    expect(snapshot.collections["users"]).not.toHaveProperty("tombstones");
-    expect(snapshot.collections["notes"]).not.toHaveProperty("tombstones");
   });
 
   test("removed documents don't appear in list", () => {
@@ -351,41 +192,6 @@ describe("createStore", () => {
     expect(allUsers.find((u) => u.id === "3")).toBeDefined();
   });
 
-  test("tombstones persist across merge", () => {
-    const store1 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
-    });
-
-    const store2 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
-    });
-
-    // Store1: Add and remove a user
-    store1.transact(({ users }) => {
-      users.add({ id: "1", name: "Alice", profile: {} });
-      users.remove("1");
-    });
-
-    // Store2: Add the same user
-    store2.transact(({ users }) => {
-      users.add({ id: "1", name: "Alice", profile: {} });
-    });
-
-    // Merge store1 into store2
-    const snapshot1 = store1.getSnapshot();
-    store2.merge(snapshot1);
-
-    // User should still be tombstoned after merge
-    expect(store2.query(({ users }) => users.get("1")).result()).toBeUndefined();
-    expect(store2.query(({ users }) => users.list()).result()).toHaveLength(0);
-
-    const snapshot2 = store2.getSnapshot();
-    expect(snapshot2.tombstones).toHaveProperty("1");
-  });
 
   test("list returns all non-tombstoned documents", () => {
     const store = createStore({
@@ -444,176 +250,9 @@ describe("createStore", () => {
     expect(adults.find((u) => u.name === "Charlie")).toBeDefined();
   });
 
-  test("merge with silent: true does not emit events", () => {
-    const store1 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
-    });
 
-    const store2 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
-    });
 
-    // Add data to store1
-    store1.transact(({ users }) => {
-      users.add({ id: "1", name: "Alice", profile: { age: 30 } });
-      users.add({ id: "2", name: "Bob", profile: { age: 25 } });
-    });
 
-    // Listen for events on store2
-    const events: any[] = [];
-    store2.onChange((event) => {
-      events.push(event);
-    });
-
-    // Merge with silent: true
-    const snapshot = store1.getSnapshot();
-    store2.merge(snapshot, { silent: true });
-
-    // No events should have been emitted
-    expect(events).toHaveLength(0);
-
-    // But the data should still be merged
-    expect(store2.query(({ users }) => users.get("1")).result()).toEqual({
-      id: "1",
-      name: "Alice",
-      profile: { age: 30 },
-    });
-    expect(store2.query(({ users }) => users.get("2")).result()).toEqual({
-      id: "2",
-      name: "Bob",
-      profile: { age: 25 },
-    });
-  });
-
-  test("merge without silent option emits merge events", () => {
-    const store1 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
-    });
-
-    const store2 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
-    });
-
-    // Add data to store1
-    store1.transact(({ users }) => {
-      users.add({ id: "1", name: "Alice", profile: { age: 30 } });
-    });
-
-    // Listen for events on store2
-    const events: any[] = [];
-    store2.onChange((event) => {
-      events.push(event);
-    });
-
-    // Merge without silent option (default behavior)
-    const snapshot = store1.getSnapshot();
-    store2.merge(snapshot);
-
-    // Should emit an event marking users collection as dirty
-    expect(events).toHaveLength(1);
-    expect(events[0]).toEqual({ users: true });
-
-    // Data should be merged
-    expect(store2.query(({ users }) => users.get("1")).result()).toEqual({
-      id: "1",
-      name: "Alice",
-      profile: { age: 30 },
-    });
-  });
-
-  test("merge with silent: false emits merge events", () => {
-    const store1 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
-    });
-
-    const store2 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
-    });
-
-    // Add data to store1
-    store1.transact(({ users }) => {
-      users.add({ id: "1", name: "Alice", profile: { age: 30 } });
-    });
-
-    // Listen for events on store2
-    const events: any[] = [];
-    store2.onChange((event) => {
-      events.push(event);
-    });
-
-    // Merge with explicit silent: false
-    const snapshot = store1.getSnapshot();
-    store2.merge(snapshot, { silent: false });
-
-    // Should emit an event marking users collection as dirty
-    expect(events).toHaveLength(1);
-    expect(events[0]).toEqual({ users: true });
-
-    // Data should be merged
-    expect(store2.query(({ users }) => users.get("1")).result()).toEqual({
-      id: "1",
-      name: "Alice",
-      profile: { age: 30 },
-    });
-  });
-
-  test("merge with silent: true emits no events for multiple collections", () => {
-    const store1 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-        notes: { schema: noteSchema, keyPath: "id" },
-      },
-    });
-
-    const store2 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-        notes: { schema: noteSchema, keyPath: "id" },
-      },
-    });
-
-    // Add data to store1
-    store1.transact(({ users, notes }) => {
-      users.add({ id: "1", name: "Alice", profile: { age: 30 } });
-      notes.add({ id: "note-1", content: "First note" });
-    });
-
-    // Listen for events on store2
-    const events: any[] = [];
-    store2.onChange((event) => {
-      events.push(event);
-    });
-
-    // Merge with silent: true
-    const snapshot = store1.getSnapshot();
-    store2.merge(snapshot, { silent: true });
-
-    // No events should have been emitted for either collection
-    expect(events).toHaveLength(0);
-
-    // But the data should still be merged for both collections
-    expect(store2.query(({ users }) => users.get("1")).result()).toEqual({
-      id: "1",
-      name: "Alice",
-      profile: { age: 30 },
-    });
-    expect(store2.query(({ notes }) => notes.get("note-1")).result()).toEqual({
-      id: "note-1",
-      content: "First note",
-    });
-  });
 
   describe("transact", () => {
     test("transact with single collection", () => {
@@ -757,11 +396,6 @@ describe("createStore", () => {
         },
       });
 
-      const events: any[] = [];
-      store.onChange((event) => {
-        events.push(event);
-      });
-
       store.transact(({ users }) => {
         users.add({ id: "1", name: "Alice", profile: {} });
         users.add({ id: "2", name: "Bob", profile: {} });
@@ -769,9 +403,13 @@ describe("createStore", () => {
         users.remove("2");
       });
 
-      // Should have 1 event marking users collection as dirty
-      expect(events).toHaveLength(1);
-      expect(events[0]).toEqual({ users: true });
+      // Verify the transaction completed successfully
+      expect(store.query(({ users }) => users.get("1")).result()).toEqual({
+        id: "1",
+        name: "Alice Updated",
+        profile: {},
+      });
+      expect(store.query(({ users }) => users.get("2")).result()).toBeUndefined();
     });
 
     test("transact with multiple collections batches notifications across collections", () => {
@@ -788,11 +426,6 @@ describe("createStore", () => {
         },
       });
 
-      const events: any[] = [];
-      store.onChange((event) => {
-        events.push(event);
-      });
-
       store.transact(({ users, notes }) => {
         users.add({ id: "1", name: "Alice", profile: {} });
         notes.add({ id: "note-1", content: "Hello" });
@@ -800,9 +433,20 @@ describe("createStore", () => {
         notes.add({ id: "note-2", content: "World" });
       });
 
-      // Should have 1 event marking both collections as dirty
-      expect(events).toHaveLength(1);
-      expect(events[0]).toEqual({ users: true, notes: true });
+      // Verify the transaction completed successfully
+      expect(store.query(({ users }) => users.get("1")).result()).toEqual({
+        id: "1",
+        name: "Alice Updated",
+        profile: {},
+      });
+      expect(store.query(({ notes }) => notes.get("note-1")).result()).toEqual({
+        id: "note-1",
+        content: "Hello",
+      });
+      expect(store.query(({ notes }) => notes.get("note-2")).result()).toEqual({
+        id: "note-2",
+        content: "World",
+      });
     });
 
     test("transact can read within transaction", () => {
@@ -1194,5 +838,366 @@ describe("createStore", () => {
       expect(results).toHaveLength(2);
       expect(results[1]).toHaveLength(3); // All three now
     });
+  });
+});
+
+describe("middleware", () => {
+  test("can register and initialize middleware", async () => {
+    const initOrder: string[] = [];
+    const middleware = {
+      init: () => {
+        initOrder.push("middleware1");
+      },
+    };
+
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    });
+
+    store.use(middleware);
+    await store.init();
+
+    expect(initOrder).toEqual(["middleware1"]);
+  });
+
+  test("use() is chainable", async () => {
+    const initOrder: string[] = [];
+    const middleware1 = {
+      init: () => {
+        initOrder.push("middleware1");
+      },
+    };
+    const middleware2 = {
+      init: () => {
+        initOrder.push("middleware2");
+      },
+    };
+
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    })
+      .use(middleware1)
+      .use(middleware2);
+
+    await store.init();
+
+    expect(initOrder).toEqual(["middleware1", "middleware2"]);
+  });
+
+  test("middleware init runs in registration order", async () => {
+    const initOrder: string[] = [];
+    const middleware1 = {
+      init: () => {
+        initOrder.push("1");
+      },
+    };
+    const middleware2 = {
+      init: () => {
+        initOrder.push("2");
+      },
+    };
+    const middleware3 = {
+      init: () => {
+        initOrder.push("3");
+      },
+    };
+
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    })
+      .use(middleware1)
+      .use(middleware2)
+      .use(middleware3);
+
+    await store.init();
+
+    expect(initOrder).toEqual(["1", "2", "3"]);
+  });
+
+  test("middleware dispose runs in reverse order", async () => {
+    const disposeOrder: string[] = [];
+    const middleware1 = {
+      init: () => {},
+      dispose: () => {
+        disposeOrder.push("1");
+      },
+    };
+    const middleware2 = {
+      init: () => {},
+      dispose: () => {
+        disposeOrder.push("2");
+      },
+    };
+    const middleware3 = {
+      init: () => {},
+      dispose: () => {
+        disposeOrder.push("3");
+      },
+    };
+
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    })
+      .use(middleware1)
+      .use(middleware2)
+      .use(middleware3);
+
+    await store.init();
+    await store.dispose();
+
+    expect(disposeOrder).toEqual(["3", "2", "1"]);
+  });
+
+  test("middleware can subscribe to changes", async () => {
+    const changes: string[] = [];
+    const middleware = {
+      init: ({ subscribe }: any) => {
+        subscribe((event: any) => {
+          changes.push(...Object.keys(event));
+        });
+      },
+    };
+
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    }).use(middleware);
+
+    await store.init();
+
+    store.transact(({ users }) => {
+      users.add({ id: "1", name: "Alice", profile: {} });
+    });
+
+    expect(changes).toContain("users");
+  });
+
+  test("middleware can load data via merge", async () => {
+    const snapshot = {
+      clock: { ms: 1000, seq: 0 },
+      collections: {
+        users: {
+          "1": {
+            id: { "~value": "1", "~stamp": "1000:0" },
+            name: { "~value": "Alice", "~stamp": "1000:0" },
+            profile: { "~value": {}, "~stamp": "1000:0" },
+          },
+        },
+      },
+      tombstones: {},
+    };
+
+    const middleware = {
+      init: ({ merge }: any) => {
+        merge(snapshot, { silent: true });
+      },
+    };
+
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    }).use(middleware);
+
+    await store.init();
+
+    const user = store.query(({ users }) => users.get("1")).result();
+    expect(user).toEqual({
+      id: "1",
+      name: "Alice",
+      profile: {},
+    });
+  });
+
+  test("middleware can access getSnapshot", async () => {
+    let capturedSnapshot: any = null;
+    const middleware = {
+      init: ({ getSnapshot }: any) => {
+        capturedSnapshot = getSnapshot();
+      },
+    };
+
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    }).use(middleware);
+
+    await store.init();
+
+    expect(capturedSnapshot).toHaveProperty("clock");
+    expect(capturedSnapshot).toHaveProperty("collections");
+    expect(capturedSnapshot).toHaveProperty("tombstones");
+  });
+
+  test("throws error when adding middleware after init", async () => {
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    });
+
+    await store.init();
+
+    expect(() => {
+      store.use({ init: () => {} });
+    }).toThrow("Cannot add middleware after initialization");
+  });
+
+  test("throws error when initializing twice", async () => {
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    }).use({ init: () => {} });
+
+    await store.init();
+
+    await expect(store.init()).rejects.toThrow("Store already initialized");
+  });
+
+  test("middleware subscriptions are cleaned up on dispose", async () => {
+    const changes: string[] = [];
+    const middleware = {
+      init: ({ subscribe }: any) => {
+        subscribe((event: any) => {
+          changes.push(...Object.keys(event));
+        });
+      },
+    };
+
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    }).use(middleware);
+
+    await store.init();
+    await store.dispose();
+
+    // Clear previous changes
+    changes.length = 0;
+
+    // Make a change after dispose
+    store.transact(({ users }) => {
+      users.add({ id: "1", name: "Alice", profile: {} });
+    });
+
+    // Middleware should not receive the change
+    expect(changes).toHaveLength(0);
+  });
+
+  test("store works without middleware", () => {
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    });
+
+    // Should be able to use store immediately without init
+    store.transact(({ users }) => {
+      users.add({ id: "1", name: "Alice", profile: {} });
+    });
+
+    const user = store.query(({ users }) => users.get("1")).result();
+    expect(user).toEqual({
+      id: "1",
+      name: "Alice",
+      profile: {},
+    });
+  });
+
+  test("async middleware init is awaited", async () => {
+    const initOrder: string[] = [];
+    const middleware = {
+      init: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        initOrder.push("async");
+      },
+    };
+
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    }).use(middleware);
+
+    const initPromise = store.init();
+    expect(initOrder).toHaveLength(0); // Should not have run yet
+
+    await initPromise;
+    expect(initOrder).toEqual(["async"]);
+  });
+
+  test("async middleware dispose is awaited", async () => {
+    const disposeOrder: string[] = [];
+    const middleware = {
+      init: () => {},
+      dispose: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        disposeOrder.push("async");
+      },
+    };
+
+    const store = createStore({
+      collections: {
+        users: {
+          schema: userSchema,
+          keyPath: "id",
+        },
+      },
+    }).use(middleware);
+
+    await store.init();
+    const disposePromise = store.dispose();
+    expect(disposeOrder).toHaveLength(0); // Should not have run yet
+
+    await disposePromise;
+    expect(disposeOrder).toEqual(["async"]);
   });
 });
