@@ -10,10 +10,8 @@ import {
   type MutateHandles,
   type TransactionDependencies,
 } from "./transaction";
-import { createQuery, createQueryManager, type QueryManager, type QueryObject } from "./query";
-
-// Re-export transaction types for public API
-export type { ReadHandle, MutateHandle, ReadHandles, MutateHandles } from "./transaction";
+import { createQuery } from "./query";
+import { createMiddlewareManager, type StoreMiddleware } from "./middleware";
 
 export type StoreSnapshot = {
   clock: Clock;
@@ -25,16 +23,6 @@ export type StoreChangeEvent<T extends StoreConfig> = {
   [K in keyof T]?: true;
 };
 
-export type MiddlewareContext<T extends StoreConfig> = {
-  subscribe: (listener: (event: StoreChangeEvent<T>) => void) => () => void;
-  getSnapshot: () => StoreSnapshot;
-  merge: (snapshot: StoreSnapshot, options?: { silent?: boolean }) => void;
-};
-
-export type StoreMiddleware<T extends StoreConfig> = (
-  context: MiddlewareContext<T>,
-) => (() => void | Promise<void>) | void | Promise<void>;
-
 export type StoreAPI<T extends StoreConfig> = {
   read<R>(callback: (handles: ReadHandles<T>) => R): R;
   subscribe<R>(query: (handles: ReadHandles<T>) => R, subscriber: (value: R) => void): () => void;
@@ -44,27 +32,11 @@ export type StoreAPI<T extends StoreConfig> = {
   dispose(): Promise<void>;
 };
 
-function getChangedCollections<T extends StoreConfig>(event: StoreChangeEvent<T>): Set<string> {
-  const changed = new Set<string>();
-  for (const key in event) {
-    if (event[key]) {
-      changed.add(key);
-    }
-  }
-  return changed;
-}
-
-function notifyListenersAndQueries<T extends StoreConfig>(
+function notifyListeners<T extends StoreConfig>(
   event: StoreChangeEvent<T>,
   listeners: Set<(event: StoreChangeEvent<T>) => void>,
-  queryManager: QueryManager,
 ): void {
   listeners.forEach((listener) => listener(event));
-
-  const changed = getChangedCollections(event);
-  if (changed.size > 0) {
-    queryManager.reexecuteQueries(changed);
-  }
 }
 
 export function createStore<T extends StoreConfig>(config: { collections: T }): StoreAPI<T> {
@@ -76,12 +48,9 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
 
   const configs = new Map<string, CollectionConfig<AnyObject>>();
   const listeners = new Set<(event: StoreChangeEvent<T>) => void>();
-  const queryManager = createQueryManager();
 
-  const middlewares: StoreMiddleware<T>[] = [];
+  const middlewareManager = createMiddlewareManager<T>();
   let isInitialized = false;
-  const unsubscribeFns: (() => void)[] = [];
-  const cleanupFns: (() => void | Promise<void>)[] = [];
 
   const advance = (ms: number, seq: number): void => {
     state.clock = advanceClock(state.clock, { ms, seq });
@@ -104,11 +73,16 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     tick,
   };
 
+  const onChange = (listener: (event: StoreChangeEvent<T>) => void): (() => void) => {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  };
+
   const read = <R>(callback: (handles: ReadHandles<T>) => R): R => {
     const query = createQuery(
       callback,
       { configs, documents: state.collections, tombstones: state.tombstones },
-      queryManager,
+      onChange,
     );
     return query.result();
   };
@@ -120,7 +94,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     const queryObject = createQuery(
       query,
       { configs, documents: state.collections, tombstones: state.tombstones },
-      queryManager,
+      onChange,
     );
     return queryObject.subscribe(subscriber);
   };
@@ -137,7 +111,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
         state.collections[collectionName] = mergeCollections(current, updated, state.tombstones);
       }
 
-      notifyListenersAndQueries(result.changes.event, listeners, queryManager);
+      notifyListeners(result.changes.event, listeners);
     }
 
     return result.value;
@@ -177,13 +151,8 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     }
 
     if (!options?.silent && Object.keys(event).length > 0) {
-      notifyListenersAndQueries(event, listeners, queryManager);
+      notifyListeners(event, listeners);
     }
-  };
-
-  const onChange = (listener: (event: StoreChangeEvent<T>) => void): (() => void) => {
-    listeners.add(listener);
-    return () => listeners.delete(listener);
   };
 
   const init = async (): Promise<void> => {
@@ -191,36 +160,13 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
       throw new Error("Store already initialized");
     }
 
-    const context: MiddlewareContext<T> = {
-      subscribe: (listener) => {
-        const unsubscribe = onChange(listener);
-        unsubscribeFns.push(unsubscribe);
-        return unsubscribe;
-      },
-      getSnapshot,
-      merge,
-    };
-
-    for (const middleware of middlewares) {
-      const cleanup = await middleware(context);
-      if (cleanup) {
-        cleanupFns.push(cleanup);
-      }
-    }
+    await middlewareManager.init(onChange, getSnapshot, merge);
 
     isInitialized = true;
   };
 
   const dispose = async (): Promise<void> => {
-    const reversed = [...cleanupFns].reverse();
-    for (const cleanup of reversed) {
-      await cleanup();
-    }
-
-    cleanupFns.length = 0;
-    unsubscribeFns.forEach((fn) => fn());
-    unsubscribeFns.length = 0;
-
+    await middlewareManager.dispose();
     isInitialized = false;
   };
 
@@ -229,10 +175,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     subscribe,
     transact,
     use(middleware: StoreMiddleware<T>): StoreAPI<T> {
-      if (isInitialized) {
-        throw new Error("Cannot add middleware after initialization");
-      }
-      middlewares.push(middleware);
+      middlewareManager.use(middleware);
       return this;
     },
     init,

@@ -3,6 +3,7 @@ import type { Document } from "../core/document";
 import type { AnyObject, CollectionConfig, StoreConfig } from "./schema";
 import type { Tombstones } from "../core/tombstone";
 import type { ReadHandles } from "./transaction";
+import type { StoreChangeEvent } from "./store";
 import { createReadHandle, getCollectionDocuments } from "./handles";
 
 export type QueryObject<R> = {
@@ -16,9 +17,10 @@ type ActiveQuery<R> = {
   subscribers: Set<(results: R) => void>;
   lastResult: R | undefined;
   execute: () => R;
+  onStoreChange: (event: StoreChangeEvent<any>) => void;
 };
 
-export type QueryDependencies<T extends StoreConfig> = {
+export type QueryDependencies<_T extends StoreConfig> = {
   configs: Map<string, CollectionConfig<AnyObject>>;
   documents: Record<string, Record<DocumentId, Document>>;
   tombstones: Tombstones;
@@ -76,11 +78,12 @@ function createHandleProxy<T extends StoreConfig>(
 export function createQuery<T extends StoreConfig, R>(
   callback: (handles: ReadHandles<T>) => R,
   deps: QueryDependencies<T>,
-  queryManager: QueryManager,
+  onChange: (listener: (event: StoreChangeEvent<T>) => void) => () => void,
 ): QueryObject<R> {
   const dependencies = new Set<string>();
   const subscribers = new Set<(results: R) => void>();
   let lastResult: R | undefined = undefined;
+  let unsubscribeListener: (() => void) | null = null;
 
   const executeQuery = (): R => {
     dependencies.clear();
@@ -95,12 +98,22 @@ export function createQuery<T extends StoreConfig, R>(
     return callback(handles);
   };
 
+  const onStoreChange = (event: StoreChangeEvent<T>): void => {
+    const changed = getChangedCollections(event);
+
+    if (changed.size > 0 && hasDependencyChanged(dependencies, changed) && subscribers.size > 0) {
+      const result = executeQuery();
+      notifySubscribers(query, result);
+    }
+  };
+
   const query: ActiveQuery<R> = {
     callback,
     dependencies,
     subscribers,
     lastResult,
     execute: executeQuery,
+    onStoreChange,
   };
 
   return {
@@ -112,7 +125,10 @@ export function createQuery<T extends StoreConfig, R>(
 
     subscribe(callback: (results: R) => void): () => void {
       subscribers.add(callback);
-      queryManager.addQuery(query);
+
+      if (unsubscribeListener === null) {
+        unsubscribeListener = onChange(query.onStoreChange);
+      }
 
       const initialResult = query.execute();
       query.lastResult = initialResult;
@@ -120,12 +136,23 @@ export function createQuery<T extends StoreConfig, R>(
 
       return () => {
         subscribers.delete(callback);
-        if (subscribers.size === 0) {
-          queryManager.removeQuery(query);
+        if (subscribers.size === 0 && unsubscribeListener !== null) {
+          unsubscribeListener();
+          unsubscribeListener = null;
         }
       };
     },
   };
+}
+
+function getChangedCollections<T extends StoreConfig>(event: StoreChangeEvent<T>): Set<string> {
+  const changed = new Set<string>();
+  for (const key in event) {
+    if (event[key]) {
+      changed.add(key);
+    }
+  }
+  return changed;
 }
 
 function hasDependencyChanged(dependencies: Set<string>, changedCollections: Set<string>): boolean {
@@ -140,36 +167,4 @@ function hasDependencyChanged(dependencies: Set<string>, changedCollections: Set
 function notifySubscribers<R>(query: ActiveQuery<R>, result: R): void {
   query.lastResult = result;
   query.subscribers.forEach((subscriber) => subscriber(result));
-}
-
-export type QueryManager = {
-  addQuery<R>(query: ActiveQuery<R>): void;
-  removeQuery<R>(query: ActiveQuery<R>): void;
-  reexecuteQueries(changedCollections: Set<string>): void;
-};
-
-export function createQueryManager(): QueryManager {
-  const activeQueries = new Set<ActiveQuery<any>>();
-
-  return {
-    addQuery(query) {
-      activeQueries.add(query);
-    },
-
-    removeQuery(query) {
-      activeQueries.delete(query);
-    },
-
-    reexecuteQueries(changedCollections) {
-      for (const query of activeQueries) {
-        const hasChanges = hasDependencyChanged(query.dependencies, changedCollections);
-        const hasSubscribers = query.subscribers.size > 0;
-
-        if (hasChanges && hasSubscribers) {
-          const result = query.execute();
-          notifySubscribers(query, result);
-        }
-      }
-    },
-  };
 }
