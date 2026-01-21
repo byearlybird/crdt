@@ -50,7 +50,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   const state = {
     clock: { ms: Date.now(), seq: 0 } as Clock,
     tombstones: {} as Tombstones,
-    documents: {} as Record<string, Record<DocumentId, Document>>,
+    collections: {} as Record<string, Collection>,
   };
 
   const configs = new Map<string, CollectionConfig<AnyObject>>();
@@ -68,28 +68,23 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   // Initialize collections
   for (const [name, collectionConfig] of Object.entries(config.collections)) {
     configs.set(name, collectionConfig);
-    state.documents[name] = {};
+    state.collections[name] = {};
   }
 
   const deps: TransactionDependencies<T> = {
     configs,
-    documents: state.documents,
+    documents: state.collections,
     tombstones: state.tombstones,
     tick,
     notifyListeners: (event) => {
       listeners.forEach((listener) => listener(event));
     },
     applyMerge: (collectionName, txDocuments) => {
-      const currentCollection: Collection = {
-        documents: state.documents[collectionName]!,
-      };
-
-      const txCollection: Collection = {
-        documents: txDocuments,
-      };
+      const currentCollection: Collection = state.collections[collectionName]!;
+      const txCollection: Collection = txDocuments;
 
       const merged = mergeCollections(currentCollection, txCollection, state.tombstones);
-      state.documents[collectionName] = merged.documents;
+      state.collections[collectionName] = merged;
     },
     applyTombstones: (txTombstones) => {
       state.tombstones = mergeTombstones(state.tombstones, txTombstones);
@@ -116,8 +111,8 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
 
     getSnapshot(): StoreSnapshot {
       const collectionsSnapshot: Record<string, Collection> = {};
-      for (const [name, collectionDocs] of Object.entries(state.documents)) {
-        collectionsSnapshot[name] = { documents: collectionDocs };
+      for (const [name, collection] of Object.entries(state.collections)) {
+        collectionsSnapshot[name] = collection;
       }
       return {
         clock: state.clock,
@@ -135,29 +130,24 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
 
       for (const [name, collectionData] of Object.entries(snapshot.collections)) {
         // Initialize collection if it doesn't exist
-        if (!state.documents[name]) {
-          state.documents[name] = {};
+        if (!state.collections[name]) {
+          state.collections[name] = {};
         }
 
         // Filter out tombstoned documents before merging
-        const filteredDocs: Record<DocumentId, Document> = {};
-        for (const [id, doc] of Object.entries(collectionData.documents)) {
+        const filteredCollection: Collection = {};
+        for (const [id, doc] of Object.entries(collectionData)) {
           if (!state.tombstones[id]) {
-            filteredDocs[id] = doc;
+            filteredCollection[id] = doc;
           }
         }
 
         // Merge collections using core mergeCollections function
-        const currentCollection: Collection = {
-          documents: state.documents[name],
-        };
-
-        const sourceCollection: Collection = {
-          documents: filteredDocs,
-        };
+        const currentCollection: Collection = state.collections[name];
+        const sourceCollection: Collection = filteredCollection;
 
         const merged = mergeCollections(currentCollection, sourceCollection, state.tombstones);
-        state.documents[name] = merged.documents;
+        state.collections[name] = merged;
 
         // Mark collection as dirty
         event[name as keyof T] = true;

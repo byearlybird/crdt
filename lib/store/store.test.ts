@@ -147,12 +147,8 @@ describe("createStore", () => {
     expect(initialSnapshot).toHaveProperty("clock");
     expect(initialSnapshot).toHaveProperty("collections");
     expect(initialSnapshot).toHaveProperty("tombstones");
-    expect(initialSnapshot.collections["users"]).toEqual({
-      documents: {},
-    });
-    expect(initialSnapshot.collections["notes"]).toEqual({
-      documents: {},
-    });
+    expect(initialSnapshot.collections["users"]).toEqual({});
+    expect(initialSnapshot.collections["notes"]).toEqual({});
     expect(initialSnapshot.tombstones).toEqual({});
     expect(initialSnapshot.clock).toHaveProperty("ms");
     expect(initialSnapshot.clock).toHaveProperty("seq");
@@ -170,8 +166,8 @@ describe("createStore", () => {
     });
 
     const updatedSnapshot = store.getSnapshot();
-    expect(updatedSnapshot.collections["users"]?.documents).toHaveProperty("1");
-    expect(updatedSnapshot.collections["notes"]?.documents).toHaveProperty("note-1");
+    expect(updatedSnapshot.collections["users"]).toHaveProperty("1");
+    expect(updatedSnapshot.collections["notes"]).toHaveProperty("note-1");
     expect(updatedSnapshot.tombstones).toEqual({});
   });
 
@@ -201,22 +197,22 @@ describe("createStore", () => {
     });
 
     const initialSnapshot = store.getSnapshot();
-    expect(initialSnapshot.collections["users"]?.documents).toEqual({});
-    expect(initialSnapshot.collections["notes"]?.documents).toEqual({});
+    expect(initialSnapshot.collections["users"]).toEqual({});
+    expect(initialSnapshot.collections["notes"]).toEqual({});
 
     store.transact(["users"], ([users]) => {
       users.add({ id: "1", name: "Alice", profile: {} });
     });
     const snapshotAfterUsers = store.getSnapshot();
-    expect(snapshotAfterUsers.collections["users"]?.documents).toHaveProperty("1");
-    expect(snapshotAfterUsers.collections["notes"]?.documents).toEqual({});
+    expect(snapshotAfterUsers.collections["users"]).toHaveProperty("1");
+    expect(snapshotAfterUsers.collections["notes"]).toEqual({});
 
     store.transact(["notes"], ([notes]) => {
       notes.add({ id: "1", content: "Note" });
     });
     const snapshotAfterNotes = store.getSnapshot();
-    expect(snapshotAfterNotes.collections["users"]?.documents).toHaveProperty("1");
-    expect(snapshotAfterNotes.collections["notes"]?.documents).toHaveProperty("1");
+    expect(snapshotAfterNotes.collections["users"]).toHaveProperty("1");
+    expect(snapshotAfterNotes.collections["notes"]).toHaveProperty("1");
   });
 
   test("merge updates clock and collections", () => {
