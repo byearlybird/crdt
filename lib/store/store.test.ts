@@ -126,7 +126,6 @@ describe("createStore", () => {
     });
   });
 
-
   test("creates store with empty collections", () => {
     const store = createStore({
       collections: {},
@@ -137,9 +136,6 @@ describe("createStore", () => {
     expect(store.subscribe).toBeDefined();
     expect(store.transact).toBeDefined();
   });
-
-
-
 
   test("tombstones are store-level and globally unique", () => {
     const store = createStore({
@@ -192,7 +188,6 @@ describe("createStore", () => {
     expect(allUsers.find((u) => u.id === "1")).toBeDefined();
     expect(allUsers.find((u) => u.id === "3")).toBeDefined();
   });
-
 
   test("list returns all non-tombstoned documents", () => {
     const store = createStore({
@@ -250,10 +245,6 @@ describe("createStore", () => {
     expect(adults.find((u) => u.name === "Alice")).toBeDefined();
     expect(adults.find((u) => u.name === "Charlie")).toBeDefined();
   });
-
-
-
-
 
   describe("transact", () => {
     test("transact with single collection", () => {
@@ -748,7 +739,6 @@ describe("createStore", () => {
       expect(results1).toHaveLength(2);
       expect(results2).toHaveLength(2);
     });
-
 
     test("subscribe() works with list() operations", () => {
       const store = createStore({

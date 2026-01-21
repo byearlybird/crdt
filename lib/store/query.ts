@@ -1,8 +1,9 @@
-import { parseDocument, type DocumentId } from "../core";
+import type { DocumentId } from "../core";
 import type { Document } from "../core/document";
 import type { AnyObject, CollectionConfig, StoreConfig } from "./schema";
 import type { Tombstones } from "../core/tombstone";
 import type { ReadHandles } from "./transaction";
+import { createReadHandle, getCollectionDocuments } from "./handles";
 
 export type QueryObject<R> = {
   result(): R;
@@ -23,30 +24,53 @@ export type QueryDependencies<T extends StoreConfig> = {
   tombstones: Tombstones;
 };
 
+type QueryState = {
+  accessed: Set<string>;
+  documents: Record<string, Record<DocumentId, Document>>;
+  handleCache: Record<string, any>;
+};
 
-// Helper function to create read handle
-function createReadHandle(
-  txDocs: Record<DocumentId, Document>,
-  txTombstones: Tombstones,
-) {
-  return {
-    get(id: DocumentId) {
-      if (txTombstones[id]) return undefined;
-      const doc = txDocs[id];
-      if (!doc) return undefined;
-      return parseDocument(doc);
-    },
-    list() {
-      const resultDocs: any[] = [];
-      for (const [id, doc] of Object.entries(txDocs)) {
-        if (doc && !txTombstones[id]) {
-          const parsed = parseDocument(doc);
-          resultDocs.push(parsed);
-        }
+function initializeCollection(
+  collectionName: string,
+  state: QueryState,
+  dependencies: Set<string>,
+  deps: QueryDependencies<any>,
+): void {
+  if (state.accessed.has(collectionName)) {
+    return;
+  }
+
+  state.accessed.add(collectionName);
+  dependencies.add(collectionName);
+
+  const documents = getCollectionDocuments(collectionName, deps.documents);
+  state.documents[collectionName] = documents;
+
+  state.handleCache[collectionName] = createReadHandle(documents, deps.tombstones);
+}
+
+function createHandleProxy<T extends StoreConfig>(
+  state: QueryState,
+  dependencies: Set<string>,
+  deps: QueryDependencies<T>,
+): ReadHandles<T> {
+  return new Proxy({} as ReadHandles<T>, {
+    get(_target, prop: string | symbol) {
+      if (typeof prop !== "string") {
+        return undefined;
       }
-      return resultDocs;
+
+      if (!deps.configs.has(prop)) {
+        throw new Error(`Collection "${prop}" not found`);
+      }
+
+      if (!state.accessed.has(prop)) {
+        initializeCollection(prop, state, dependencies, deps);
+      }
+
+      return state.handleCache[prop];
     },
-  };
+  });
 }
 
 export function createQuery<T extends StoreConfig, R>(
@@ -54,70 +78,23 @@ export function createQuery<T extends StoreConfig, R>(
   deps: QueryDependencies<T>,
   queryManager: QueryManager,
 ): QueryObject<R> {
-  // Track dependencies for this query
   const dependencies = new Set<string>();
   const subscribers = new Set<(results: R) => void>();
   let lastResult: R | undefined = undefined;
 
-  // Create a custom transaction execution that tracks dependencies
   const executeQuery = (): R => {
-    // Reset dependencies for this execution
     dependencies.clear();
 
-    // Create a custom proxy that tracks collection access
-    const accessedCollections = new Set<string>();
-    const txDocuments: Record<string, Record<DocumentId, Document>> = {};
-    const handleCache: Record<string, any> = {};
-
-    const initializeCollection = (collectionName: string): void => {
-      if (accessedCollections.has(collectionName)) {
-        return;
-      }
-
-      accessedCollections.add(collectionName);
-      dependencies.add(collectionName); // Track as dependency
-
-      const collectionDocs = deps.documents[collectionName];
-      if (!collectionDocs) {
-        throw new Error(`Collection "${collectionName}" not found`);
-      }
-
-      // Use original documents (no copy for read-only)
-      txDocuments[collectionName] = collectionDocs;
-
-      const collectionConfig = deps.configs.get(collectionName);
-      if (!collectionConfig) {
-        throw new Error(`Collection "${collectionName}" not found`);
-      }
-
-      const txDocs = txDocuments[collectionName]!;
-      handleCache[collectionName] = createReadHandle(txDocs, deps.tombstones);
+    const state: QueryState = {
+      accessed: new Set<string>(),
+      documents: {},
+      handleCache: {},
     };
 
-    // Create proxy that intercepts property access
-    const proxy = new Proxy({} as ReadHandles<T>, {
-      get(_target, prop: string | symbol) {
-        if (typeof prop !== "string") {
-          return undefined;
-        }
-
-        if (!deps.configs.has(prop)) {
-          throw new Error(`Collection "${prop}" not found`);
-        }
-
-        if (!accessedCollections.has(prop)) {
-          initializeCollection(prop);
-        }
-
-        return handleCache[prop];
-      },
-    });
-
-    // Execute callback and return result
-    return callback(proxy);
+    const handles = createHandleProxy(state, dependencies, deps);
+    return callback(handles);
   };
 
-  // Create the query object
   const query: ActiveQuery<R> = {
     callback,
     dependencies,
@@ -126,8 +103,7 @@ export function createQuery<T extends StoreConfig, R>(
     execute: executeQuery,
   };
 
-  // Create the QueryObject with result() and subscribe() methods
-  const queryObject: QueryObject<R> = {
+  return {
     result(): R {
       const result = query.execute();
       query.lastResult = result;
@@ -136,57 +112,64 @@ export function createQuery<T extends StoreConfig, R>(
 
     subscribe(callback: (results: R) => void): () => void {
       subscribers.add(callback);
-
-      // Add query to active queries if not already there
       queryManager.addQuery(query);
 
-      // Execute immediately to get initial result
       const initialResult = query.execute();
       query.lastResult = initialResult;
       callback(initialResult);
 
-      // Return unsubscribe function
       return () => {
         subscribers.delete(callback);
-        // Remove query from active queries if no subscribers
         if (subscribers.size === 0) {
           queryManager.removeQuery(query);
         }
       };
     },
   };
-
-  return queryObject;
 }
 
-// QueryManager handles tracking and re-executing active queries
-export class QueryManager {
-  private activeQueries = new Set<ActiveQuery<any>>();
-
-  addQuery<R>(query: ActiveQuery<R>): void {
-    this.activeQueries.add(query);
-  }
-
-  removeQuery<R>(query: ActiveQuery<R>): void {
-    this.activeQueries.delete(query);
-  }
-
-  reexecuteQueries(changedCollections: Set<string>): void {
-    for (const query of this.activeQueries) {
-      // Check if any dependency was changed
-      let shouldReexecute = false;
-      for (const dep of query.dependencies) {
-        if (changedCollections.has(dep)) {
-          shouldReexecute = true;
-          break;
-        }
-      }
-
-      if (shouldReexecute && query.subscribers.size > 0) {
-        const newResult = query.execute();
-        query.lastResult = newResult;
-        query.subscribers.forEach((subscriber) => subscriber(newResult));
-      }
+function hasDependencyChanged(dependencies: Set<string>, changedCollections: Set<string>): boolean {
+  for (const dependency of dependencies) {
+    if (changedCollections.has(dependency)) {
+      return true;
     }
   }
+  return false;
+}
+
+function notifySubscribers<R>(query: ActiveQuery<R>, result: R): void {
+  query.lastResult = result;
+  query.subscribers.forEach((subscriber) => subscriber(result));
+}
+
+export type QueryManager = {
+  addQuery<R>(query: ActiveQuery<R>): void;
+  removeQuery<R>(query: ActiveQuery<R>): void;
+  reexecuteQueries(changedCollections: Set<string>): void;
+};
+
+export function createQueryManager(): QueryManager {
+  const activeQueries = new Set<ActiveQuery<any>>();
+
+  return {
+    addQuery(query) {
+      activeQueries.add(query);
+    },
+
+    removeQuery(query) {
+      activeQueries.delete(query);
+    },
+
+    reexecuteQueries(changedCollections) {
+      for (const query of activeQueries) {
+        const hasChanges = hasDependencyChanged(query.dependencies, changedCollections);
+        const hasSubscribers = query.subscribers.size > 0;
+
+        if (hasChanges && hasSubscribers) {
+          const result = query.execute();
+          notifySubscribers(query, result);
+        }
+      }
+    },
+  };
 }
