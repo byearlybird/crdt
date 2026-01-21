@@ -33,10 +33,9 @@ export type MiddlewareContext<T extends Record<string, CollectionConfig<AnyObjec
   merge: (snapshot: StoreSnapshot, options?: { silent?: boolean }) => void;
 };
 
-export type StoreMiddleware<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  init?: (context: MiddlewareContext<T>) => Promise<void> | void;
-  dispose?: () => Promise<void> | void;
-};
+export type StoreMiddleware<T extends Record<string, CollectionConfig<AnyObject>>> = (
+  context: MiddlewareContext<T>,
+) => (() => void | Promise<void>) | void | Promise<void>;
 
 export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
   // Read-only reactive query (returns query object with result() and subscribe())
@@ -68,6 +67,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   const middlewares: StoreMiddleware<T>[] = [];
   let isInitialized = false;
   const unsubscribeFns: (() => void)[] = [];
+  const cleanupFns: (() => void | Promise<void>)[] = [];
 
   const advance = (ms: number, seq: number): void => {
     state.clock = advanceClock(state.clock, { ms, seq });
@@ -209,10 +209,11 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
       merge: mergeFn,
     };
 
-    // Initialize all middleware sequentially in registration order
+    // Call all middleware sequentially and collect cleanup functions
     for (const middleware of middlewares) {
-      if (middleware.init) {
-        await middleware.init(context);
+      const cleanup = await middleware(context);
+      if (cleanup) {
+        cleanupFns.push(cleanup);
       }
     }
 
@@ -220,13 +221,13 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
   };
 
   const disposeFn = async (): Promise<void> => {
-    // Dispose in reverse order
-    const reversed = [...middlewares].reverse();
-    for (const middleware of reversed) {
-      if (middleware.dispose) {
-        await middleware.dispose();
-      }
+    // Run cleanups in reverse order
+    const reversed = [...cleanupFns].reverse();
+    for (const cleanup of reversed) {
+      await cleanup();
     }
+
+    cleanupFns.length = 0;
 
     // Unsubscribe all middleware subscriptions
     unsubscribeFns.forEach((fn) => fn());

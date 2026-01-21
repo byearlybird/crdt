@@ -814,10 +814,8 @@ describe("createStore", () => {
 describe("middleware", () => {
   test("can register and initialize middleware", async () => {
     const initOrder: string[] = [];
-    const middleware = {
-      init: () => {
-        initOrder.push("middleware1");
-      },
+    const middleware = () => {
+      initOrder.push("middleware1");
     };
 
     const store = createStore({
@@ -837,15 +835,11 @@ describe("middleware", () => {
 
   test("use() is chainable", async () => {
     const initOrder: string[] = [];
-    const middleware1 = {
-      init: () => {
-        initOrder.push("middleware1");
-      },
+    const middleware1 = () => {
+      initOrder.push("middleware1");
     };
-    const middleware2 = {
-      init: () => {
-        initOrder.push("middleware2");
-      },
+    const middleware2 = () => {
+      initOrder.push("middleware2");
     };
 
     const store = createStore({
@@ -866,20 +860,14 @@ describe("middleware", () => {
 
   test("middleware init runs in registration order", async () => {
     const initOrder: string[] = [];
-    const middleware1 = {
-      init: () => {
-        initOrder.push("1");
-      },
+    const middleware1 = () => {
+      initOrder.push("1");
     };
-    const middleware2 = {
-      init: () => {
-        initOrder.push("2");
-      },
+    const middleware2 = () => {
+      initOrder.push("2");
     };
-    const middleware3 = {
-      init: () => {
-        initOrder.push("3");
-      },
+    const middleware3 = () => {
+      initOrder.push("3");
     };
 
     const store = createStore({
@@ -901,23 +889,20 @@ describe("middleware", () => {
 
   test("middleware dispose runs in reverse order", async () => {
     const disposeOrder: string[] = [];
-    const middleware1 = {
-      init: () => {},
-      dispose: () => {
+    const middleware1 = () => {
+      return () => {
         disposeOrder.push("1");
-      },
+      };
     };
-    const middleware2 = {
-      init: () => {},
-      dispose: () => {
+    const middleware2 = () => {
+      return () => {
         disposeOrder.push("2");
-      },
+      };
     };
-    const middleware3 = {
-      init: () => {},
-      dispose: () => {
+    const middleware3 = () => {
+      return () => {
         disposeOrder.push("3");
-      },
+      };
     };
 
     const store = createStore({
@@ -940,12 +925,10 @@ describe("middleware", () => {
 
   test("middleware can subscribe to changes", async () => {
     const changes: string[] = [];
-    const middleware = {
-      init: ({ subscribe }: any) => {
-        subscribe((event: any) => {
-          changes.push(...Object.keys(event));
-        });
-      },
+    const middleware = ({ subscribe }: any) => {
+      subscribe((event: any) => {
+        changes.push(...Object.keys(event));
+      });
     };
 
     const store = createStore({
@@ -981,10 +964,8 @@ describe("middleware", () => {
       tombstones: {},
     };
 
-    const middleware = {
-      init: ({ merge }: any) => {
-        merge(snapshot, { silent: true });
-      },
+    const middleware = ({ merge }: any) => {
+      merge(snapshot, { silent: true });
     };
 
     const store = createStore({
@@ -1008,10 +989,8 @@ describe("middleware", () => {
 
   test("middleware can access getSnapshot", async () => {
     let capturedSnapshot: any = null;
-    const middleware = {
-      init: ({ getSnapshot }: any) => {
-        capturedSnapshot = getSnapshot();
-      },
+    const middleware = ({ getSnapshot }: any) => {
+      capturedSnapshot = getSnapshot();
     };
 
     const store = createStore({
@@ -1043,7 +1022,7 @@ describe("middleware", () => {
     await store.init();
 
     expect(() => {
-      store.use({ init: () => {} });
+      store.use(() => {});
     }).toThrow("Cannot add middleware after initialization");
   });
 
@@ -1055,7 +1034,7 @@ describe("middleware", () => {
           keyPath: "id",
         },
       },
-    }).use({ init: () => {} });
+    }).use(() => {});
 
     await store.init();
 
@@ -1064,12 +1043,10 @@ describe("middleware", () => {
 
   test("middleware subscriptions are cleaned up on dispose", async () => {
     const changes: string[] = [];
-    const middleware = {
-      init: ({ subscribe }: any) => {
-        subscribe((event: any) => {
-          changes.push(...Object.keys(event));
-        });
-      },
+    const middleware = ({ subscribe }: any) => {
+      subscribe((event: any) => {
+        changes.push(...Object.keys(event));
+      });
     };
 
     const store = createStore({
@@ -1121,11 +1098,9 @@ describe("middleware", () => {
 
   test("async middleware init is awaited", async () => {
     const initOrder: string[] = [];
-    const middleware = {
-      init: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-        initOrder.push("async");
-      },
+    const middleware = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      initOrder.push("async");
     };
 
     const store = createStore({
@@ -1146,12 +1121,11 @@ describe("middleware", () => {
 
   test("async middleware dispose is awaited", async () => {
     const disposeOrder: string[] = [];
-    const middleware = {
-      init: () => {},
-      dispose: async () => {
+    const middleware = () => {
+      return async () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
         disposeOrder.push("async");
-      },
+      };
     };
 
     const store = createStore({
