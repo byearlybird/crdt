@@ -26,16 +26,14 @@ export type StoreChangeEvent<T extends Record<string, CollectionConfig<AnyObject
 };
 
 export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  // Read-only transaction (optimized, no copy overhead)
-  transact<K extends (keyof T & string)[], R>(
-    mode: "read",
+  // Read-only (optimized, no copy overhead)
+  read<K extends (keyof T & string)[], R>(
     collectionNames: [...K],
     callback: (handles: ReadHandles<T, K>) => R,
   ): R;
 
   // Read-write transaction (full mutations, rollback on error)
   transact<K extends (keyof T & string)[], R>(
-    mode: "mutate",
     collectionNames: [...K],
     callback: (handles: MutateHandles<T, K>) => R,
   ): R;
@@ -73,41 +71,48 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     state.documents[name] = {};
   }
 
-  const transactFn = <K extends (keyof T & string)[], R, Mode extends "read" | "mutate">(
-    mode: Mode,
+  const deps: TransactionDependencies<T> = {
+    configs,
+    documents: state.documents,
+    tombstones: state.tombstones,
+    tick,
+    notifyListeners: (event) => {
+      listeners.forEach((listener) => listener(event));
+    },
+    applyMerge: (collectionName, txDocuments) => {
+      const currentCollection: Collection = {
+        documents: state.documents[collectionName]!,
+      };
+
+      const txCollection: Collection = {
+        documents: txDocuments,
+      };
+
+      const merged = mergeCollections(currentCollection, txCollection, state.tombstones);
+      state.documents[collectionName] = merged.documents;
+    },
+    applyTombstones: (txTombstones) => {
+      state.tombstones = mergeTombstones(state.tombstones, txTombstones);
+    },
+  };
+
+  const readFn = <K extends (keyof T & string)[], R>(
     collectionNames: [...K],
-    callback: (handles: Mode extends "read" ? ReadHandles<T, K> : MutateHandles<T, K>) => R,
+    callback: (handles: ReadHandles<T, K>) => R,
   ): R => {
-    const deps: TransactionDependencies<T> = {
-      configs,
-      documents: state.documents,
-      tombstones: state.tombstones,
-      tick,
-      notifyListeners: (event) => {
-        listeners.forEach((listener) => listener(event));
-      },
-      applyMerge: (collectionName, txDocuments) => {
-        const currentCollection: Collection = {
-          documents: state.documents[collectionName]!,
-        };
+    return executeTransaction("read", collectionNames, callback, deps);
+  };
 
-        const txCollection: Collection = {
-          documents: txDocuments,
-        };
-
-        const merged = mergeCollections(currentCollection, txCollection, state.tombstones);
-        state.documents[collectionName] = merged.documents;
-      },
-      applyTombstones: (txTombstones) => {
-        state.tombstones = mergeTombstones(state.tombstones, txTombstones);
-      },
-    };
-
-    return executeTransaction(mode, collectionNames, callback, deps);
+  const transactFn = <K extends (keyof T & string)[], R>(
+    collectionNames: [...K],
+    callback: (handles: MutateHandles<T, K>) => R,
+  ): R => {
+    return executeTransaction("mutate", collectionNames, callback, deps);
   };
 
   return {
-    transact: transactFn as StoreAPI<T>["transact"],
+    read: readFn,
+    transact: transactFn,
 
     getSnapshot(): StoreSnapshot {
       const collectionsSnapshot: Record<string, Collection> = {};
