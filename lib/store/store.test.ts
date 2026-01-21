@@ -55,7 +55,7 @@ describe("createStore", () => {
       });
     });
 
-    const result = store.query(({ users }) => users.get("1"));
+    const result = store.query(({ users }) => users.get("1")).result();
     expect(result).toEqual({
       id: "1",
       name: "Alice",
@@ -89,8 +89,8 @@ describe("createStore", () => {
       users.remove("1");
     });
 
-    expect(store.query(({ users }) => users.get("1"))).toBeUndefined();
-    expect(store.query(({ users }) => users.get("2"))).toEqual({
+    expect(store.query(({ users }) => users.get("1")).result()).toBeUndefined();
+    expect(store.query(({ users }) => users.get("2")).result()).toEqual({
       id: "2",
       name: "Bob",
       profile: {},
@@ -121,7 +121,7 @@ describe("createStore", () => {
       });
     });
 
-    const result = store.query(({ users }) => users.get("1"));
+    const result = store.query(({ users }) => users.get("1")).result();
     expect(result).toEqual({
       id: "1",
       name: "Alice",
@@ -310,7 +310,7 @@ describe("createStore", () => {
     });
 
     // Should be undefined (tombstoned)
-    expect(store.query(({ users }) => users.get("123"))).toBeUndefined();
+    expect(store.query(({ users }) => users.get("123")).result()).toBeUndefined();
 
     // Snapshot should have store-level tombstones
     const snapshot = store.getSnapshot();
@@ -338,13 +338,13 @@ describe("createStore", () => {
       users.add({ id: "3", name: "Charlie", profile: {} });
     });
 
-    expect(store.query(({ users }) => users.list())).toHaveLength(3);
+    expect(store.query(({ users }) => users.list()).result()).toHaveLength(3);
 
     store.transact(({ users }) => {
       users.remove("2");
     });
 
-    const allUsers = store.query(({ users }) => users.list());
+    const allUsers = store.query(({ users }) => users.list()).result();
     expect(allUsers).toHaveLength(2);
     expect(allUsers.find((u) => u.id === "2")).toBeUndefined();
     expect(allUsers.find((u) => u.id === "1")).toBeDefined();
@@ -380,8 +380,8 @@ describe("createStore", () => {
     store2.merge(snapshot1);
 
     // User should still be tombstoned after merge
-    expect(store2.query(({ users }) => users.get("1"))).toBeUndefined();
-    expect(store2.query(({ users }) => users.list())).toHaveLength(0);
+    expect(store2.query(({ users }) => users.get("1")).result()).toBeUndefined();
+    expect(store2.query(({ users }) => users.list()).result()).toHaveLength(0);
 
     const snapshot2 = store2.getSnapshot();
     expect(snapshot2.tombstones).toHaveProperty("1");
@@ -408,7 +408,7 @@ describe("createStore", () => {
       users.add({ id: "3", name: "Charlie", profile: { age: 35 } });
     });
 
-    const allUsers = store.query(({ users }) => users.list());
+    const allUsers = store.query(({ users }) => users.list()).result();
     expect(allUsers).toHaveLength(3);
     expect(allUsers.find((u) => u.name === "Alice")).toBeDefined();
     expect(allUsers.find((u) => u.name === "Bob")).toBeDefined();
@@ -421,7 +421,7 @@ describe("createStore", () => {
       notes.add({ id: "3", content: "Third note" });
     });
 
-    const allNotes = store.query(({ notes }) => notes.list());
+    const allNotes = store.query(({ notes }) => notes.list()).result();
     expect(allNotes).toHaveLength(3);
     expect(allNotes.find((n) => n.content === "First note")).toBeDefined();
 
@@ -429,16 +429,16 @@ describe("createStore", () => {
     store.transact(({ users }) => {
       users.remove("2");
     });
-    const usersAfterRemoval = store.query(({ users }) => users.list());
+    const usersAfterRemoval = store.query(({ users }) => users.list()).result();
     expect(usersAfterRemoval).toHaveLength(2);
     expect(usersAfterRemoval.find((u) => u.id === "2")).toBeUndefined();
     expect(usersAfterRemoval.find((u) => u.id === "1")).toBeDefined();
     expect(usersAfterRemoval.find((u) => u.id === "3")).toBeDefined();
 
     // Demonstrate filtering with standard array methods
-    const adults = store.query(({ users }) =>
-      users.list({ where: (user) => (user.profile?.age ?? 0) >= 30 }),
-    );
+    const adults = store
+      .query(({ users }) => users.list({ where: (user) => (user.profile?.age ?? 0) >= 30 }))
+      .result();
     expect(adults).toHaveLength(2);
     expect(adults.find((u) => u.name === "Alice")).toBeDefined();
     expect(adults.find((u) => u.name === "Charlie")).toBeDefined();
@@ -477,12 +477,12 @@ describe("createStore", () => {
     expect(events).toHaveLength(0);
 
     // But the data should still be merged
-    expect(store2.query(({ users }) => users.get("1"))).toEqual({
+    expect(store2.query(({ users }) => users.get("1")).result()).toEqual({
       id: "1",
       name: "Alice",
       profile: { age: 30 },
     });
-    expect(store2.query(({ users }) => users.get("2"))).toEqual({
+    expect(store2.query(({ users }) => users.get("2")).result()).toEqual({
       id: "2",
       name: "Bob",
       profile: { age: 25 },
@@ -522,7 +522,7 @@ describe("createStore", () => {
     expect(events[0]).toEqual({ users: true });
 
     // Data should be merged
-    expect(store2.query(({ users }) => users.get("1"))).toEqual({
+    expect(store2.query(({ users }) => users.get("1")).result()).toEqual({
       id: "1",
       name: "Alice",
       profile: { age: 30 },
@@ -562,7 +562,7 @@ describe("createStore", () => {
     expect(events[0]).toEqual({ users: true });
 
     // Data should be merged
-    expect(store2.query(({ users }) => users.get("1"))).toEqual({
+    expect(store2.query(({ users }) => users.get("1")).result()).toEqual({
       id: "1",
       name: "Alice",
       profile: { age: 30 },
@@ -604,12 +604,12 @@ describe("createStore", () => {
     expect(events).toHaveLength(0);
 
     // But the data should still be merged for both collections
-    expect(store2.query(({ users }) => users.get("1"))).toEqual({
+    expect(store2.query(({ users }) => users.get("1")).result()).toEqual({
       id: "1",
       name: "Alice",
       profile: { age: 30 },
     });
-    expect(store2.query(({ notes }) => notes.get("note-1"))).toEqual({
+    expect(store2.query(({ notes }) => notes.get("note-1")).result()).toEqual({
       id: "note-1",
       content: "First note",
     });
@@ -631,12 +631,12 @@ describe("createStore", () => {
         users.add({ id: "2", name: "Bob", profile: { age: 25 } });
       });
 
-      expect(store.query(({ users }) => users.get("1"))).toEqual({
+      expect(store.query(({ users }) => users.get("1")).result()).toEqual({
         id: "1",
         name: "Alice",
         profile: { age: 30 },
       });
-      expect(store.query(({ users }) => users.get("2"))).toEqual({
+      expect(store.query(({ users }) => users.get("2")).result()).toEqual({
         id: "2",
         name: "Bob",
         profile: { age: 25 },
@@ -663,16 +663,16 @@ describe("createStore", () => {
         notes.add({ id: "note-2", content: "World" });
       });
 
-      expect(store.query(({ users }) => users.get("1"))).toEqual({
+      expect(store.query(({ users }) => users.get("1")).result()).toEqual({
         id: "1",
         name: "Alice",
         profile: {},
       });
-      expect(store.query(({ notes }) => notes.get("note-1"))).toEqual({
+      expect(store.query(({ notes }) => notes.get("note-1")).result()).toEqual({
         id: "note-1",
         content: "Hello",
       });
-      expect(store.query(({ notes }) => notes.get("note-2"))).toEqual({
+      expect(store.query(({ notes }) => notes.get("note-2")).result()).toEqual({
         id: "note-2",
         content: "World",
       });
@@ -743,8 +743,8 @@ describe("createStore", () => {
       }).toThrow("Transaction failed");
 
       // Changes should not be persisted
-      expect(store.query(({ users }) => users.get("2"))).toBeUndefined();
-      expect(store.query(({ users }) => users.get("1"))?.name).toBe("Alice");
+      expect(store.query(({ users }) => users.get("2")).result()).toBeUndefined();
+      expect(store.query(({ users }) => users.get("1")).result()?.name).toBe("Alice");
     });
 
     test("transact batches notifications", () => {
@@ -852,7 +852,347 @@ describe("createStore", () => {
       });
 
       expect(result).toBe(2); // Should see only the 2 existing users
-      expect(store.query(({ users }) => users.get("3"))).toBeDefined(); // But the new one should be added
+      expect(store.query(({ users }) => users.get("3")).result()).toBeDefined(); // But the new one should be added
+    });
+  });
+
+  describe("reactive queries", () => {
+    test("query.result() returns current results", () => {
+      const store = createStore({
+        collections: {
+          users: {
+            schema: userSchema,
+            keyPath: "id",
+          },
+        },
+      });
+
+      store.transact(({ users }) => {
+        users.add({ id: "1", name: "Alice", profile: {} });
+      });
+
+      const query = store.query(({ users }) => users.get("1"));
+      expect(query.result()).toEqual({
+        id: "1",
+        name: "Alice",
+        profile: {},
+      });
+
+      store.transact(({ users }) => {
+        users.update("1", { name: "Alice Updated" });
+      });
+
+      expect(query.result()).toEqual({
+        id: "1",
+        name: "Alice Updated",
+        profile: {},
+      });
+    });
+
+    test("query.subscribe() receives initial result and updates", () => {
+      const store = createStore({
+        collections: {
+          users: {
+            schema: userSchema,
+            keyPath: "id",
+          },
+        },
+      });
+
+      store.transact(({ users }) => {
+        users.add({ id: "1", name: "Alice", profile: {} });
+      });
+
+      const query = store.query(({ users }) => users.get("1"));
+      const results: any[] = [];
+
+      const unsubscribe = query.subscribe((result) => {
+        results.push(result);
+      });
+
+      // Should receive initial result
+      expect(results).toHaveLength(1);
+      expect(results[0]).toEqual({
+        id: "1",
+        name: "Alice",
+        profile: {},
+      });
+
+      // Update should trigger subscription
+      store.transact(({ users }) => {
+        users.update("1", { name: "Alice Updated" });
+      });
+
+      expect(results).toHaveLength(2);
+      expect(results[1]).toEqual({
+        id: "1",
+        name: "Alice Updated",
+        profile: {},
+      });
+
+      unsubscribe();
+    });
+
+    test("query.subscribe() only updates when dependencies change", () => {
+      const store = createStore({
+        collections: {
+          users: {
+            schema: userSchema,
+            keyPath: "id",
+          },
+          notes: {
+            schema: noteSchema,
+            keyPath: "id",
+          },
+        },
+      });
+
+      store.transact(({ users, notes }) => {
+        users.add({ id: "1", name: "Alice", profile: {} });
+        notes.add({ id: "note-1", content: "First note" });
+      });
+
+      const query = store.query(({ users }) => users.get("1"));
+      const results: any[] = [];
+
+      query.subscribe((result) => {
+        results.push(result);
+      });
+
+      expect(results).toHaveLength(1);
+
+      // Update notes collection - should NOT trigger query update
+      store.transact(({ notes }) => {
+        notes.add({ id: "note-2", content: "Second note" });
+      });
+
+      expect(results).toHaveLength(1); // No update
+
+      // Update users collection - SHOULD trigger query update
+      store.transact(({ users }) => {
+        users.update("1", { name: "Alice Updated" });
+      });
+
+      expect(results).toHaveLength(2); // Updated
+    });
+
+    test("query.subscribe() tracks multiple collection dependencies", () => {
+      const store = createStore({
+        collections: {
+          users: {
+            schema: userSchema,
+            keyPath: "id",
+          },
+          notes: {
+            schema: noteSchema,
+            keyPath: "id",
+          },
+        },
+      });
+
+      store.transact(({ users, notes }) => {
+        users.add({ id: "1", name: "Alice", profile: {} });
+        notes.add({ id: "note-1", content: "First note" });
+      });
+
+      const query = store.query(({ users, notes }) => ({
+        user: users.get("1"),
+        note: notes.get("note-1"),
+      }));
+
+      const results: any[] = [];
+      query.subscribe((result) => {
+        results.push(result);
+      });
+
+      expect(results).toHaveLength(1);
+
+      // Update users - should trigger
+      store.transact(({ users }) => {
+        users.update("1", { name: "Alice Updated" });
+      });
+
+      expect(results).toHaveLength(2);
+
+      // Update notes - should also trigger
+      store.transact(({ notes }) => {
+        notes.update("note-1", { content: "Updated note" });
+      });
+
+      expect(results).toHaveLength(3);
+    });
+
+    test("query.subscribe() unsubscribe stops receiving updates", () => {
+      const store = createStore({
+        collections: {
+          users: {
+            schema: userSchema,
+            keyPath: "id",
+          },
+        },
+      });
+
+      store.transact(({ users }) => {
+        users.add({ id: "1", name: "Alice", profile: {} });
+      });
+
+      const query = store.query(({ users }) => users.get("1"));
+      const results: any[] = [];
+
+      const unsubscribe = query.subscribe((result) => {
+        results.push(result);
+      });
+
+      expect(results).toHaveLength(1);
+
+      // Unsubscribe
+      unsubscribe();
+
+      // Update should NOT trigger subscription
+      store.transact(({ users }) => {
+        users.update("1", { name: "Alice Updated" });
+      });
+
+      expect(results).toHaveLength(1); // No new result
+    });
+
+    test("query.subscribe() multiple subscribers all receive updates", () => {
+      const store = createStore({
+        collections: {
+          users: {
+            schema: userSchema,
+            keyPath: "id",
+          },
+        },
+      });
+
+      store.transact(({ users }) => {
+        users.add({ id: "1", name: "Alice", profile: {} });
+      });
+
+      const query = store.query(({ users }) => users.get("1"));
+      const results1: any[] = [];
+      const results2: any[] = [];
+
+      query.subscribe((result) => {
+        results1.push(result);
+      });
+
+      query.subscribe((result) => {
+        results2.push(result);
+      });
+
+      expect(results1).toHaveLength(1);
+      expect(results2).toHaveLength(1);
+
+      store.transact(({ users }) => {
+        users.update("1", { name: "Alice Updated" });
+      });
+
+      expect(results1).toHaveLength(2);
+      expect(results2).toHaveLength(2);
+    });
+
+    test("query.subscribe() does not notify if result hasn't changed", () => {
+      const store = createStore({
+        collections: {
+          users: {
+            schema: userSchema,
+            keyPath: "id",
+          },
+        },
+      });
+
+      store.transact(({ users }) => {
+        users.add({ id: "1", name: "Alice", profile: {} });
+      });
+
+      const query = store.query(({ users }) => users.get("1"));
+      const results: any[] = [];
+
+      query.subscribe((result) => {
+        results.push(result);
+      });
+
+      expect(results).toHaveLength(1);
+
+      // Update a different user - should not trigger
+      store.transact(({ users }) => {
+        users.add({ id: "2", name: "Bob", profile: {} });
+      });
+
+      expect(results).toHaveLength(1); // No update because query result didn't change
+    });
+
+    test("query works with list() operations", () => {
+      const store = createStore({
+        collections: {
+          users: {
+            schema: userSchema,
+            keyPath: "id",
+          },
+        },
+      });
+
+      store.transact(({ users }) => {
+        users.add({ id: "1", name: "Alice", profile: {} });
+        users.add({ id: "2", name: "Bob", profile: {} });
+      });
+
+      const query = store.query(({ users }) => users.list());
+      const results: any[] = [];
+
+      query.subscribe((result) => {
+        results.push(result);
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toHaveLength(2);
+
+      // Add a new user
+      store.transact(({ users }) => {
+        users.add({ id: "3", name: "Charlie", profile: {} });
+      });
+
+      expect(results).toHaveLength(2);
+      expect(results[1]).toHaveLength(3);
+    });
+
+    test("query works with filtered list() operations", () => {
+      const store = createStore({
+        collections: {
+          users: {
+            schema: userSchema,
+            keyPath: "id",
+          },
+        },
+      });
+
+      store.transact(({ users }) => {
+        users.add({ id: "1", name: "Alice", profile: { age: 30 } });
+        users.add({ id: "2", name: "Bob", profile: { age: 25 } });
+        users.add({ id: "3", name: "Charlie", profile: { age: 35 } });
+      });
+
+      const query = store.query(({ users }) =>
+        users.list({ where: (user) => (user.profile?.age ?? 0) >= 30 }),
+      );
+      const results: any[] = [];
+
+      query.subscribe((result) => {
+        results.push(result);
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toHaveLength(2); // Alice and Charlie
+
+      // Update Bob's age to 30 - should now be included
+      store.transact(({ users }) => {
+        users.update("2", { profile: { age: 30 } });
+      });
+
+      expect(results).toHaveLength(2);
+      expect(results[1]).toHaveLength(3); // All three now
     });
   });
 });

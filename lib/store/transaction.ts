@@ -171,30 +171,27 @@ export function executeTransaction<
   };
 
   // Create proxy that intercepts property access
-  const proxy = new Proxy(
-    {} as Mode extends "read" ? ReadHandles<T> : MutateHandles<T>,
-    {
-      get(_target, prop: string | symbol) {
-        // Handle symbol properties (like Symbol.iterator, etc.)
-        if (typeof prop !== "string") {
-          return undefined;
-        }
+  const proxy = new Proxy({} as Mode extends "read" ? ReadHandles<T> : MutateHandles<T>, {
+    get(_target, prop: string | symbol) {
+      // Handle symbol properties (like Symbol.iterator, etc.)
+      if (typeof prop !== "string") {
+        return undefined;
+      }
 
-        // Check if it's a valid collection name
-        if (!deps.configs.has(prop)) {
-          throw new Error(`Collection "${prop}" not found`);
-        }
+      // Check if it's a valid collection name
+      if (!deps.configs.has(prop)) {
+        throw new Error(`Collection "${prop}" not found`);
+      }
 
-        // Lazy initialize if not already done
-        if (!accessedCollections.has(prop)) {
-          initializeCollection(prop);
-        }
+      // Lazy initialize if not already done
+      if (!accessedCollections.has(prop)) {
+        initializeCollection(prop);
+      }
 
-        // Return cached handle
-        return handleCache[prop];
-      },
+      // Return cached handle
+      return handleCache[prop];
     },
-  );
+  });
 
   // Execute callback and capture return value
   // On error: discard clones (automatic - just don't merge, execution stops here)

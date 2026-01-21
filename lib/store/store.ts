@@ -1,19 +1,21 @@
-import { mergeCollections, type Collection, type DocumentId } from "../core";
+import { mergeCollections, type Collection } from "../core";
 import type { Clock } from "../core/clock";
 import { advanceClock, makeStamp } from "../core/clock";
 import type { AnyObject, CollectionConfig } from "./schema";
 import type { Tombstones } from "../core/tombstone";
 import { mergeTombstones } from "../core/tombstone";
-import type { Document } from "../core/document";
 import {
   executeTransaction,
   type ReadHandles,
   type MutateHandles,
   type TransactionDependencies,
 } from "./transaction";
+import { createQuery, QueryManager, type QueryObject } from "./query";
 
 // Re-export transaction types for public API
 export type { ReadHandle, MutateHandle, ReadHandles, MutateHandles } from "./transaction";
+// Re-export query types for public API
+export type { QueryObject } from "./query";
 
 export type StoreSnapshot = {
   clock: Clock;
@@ -26,8 +28,8 @@ export type StoreChangeEvent<T extends Record<string, CollectionConfig<AnyObject
 };
 
 export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  // Read-only query (optimized, no copy overhead, lazy collection access)
-  query<R>(callback: (handles: ReadHandles<T>) => R): R;
+  // Read-only reactive query (returns query object with result() and subscribe())
+  query<R>(callback: (handles: ReadHandles<T>) => R): QueryObject<R>;
 
   // Read-write transaction (full mutations, rollback on error, lazy collection access)
   transact<R>(callback: (handles: MutateHandles<T>) => R): R;
@@ -49,6 +51,7 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
 
   const configs = new Map<string, CollectionConfig<AnyObject>>();
   const listeners = new Set<(event: StoreChangeEvent<T>) => void>();
+  const queryManager = new QueryManager();
 
   const advance = (ms: number, seq: number): void => {
     state.clock = advanceClock(state.clock, { ms, seq });
@@ -72,6 +75,17 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     tick,
     notifyListeners: (event) => {
       listeners.forEach((listener) => listener(event));
+
+      // Re-execute queries that depend on changed collections
+      const changedCollections = new Set<string>();
+      for (const key in event) {
+        if (event[key]) {
+          changedCollections.add(key);
+        }
+      }
+      if (changedCollections.size > 0) {
+        queryManager.reexecuteQueries(changedCollections);
+      }
     },
     applyMerge: (collectionName, txDocuments) => {
       const currentCollection: Collection = state.collections[collectionName]!;
@@ -85,8 +99,12 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
     },
   };
 
-  const queryFn = <R>(callback: (handles: ReadHandles<T>) => R): R => {
-    return executeTransaction("read", callback, deps);
+  const queryFn = <R>(callback: (handles: ReadHandles<T>) => R): QueryObject<R> => {
+    return createQuery(
+      callback,
+      { configs, documents: state.collections, tombstones: state.tombstones },
+      queryManager,
+    );
   };
 
   const transactFn = <R>(callback: (handles: MutateHandles<T>) => R): R => {
@@ -144,6 +162,17 @@ export function createStore<T extends Record<string, CollectionConfig<AnyObject>
       // Notify listeners once with batched event (only if there are changes and not silent)
       if (!options?.silent && Object.keys(event).length > 0) {
         listeners.forEach((listener) => listener(event));
+
+        // Re-execute queries that depend on changed collections
+        const changedCollections = new Set<string>();
+        for (const key in event) {
+          if (event[key]) {
+            changedCollections.add(key);
+          }
+        }
+        if (changedCollections.size > 0) {
+          queryManager.reexecuteQueries(changedCollections);
+        }
       }
     },
 
