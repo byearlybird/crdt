@@ -11,42 +11,33 @@ export type StoreMiddleware<T extends StoreConfig> = (
   context: MiddlewareContext<T>,
 ) => (() => void | Promise<void>) | void | Promise<void>;
 
-export type MiddlewareDependencies<T extends StoreConfig> = {
-  listen: (listener: (event: StoreChangeEvent<T>) => void) => () => void;
-  getState: () => StoreState;
-  setState: (snapshot: StoreState, options?: { silent?: boolean }) => void;
-};
-
 export type MiddlewareManager<T extends StoreConfig> = {
   use: (middleware: StoreMiddleware<T>) => void;
-  runInit: (deps: MiddlewareDependencies<T>) => Promise<void>;
+  runInit: (context: MiddlewareContext<T>) => Promise<void>;
   runDispose: () => Promise<void>;
 };
 
 export function createMiddlewareManager<T extends StoreConfig>(): MiddlewareManager<T> {
   const middlewares: StoreMiddleware<T>[] = [];
-  const unsubscribeFns: (() => void)[] = [];
   const cleanupFns: (() => void | Promise<void>)[] = [];
 
   function use(middleware: StoreMiddleware<T>): void {
     middlewares.push(middleware);
   }
 
-  async function runInit(deps: MiddlewareDependencies<T>): Promise<void> {
-    const subscribe = (listener: (event: StoreChangeEvent<T>) => void) => {
-      const unsubscribe = deps.listen(listener);
-      unsubscribeFns.push(unsubscribe);
-      return unsubscribe;
-    };
-
-    const context: MiddlewareContext<T> = {
-      subscribe,
-      getState: deps.getState,
-      setState: deps.setState,
+  async function runInit(context: MiddlewareContext<T>): Promise<void> {
+    // Wrap subscribe to track unsubscribe functions
+    const wrappedContext: MiddlewareContext<T> = {
+      ...context,
+      subscribe: (listener: (event: StoreChangeEvent<T>) => void) => {
+        const unsubscribe = context.subscribe(listener);
+        cleanupFns.push(unsubscribe);
+        return unsubscribe;
+      },
     };
 
     for (const middleware of middlewares) {
-      const cleanup = await middleware(context);
+      const cleanup = await middleware(wrappedContext);
       if (cleanup) {
         cleanupFns.push(cleanup);
       }
@@ -54,14 +45,10 @@ export function createMiddlewareManager<T extends StoreConfig>(): MiddlewareMana
   }
 
   async function runDispose(): Promise<void> {
-    const reversed = [...cleanupFns].reverse();
-    for (const cleanup of reversed) {
+    for (const cleanup of [...cleanupFns].reverse()) {
       await cleanup();
     }
-
     cleanupFns.length = 0;
-    unsubscribeFns.forEach((fn) => fn());
-    unsubscribeFns.length = 0;
   }
 
   return { use, runInit, runDispose };

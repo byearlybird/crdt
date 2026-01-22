@@ -121,7 +121,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
       throw new Error("Store already initialized");
     }
 
-    await middlewareManager.runInit({ listen, getState, setState });
+    await middlewareManager.runInit({ subscribe: listen, getState, setState });
 
     isInitialized = true;
   };
