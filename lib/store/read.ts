@@ -17,6 +17,11 @@ export type ReadHandles<T extends StoreConfig> = {
   [N in CollectionName<T>]: ReadHandle<T[N]>;
 };
 
+export type ReadDependencies = {
+  configs: Map<string, CollectionConfig<AnyObject>>;
+  state: StoreState;
+};
+
 export function createReadHandle<C extends CollectionConfig<AnyObject>>(
   documents: Record<DocumentId, Document>,
   tombstones: Tombstones,
@@ -42,14 +47,13 @@ export function createReadHandle<C extends CollectionConfig<AnyObject>>(
 }
 
 export function createReadHandles<T extends StoreConfig>(
-  configs: Map<string, CollectionConfig<AnyObject>>,
-  state: StoreState,
-) {
+  deps: ReadDependencies,
+): ReadHandles<T> {
   const handles = {} as ReadHandles<T>;
 
-  for (const [collectionName] of configs) {
-    const documents = state.collections[collectionName] ?? {};
-    Object.assign(handles, { [collectionName]: createReadHandle(documents, state.tombstones) });
+  for (const [collectionName] of deps.configs) {
+    const documents = deps.state.collections[collectionName] ?? {};
+    Object.assign(handles, { [collectionName]: createReadHandle(documents, deps.state.tombstones) });
   }
 
   return handles;

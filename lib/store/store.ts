@@ -73,7 +73,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
   };
 
   const read = <R>(callback: (handles: ReadHandles<T>) => R): R => {
-    const handles = createReadHandles<T>(configs, state);
+    const handles = createReadHandles<T>({ configs, state });
     return callback(handles);
   };
 
@@ -125,13 +125,13 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
       throw new Error("Store already initialized");
     }
 
-    await middlewareManager.init(listen, getState, setState);
+    await middlewareManager.runInit({ listen, getState, setState });
 
     isInitialized = true;
   };
 
   const dispose = async (): Promise<void> => {
-    await middlewareManager.dispose();
+    await middlewareManager.runDispose();
     isInitialized = false;
   };
 
@@ -139,6 +139,9 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     read,
     transact,
     use(middleware: StoreMiddleware<T>): StoreAPI<T> {
+      if (isInitialized) {
+        throw new Error("Cannot add middleware after initialization");
+      }
       middlewareManager.use(middleware);
       return this;
     },
