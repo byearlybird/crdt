@@ -34,10 +34,10 @@ function notifyListeners<T extends StoreConfig>(
 }
 
 export function createStore<T extends StoreConfig>(config: { collections: T }): StoreAPI<T> {
-  const state = { // :StoreState
-    clock: { ms: Date.now(), seq: 0 } as Clock,
-    tombstones: {} as Tombstones,
-    collections: {} as Record<string, Collection>,
+  const state: StoreState = {
+    clock: { ms: Date.now(), seq: 0 },
+    tombstones: {},
+    collections: {},
   };
 
   const configs = new Map<string, CollectionConfig<AnyObject>>();
@@ -73,7 +73,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
   };
 
   const read = <R>(callback: (handles: ReadHandles<T>) => R): R => {
-    const handles = createReadHandles<T>(configs, state);
+    const handles = createReadHandles<T>({ configs, state });
     return callback(handles);
   };
 
@@ -96,18 +96,14 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
   };
 
   const getState = (): StoreState => {
-    return { // copy everhthing
-      clock: state.clock,
-      collections: { ...state.collections },
-      tombstones: state.tombstones,
-    };
+    return { ...state };
   };
 
   const setState = (snapshot: StoreState, options?: { silent?: boolean }): void => {
     advance(snapshot.clock.ms, snapshot.clock.seq);
     state.tombstones = snapshot.tombstones;
 
-    const event: StoreChangeEvent<T> = {}; // maybe just replace state. expose nitify through middleware
+    const event: StoreChangeEvent<T> = {};
 
     // Replace collections - ensure all collections from snapshot exist
     for (const [name, collectionData] of Object.entries(snapshot.collections)) {
@@ -125,14 +121,17 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
       throw new Error("Store already initialized");
     }
 
-// maybe use deps pattern again  maybe also for read  
-    await middlewareManager.init(listen, getState, setState);
+    await middlewareManager.runInit({ listen, getState, setState });
 
     isInitialized = true;
   };
 
   const dispose = async (): Promise<void> => {
-    await middlewareManager.dispose();
+    if (!isInitialized) {
+      throw new Error("Store not initialized");
+    }
+
+    await middlewareManager.runDispose();
     isInitialized = false;
   };
 
@@ -140,6 +139,9 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     read,
     transact,
     use(middleware: StoreMiddleware<T>): StoreAPI<T> {
+      if (isInitialized) {
+        throw new Error("Cannot add middleware after initialization");
+      }
       middlewareManager.use(middleware);
       return this;
     },

@@ -1,60 +1,16 @@
-import { validate } from "./schema";
-import { makeDocument, parseDocument, mergeDocuments, type DocumentId } from "../core";
-import type { Input, AnyObject, CollectionConfig, StoreConfig, CollectionName } from "./schema";
+import type { DocumentId } from "../core";
+import type { AnyObject, CollectionConfig, StoreConfig, CollectionName } from "./schema";
 import type { Tombstones, Document } from "../core";
 import type { StoreChangeEvent } from "./store";
 import { createReadHandle, type ReadHandle } from "./read";
+import { createWriteHandle, type WriteHandle, type WriteCallbacks } from "./write";
 
-export type TransactionHandle<T extends CollectionConfig<AnyObject>> = ReadHandle<T> & {
-  add(data: Input<T["schema"]>): void;
-  update(id: DocumentId, data: Partial<Input<T["schema"]>>): void;
-  remove(id: DocumentId): void;
-};
+export type TransactionHandle<T extends CollectionConfig<AnyObject>> =
+  ReadHandle<T> & WriteHandle<T>;
 
 export type TransactionHandles<T extends StoreConfig> = {
   [N in CollectionName<T>]: TransactionHandle<T[N]>;
 };
-
-function createTransactionHandle<C extends CollectionConfig<AnyObject>>(
-  config: C,
-  documents: Record<DocumentId, Document>,
-  tombstones: Tombstones,
-  getTimestamp: () => string,
-  markChanged: () => void,
-): TransactionHandle<C> {
-  const readHandle = createReadHandle<C>(documents, tombstones);
-
-  return {
-    ...readHandle,
-
-    add(data) {
-      const validated = validate(config.schema, data);
-      const id = validated[config.keyPath] as DocumentId;
-      const document = makeDocument(validated, getTimestamp());
-      documents[id] = document;
-      markChanged();
-    },
-
-    update(id, data) {
-      const current = documents[id];
-      if (!current) return;
-
-      const changes = makeDocument(data, getTimestamp());
-      const merged = mergeDocuments(current, changes);
-      const parsed = parseDocument(merged);
-      validate(config.schema, parsed);
-
-      documents[id] = merged;
-      markChanged();
-    },
-
-    remove(id) {
-      tombstones[id] = getTimestamp();
-      delete documents[id];
-      markChanged();
-    },
-  };
-}
 
 export type TransactionDependencies = {
   configs: Map<string, CollectionConfig<AnyObject>>;
@@ -89,13 +45,35 @@ export function executeTransaction<T extends StoreConfig, R>(
       documents[collectionName] = { ...deps.documents[collectionName]! };
       const config = deps.configs.get(collectionName)!;
 
-      target[collectionName] = createTransactionHandle(
+      const callbacks: WriteCallbacks = {
+        onAdd: (id, document) => {
+          documents[collectionName]![id] = document;
+          changed.add(collectionName);
+        },
+        onUpdate: (id, document) => {
+          documents[collectionName]![id] = document;
+          changed.add(collectionName);
+        },
+        onRemove: (id, tombstoneStamp) => {
+          tombstones[id] = tombstoneStamp;
+          delete documents[collectionName]![id];
+          changed.add(collectionName);
+        },
+      };
+
+      const readHandle = createReadHandle(documents[collectionName]!, tombstones);
+
+      const writeHandle = createWriteHandle({
         config,
-        documents[collectionName]!,// hidden mutation, maybe handke through callbacks
-        tombstones,
-        deps.tick,
-        () => changed.add(collectionName),
-      );
+        documents: documents[collectionName]!,
+        getTimestamp: deps.tick,
+        callbacks,
+      });
+
+      target[collectionName] = {
+        ...readHandle,
+        ...writeHandle,
+      };
     },
   );
 
