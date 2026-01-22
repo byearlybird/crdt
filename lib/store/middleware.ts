@@ -5,7 +5,7 @@ export type MiddlewareContext<T extends StoreConfig> = {
   subscribe: (listener: (event: StoreChangeEvent<T>) => void) => () => void;
   notify: (event: StoreChangeEvent<T>) => void;
   getState: () => StoreState;
-  setState: (snapshot: StoreState, options?: { silent?: boolean }) => void;
+  setState: (snapshot: StoreState) => void;
 };
 
 export type StoreMiddleware<T extends StoreConfig> = (

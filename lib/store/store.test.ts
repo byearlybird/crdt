@@ -718,7 +718,7 @@ describe("middleware", () => {
     expect(after.clock.seq).toBeGreaterThanOrEqual(5);
   });
 
-  test("setState notifies listeners unless silent", async () => {
+  test("setState does not notify - middleware uses notify explicitly", async () => {
     const store = createStore({
       collections: {
         users: {
@@ -732,8 +732,10 @@ describe("middleware", () => {
     const unsubscribeFns: (() => void)[] = [];
 
     let setStateFn: any = null;
-    const middleware = ({ setState, subscribe }: any) => {
+    let notifyFn: any = null;
+    const middleware = ({ setState, notify, subscribe }: any) => {
       setStateFn = setState;
+      notifyFn = notify;
       const unsubscribe = subscribe((event: any) => {
         if (Object.keys(event).length > 0) {
           notified = true;
@@ -763,14 +765,14 @@ describe("middleware", () => {
       tombstones: {},
     };
 
-    // Silent should not notify
+    // setState does not notify
     notified = false;
-    setStateFn(snapshot, { silent: true });
+    setStateFn(snapshot);
     expect(notified).toBe(false);
 
-    // Not silent should notify
+    // Middleware uses notify explicitly
     notified = false;
-    setStateFn(snapshot, { silent: false });
+    notifyFn({ users: true });
     expect(notified).toBe(true);
 
     unsubscribeFns.forEach((fn) => fn());

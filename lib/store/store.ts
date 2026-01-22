@@ -99,20 +99,13 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     return { ...state };
   };
 
-  const setState = (snapshot: StoreState, options?: { silent?: boolean }): void => {
+  const setState = (snapshot: StoreState): void => {
     advance(snapshot.clock.ms, snapshot.clock.seq);
     state.tombstones = snapshot.tombstones;
-
-    const event: StoreChangeEvent<T> = {};
 
     // Replace collections - ensure all collections from snapshot exist
     for (const [name, collectionData] of Object.entries(snapshot.collections)) {
       state.collections[name] = collectionData;
-      event[name as keyof T] = true;
-    }
-
-    if (!options?.silent && Object.keys(event).length > 0) {
-      notifyListeners(event, listeners);
     }
   };
 
