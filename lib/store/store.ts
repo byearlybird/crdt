@@ -34,7 +34,7 @@ function notifyListeners<T extends StoreConfig>(
 }
 
 export function createStore<T extends StoreConfig>(config: { collections: T }): StoreAPI<T> {
-  const state = {
+  const state = { // :StoreState
     clock: { ms: Date.now(), seq: 0 } as Clock,
     tombstones: {} as Tombstones,
     collections: {} as Record<string, Collection>,
@@ -96,7 +96,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
   };
 
   const getState = (): StoreState => {
-    return {
+    return { // copy everhthing
       clock: state.clock,
       collections: { ...state.collections },
       tombstones: state.tombstones,
@@ -107,7 +107,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     advance(snapshot.clock.ms, snapshot.clock.seq);
     state.tombstones = snapshot.tombstones;
 
-    const event: StoreChangeEvent<T> = {};
+    const event: StoreChangeEvent<T> = {}; // maybe just replace state. expose nitify through middleware
 
     // Replace collections - ensure all collections from snapshot exist
     for (const [name, collectionData] of Object.entries(snapshot.collections)) {
