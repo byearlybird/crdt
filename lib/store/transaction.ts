@@ -1,29 +1,27 @@
 import { validate } from "./schema";
 import { makeDocument, parseDocument, mergeDocuments, type DocumentId } from "../core";
-import type { Document } from "../core/document";
 import type { Input, AnyObject, CollectionConfig, StoreConfig, CollectionName } from "./schema";
-import type { Tombstones } from "../core/tombstone";
+import type { Tombstones, Document } from "../core";
 import type { StoreChangeEvent } from "./store";
-import { createHandleProxy } from "./handles";
 import { createReadHandle, type ReadHandle } from "./read";
 
-export type MutateHandle<T extends CollectionConfig<AnyObject>> = ReadHandle<T> & {
+export type TransactionHandle<T extends CollectionConfig<AnyObject>> = ReadHandle<T> & {
   add(data: Input<T["schema"]>): void;
   update(id: DocumentId, data: Partial<Input<T["schema"]>>): void;
   remove(id: DocumentId): void;
 };
 
-export type MutateHandles<T extends StoreConfig> = {
-  [N in CollectionName<T>]: MutateHandle<T[N]>;
+export type TransactionHandles<T extends StoreConfig> = {
+  [N in CollectionName<T>]: TransactionHandle<T[N]>;
 };
 
-function createMutateHandle<C extends CollectionConfig<AnyObject>>(
+function createTransactionHandle<C extends CollectionConfig<AnyObject>>(
   config: C,
   documents: Record<DocumentId, Document>,
   tombstones: Tombstones,
   getTimestamp: () => string,
   markChanged: () => void,
-): MutateHandle<C> {
+): TransactionHandle<C> {
   const readHandle = createReadHandle<C>(documents, tombstones);
 
   return {
@@ -77,26 +75,29 @@ export type TransactionResult<T extends StoreConfig, R> = {
 };
 
 export function executeTransaction<T extends StoreConfig, R>(
-  callback: (handles: MutateHandles<T>) => R,
+  callback: (handles: TransactionHandles<T>) => R,
   deps: TransactionDependencies,
 ): TransactionResult<T, R> {
   const documents: Record<string, Record<DocumentId, Document>> = {};
   const tombstones: Tombstones = { ...deps.tombstones };
   const changed = new Set<string>();
 
-  const handles = createHandleProxy<MutateHandles<T>>(deps.configs, (collectionName, target) => {
-    // Copy-on-write: isolate collection documents for mutation
-    documents[collectionName] = { ...deps.documents[collectionName]! };
-    const config = deps.configs.get(collectionName)!;
+  const handles = createHandleProxy<TransactionHandles<T>>(
+    deps.configs,
+    (collectionName, target) => {
+      // Copy-on-write: isolate collection documents for transaction
+      documents[collectionName] = { ...deps.documents[collectionName]! };
+      const config = deps.configs.get(collectionName)!;
 
-    target[collectionName] = createMutateHandle(
-      config,
-      documents[collectionName]!,
-      tombstones,
-      deps.tick,
-      () => changed.add(collectionName),
-    );
-  });
+      target[collectionName] = createTransactionHandle(
+        config,
+        documents[collectionName]!,
+        tombstones,
+        deps.tick,
+        () => changed.add(collectionName),
+      );
+    },
+  );
 
   const value = callback(handles);
 
@@ -120,4 +121,32 @@ export function executeTransaction<T extends StoreConfig, R>(
       event,
     },
   };
+}
+
+/**
+ * Creates a Proxy that lazily initializes collection handles on first access.
+ * Used by transactions.
+ */
+function createHandleProxy<T>(
+  configs: Map<string, CollectionConfig<AnyObject>>,
+  onAccess: (collectionName: string, target: any) => void,
+): T {
+  const target = {} as any;
+  return new Proxy(target, {
+    get(target, prop: string | symbol) {
+      if (typeof prop !== "string") {
+        return undefined;
+      }
+
+      if (!configs.has(prop)) {
+        throw new Error(`Collection "${prop}" not found`);
+      }
+
+      if (!(prop in target)) {
+        onAccess(prop, target);
+      }
+
+      return target[prop];
+    },
+  });
 }

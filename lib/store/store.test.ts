@@ -631,7 +631,7 @@ describe("middleware", () => {
     expect(disposeOrder).toEqual(["async"]);
   });
 
-  test("setState replaces store state", () => {
+  test("setState replaces store state", async () => {
     const store = createStore({
       collections: {
         users: {
@@ -668,7 +668,7 @@ describe("middleware", () => {
     };
 
     store.use(middleware);
-    store.init();
+    await store.init();
 
     // Apply new snapshot
     setStateFn(newSnapshot, { silent: true });
@@ -682,7 +682,7 @@ describe("middleware", () => {
     });
   });
 
-  test("setState advances clock", () => {
+  test("setState advances clock", async () => {
     const store = createStore({
       collections: {
         users: {
@@ -700,7 +700,7 @@ describe("middleware", () => {
     };
 
     store.use(middleware);
-    store.init();
+    await store.init();
 
     const initial = getStateFn();
     const initialMs = initial.clock.ms;
@@ -718,7 +718,7 @@ describe("middleware", () => {
     expect(after.clock.seq).toBeGreaterThanOrEqual(5);
   });
 
-  test("setState notifies listeners unless silent", () => {
+  test("setState notifies listeners unless silent", async () => {
     const store = createStore({
       collections: {
         users: {
@@ -729,20 +729,25 @@ describe("middleware", () => {
     });
 
     let notified = false;
-    let unsubscribe: (() => void) | null = null;
+    const unsubscribeFns: (() => void)[] = [];
 
     let setStateFn: any = null;
     const middleware = ({ setState, subscribe }: any) => {
       setStateFn = setState;
-      unsubscribe = subscribe((event: any) => {
+      const unsubscribe = subscribe((event: any) => {
         if (Object.keys(event).length > 0) {
           notified = true;
         }
       });
+      unsubscribeFns.push(unsubscribe);
+      return () => {
+        unsubscribeFns.forEach((fn) => fn());
+        unsubscribeFns.length = 0;
+      };
     };
 
     store.use(middleware);
-    store.init();
+    await store.init();
 
     const snapshot = {
       clock: { ms: 1000, seq: 0 },
@@ -768,9 +773,7 @@ describe("middleware", () => {
     setStateFn(snapshot, { silent: false });
     expect(notified).toBe(true);
 
-    if (unsubscribe) {
-      unsubscribe();
-    }
+    unsubscribeFns.forEach((fn) => fn());
   });
 });
 
@@ -825,9 +828,9 @@ describe("mergeSnapshots", () => {
     };
 
     const result = mergeSnapshots(local, remote);
-    expect(result.merged.collections.users["1"]).toBeDefined();
-    expect(result.merged.collections.users["2"]).toBeDefined();
-    expect(result.diff.collections.users).toEqual({
+    expect(result.merged.collections["users"]?.["1"]).toBeDefined();
+    expect(result.merged.collections["users"]?.["2"]).toBeDefined();
+    expect(result.diff.collections["users"]).toEqual({
       added: ["2"],
       updated: [],
       removed: [],
@@ -864,8 +867,8 @@ describe("mergeSnapshots", () => {
     };
 
     const result = mergeSnapshots(local, remote);
-    expect(result.merged.collections.users["1"].name["~stamp"]).toBe("2000:0");
-    expect(result.diff.collections.users).toEqual({
+    expect(result.merged.collections["users"]?.["1"]?.["name"]?.["~stamp"]).toBe("2000:0");
+    expect(result.diff.collections["users"]).toEqual({
       added: [],
       updated: ["1"],
       removed: [],
@@ -899,8 +902,8 @@ describe("mergeSnapshots", () => {
 
     const result = mergeSnapshots(local, remote);
     expect(result.merged.tombstones["1"]).toBe("2000:0");
-    expect(result.merged.collections.users["1"]).toBeUndefined();
-    expect(result.diff.collections.users).toEqual({
+    expect(result.merged.collections["users"]?.["1"]).toBeUndefined();
+    expect(result.diff.collections["users"]).toEqual({
       added: [],
       updated: [],
       removed: ["1"],
@@ -974,8 +977,8 @@ describe("mergeSnapshots", () => {
 
     const result = mergeSnapshots(local, remote);
     // Document should not be added because it's tombstoned
-    expect(result.merged.collections  ["users"]?["1"]).toBeUndefined();
-    expect(result.diff.collections.users).toBeUndefined(); // No changes
+    expect(result.merged.collections["users"]?.["1"]).toBeUndefined();
+    expect(result.diff.collections["users"]).toBeUndefined(); // No changes
   });
 
   test("handles multiple collections", () => {
@@ -1020,12 +1023,12 @@ describe("mergeSnapshots", () => {
     };
 
     const result = mergeSnapshots(local, remote);
-    expect(result.diff.collections.users).toEqual({
+    expect(result.diff.collections["users"]).toEqual({
       added: ["2"],
       updated: [],
       removed: [],
     });
-    expect(result.diff.collections.notes).toEqual({
+    expect(result.diff.collections["notes"]).toEqual({
       added: [],
       updated: ["1"],
       removed: [],

@@ -5,7 +5,7 @@ import {
   type StoreState,
   type Tombstones,
 } from "../core";
-import { isDeleted } from "./handles";
+import { isDeleted } from "./utils";
 import type { AnyObject, CollectionConfig, CollectionName, Output, StoreConfig } from "./schema";
 
 export type ReadHandle<T extends CollectionConfig<AnyObject>> = {

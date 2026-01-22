@@ -305,9 +305,9 @@ Within `transact()` and `read()` callbacks, you receive handles for each collect
 
 - `handle.get(id)` - Get a document by ID
 - `handle.list()` - Get all documents as an array
-- `handle.add(data)` - Add a new document (mutate handles only)
-- `handle.update(id, data)` - Update an existing document (mutate handles only)
-- `handle.remove(id)` - Remove a document (mutate handles only)
+- `handle.add(data)` - Add a new document (transaction handles only)
+- `handle.update(id, data)` - Update an existing document (transaction handles only)
+- `handle.remove(id)` - Remove a document (transaction handles only)
 
 For full type definitions, see the TypeScript types exported from the package.
 

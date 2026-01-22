@@ -6,7 +6,7 @@ import type { Tombstones } from "../core/tombstone";
 import { mergeTombstones } from "../core/tombstone";
 import {
   executeTransaction,
-  type MutateHandles,
+  type TransactionHandles,
   type TransactionDependencies,
 } from "./transaction";
 import { createReadHandles, type ReadHandles } from "./read";
@@ -20,7 +20,7 @@ export type StoreChangeEvent<T extends StoreConfig> = {
 
 export type StoreAPI<T extends StoreConfig> = {
   read<R>(callback: (handles: ReadHandles<T>) => R): R;
-  transact<R>(callback: (handles: MutateHandles<T>) => R): R;
+  transact<R>(callback: (handles: TransactionHandles<T>) => R): R;
   use(middleware: StoreMiddleware<T>): StoreAPI<T>;
   init(): Promise<void>;
   dispose(): Promise<void>;
@@ -77,7 +77,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     return callback(handles);
   };
 
-  const transact = <R>(callback: (handles: MutateHandles<T>) => R): R => {
+  const transact = <R>(callback: (handles: TransactionHandles<T>) => R): R => {
     const result = executeTransaction(callback, getDeps());
 
     if (result.changes) {
