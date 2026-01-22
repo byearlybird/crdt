@@ -116,12 +116,16 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     }
   };
 
+  const notify = (event: StoreChangeEvent<T>): void => {
+    notifyListeners(event, listeners);
+  };
+
   const init = async (): Promise<void> => {
     if (isInitialized) {
       throw new Error("Store already initialized");
     }
 
-    await middlewareManager.runInit({ subscribe: listen, getState, setState });
+    await middlewareManager.runInit({ subscribe: listen, notify, getState, setState });
 
     isInitialized = true;
   };
