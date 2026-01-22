@@ -25,6 +25,7 @@ export function createMiddlewareManager<T extends StoreConfig>(): MiddlewareMana
   const middlewares: StoreMiddleware<T>[] = [];
   const unsubscribeFns: (() => void)[] = [];
   const cleanupFns: (() => void | Promise<void>)[] = [];
+  // store AND middlewre manager track initialized. pick one
   let isInitialized = false;
 
   function use(middleware: StoreMiddleware<T>): void {

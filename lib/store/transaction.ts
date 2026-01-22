@@ -91,7 +91,7 @@ export function executeTransaction<T extends StoreConfig, R>(
 
       target[collectionName] = createTransactionHandle(
         config,
-        documents[collectionName]!,
+        documents[collectionName]!,// hidden mutation, maybe handke through callbacks
         tombstones,
         deps.tick,
         () => changed.add(collectionName),
