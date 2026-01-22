@@ -527,12 +527,15 @@ describe("middleware", () => {
     await expect(store.init()).rejects.toThrow("Store already initialized");
   });
 
-  test("middleware subscriptions are cleaned up on dispose", async () => {
+  test("middleware cleanup is called on dispose", async () => {
     const changes: string[] = [];
     const middleware = ({ subscribe }: any) => {
-      subscribe((event: any) => {
+      const unsubscribe = subscribe((event: any) => {
         changes.push(...Object.keys(event));
       });
+
+      // Middleware returns cleanup function
+      return unsubscribe;
     };
 
     const store = createStore({
@@ -555,7 +558,7 @@ describe("middleware", () => {
       users.add({ id: "1", name: "Alice", profile: {} });
     });
 
-    // Middleware should not receive the change
+    // Middleware should not receive the change because cleanup was called
     expect(changes).toHaveLength(0);
   });
 

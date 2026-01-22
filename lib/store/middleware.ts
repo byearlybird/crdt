@@ -27,18 +27,8 @@ export function createMiddlewareManager<T extends StoreConfig>(): MiddlewareMana
   }
 
   async function runInit(context: MiddlewareContext<T>): Promise<void> {
-    // Wrap subscribe to track unsubscribe functions
-    const wrappedContext: MiddlewareContext<T> = {
-      ...context,
-      subscribe: (listener: (event: StoreChangeEvent<T>) => void) => {
-        const unsubscribe = context.subscribe(listener);
-        cleanupFns.push(unsubscribe);
-        return unsubscribe;
-      },
-    };
-
     for (const middleware of middlewares) {
-      const cleanup = await middleware(wrappedContext);
+      const cleanup = await middleware(context);
       if (cleanup) {
         cleanupFns.push(cleanup);
       }
