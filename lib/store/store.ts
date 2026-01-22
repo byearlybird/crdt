@@ -127,6 +127,10 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
   };
 
   const dispose = async (): Promise<void> => {
+    if (!isInitialized) {
+      throw new Error("Store not initialized");
+    }
+
     await middlewareManager.runDispose();
     isInitialized = false;
   };
