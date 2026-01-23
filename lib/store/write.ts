@@ -1,11 +1,18 @@
+import type { AnyObject, CollectionConfig, Input } from "./schema";
 import { validate } from "./schema";
-import { makeDocument, parseDocument, mergeDocuments, type DocumentId } from "../core";
-import type { Document } from "../core/document";
-import type { Input, AnyObject, CollectionConfig } from "./schema";
+import {
+  type Document,
+  type DocumentId,
+  makeDocument,
+  mergeDocuments,
+  parseDocument,
+} from "../core";
+
+type DeepPartial<T> = T extends object ? { [P in keyof T]?: DeepPartial<T[P]> } : T;
 
 export type WriteHandle<T extends CollectionConfig<AnyObject>> = {
   add(data: Input<T["schema"]>): void;
-  update(id: DocumentId, data: Partial<Input<T["schema"]>>): void;
+  update(id: DocumentId, data: DeepPartial<Input<T["schema"]>>): void;
   remove(id: DocumentId): void;
 };
 

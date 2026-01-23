@@ -1,6 +1,6 @@
 import type { Document } from "./document";
-import type { Tombstones } from "./tombstone";
 import { mergeDocuments } from "./document";
+import type { Tombstones } from "./tombstone";
 
 export type DocumentId = string;
 

@@ -1,12 +1,11 @@
-import type { DocumentId } from "../core";
-import type { AnyObject, CollectionConfig, StoreConfig, CollectionName } from "./schema";
-import type { Tombstones, Document } from "../core";
+import type { AnyObject, CollectionConfig, CollectionName, StoreConfig } from "./schema";
+import type { Document, DocumentId, Tombstones } from "../core";
 import type { StoreChangeEvent } from "./store";
 import { createReadHandle, type ReadHandle } from "./read";
-import { createWriteHandle, type WriteHandle, type WriteCallbacks } from "./write";
+import { createWriteHandle, type WriteCallbacks, type WriteHandle } from "./write";
 
-export type TransactionHandle<T extends CollectionConfig<AnyObject>> =
-  ReadHandle<T> & WriteHandle<T>;
+export type TransactionHandle<T extends CollectionConfig<AnyObject>> = ReadHandle<T> &
+  WriteHandle<T>;
 
 export type TransactionHandles<T extends StoreConfig> = {
   [N in CollectionName<T>]: TransactionHandle<T[N]>;

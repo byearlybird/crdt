@@ -1,6 +1,6 @@
-import { describe, test, expect } from "vitest";
+import { describe, expect, test } from "vitest";
 import { makeStamp } from "./clock";
-import { makeDocument, parseDocument, mergeDocuments } from "./document";
+import { makeDocument, mergeDocuments, parseDocument } from "./document";
 
 describe("Integration: Full Document Lifecycle", () => {
   test("complete workflow: create, merge, and parse documents", () => {

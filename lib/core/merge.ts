@@ -1,8 +1,8 @@
 import type { Clock } from "./clock";
-import type { Collection, DocumentId } from "./collection";
-import type { Tombstones } from "./tombstone";
 import { advanceClock } from "./clock";
+import type { Collection, DocumentId } from "./collection";
 import { mergeCollections } from "./collection";
+import type { Tombstones } from "./tombstone";
 import { mergeTombstones } from "./tombstone";
 
 export type StoreState = {
@@ -26,10 +26,7 @@ export type MergeResult = {
   diff: SnapshotDiff;
 };
 
-export function mergeSnapshots(
-  local: StoreState,
-  remote: StoreState,
-): MergeResult {
+export function mergeSnapshots(local: StoreState, remote: StoreState): MergeResult {
   // Merge clocks
   const mergedClock = advanceClock(local.clock, remote.clock);
 
@@ -58,11 +55,7 @@ export function mergeSnapshots(
     }
 
     // Merge collections
-    const mergedCollection = mergeCollections(
-      localCollection,
-      filteredRemote,
-      mergedTombstones,
-    );
+    const mergedCollection = mergeCollections(localCollection, filteredRemote, mergedTombstones);
     mergedCollections[name] = mergedCollection;
 
     // Compute diff

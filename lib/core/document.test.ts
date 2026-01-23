@@ -1,5 +1,5 @@
-import { describe, test, expect } from "vitest";
-import { makeDocument, mergeDocuments, parseDocument, type Document } from "./document";
+import { describe, expect, test } from "vitest";
+import { type Document, makeDocument, mergeDocuments, parseDocument } from "./document";
 
 describe("makeDocument", () => {
   test("wraps simple object fields with stamp", () => {

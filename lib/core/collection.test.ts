@@ -1,5 +1,5 @@
-import { describe, test, expect } from "vitest";
-import { mergeCollections, type Collection } from "./collection";
+import { describe, expect, test } from "vitest";
+import { type Collection, mergeCollections } from "./collection";
 import { makeStamp } from "./clock";
 import { makeDocument } from "./document";
 import { mergeTombstones } from "./tombstone";

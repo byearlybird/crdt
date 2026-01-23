@@ -1,11 +1,15 @@
-import { mergeCollections, type StoreState } from "../core";
-import { advanceClock, makeStamp } from "../core/clock";
+import {
+  advanceClock,
+  makeStamp,
+  mergeCollections,
+  mergeTombstones,
+  type StoreState,
+} from "../core";
 import type { AnyObject, CollectionConfig, StoreConfig } from "./schema";
-import { mergeTombstones } from "../core/tombstone";
 import {
   executeTransaction,
-  type TransactionHandles,
   type TransactionDependencies,
+  type TransactionHandles,
 } from "./transaction";
 import { createReadHandles, type ReadHandles } from "./read";
 import {
