@@ -210,7 +210,7 @@ describe("query", () => {
     expect(callback).toHaveBeenCalledWith(90);
   });
 
-  test("query works with transact changes", () => {
+  test("query works with batch changes", () => {
     const store = createProfileStore();
 
     const callback = vi.fn();
@@ -218,12 +218,12 @@ describe("query", () => {
 
     callback.mockClear();
 
-    store.transact(({ users }) => {
+    store.batch(({ users }) => {
       users.add({ id: "1", name: "Alice", profile: {} });
       users.add({ id: "2", name: "Bob", profile: {} });
     });
 
-    // Transaction notifies once for all changes
+    // Batch notifies once for all changes
     expect(callback).toHaveBeenCalledTimes(1);
     expect(callback).toHaveBeenCalledWith(2);
   });

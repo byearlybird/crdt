@@ -31,7 +31,7 @@ const store = createStore({
   },
 });
 
-store.transact(({ users }) => {
+store.batch(({ users }) => {
   users.add({ id: "1", name: "Alice" });
 });
 const user = store.users.get("1"); // { id: "1", name: "Alice" }
@@ -80,10 +80,10 @@ const store = createStore({
 
 ### Adding Documents
 
-Add new items to a collection using `transact()`:
+Add new items to a collection using `batch()`:
 
 ```typescript
-store.transact(({ users }) => {
+store.batch(({ users }) => {
   users.add({
     id: "1",
     name: "Alice",
@@ -94,10 +94,10 @@ store.transact(({ users }) => {
 
 ### Updating Documents
 
-Update existing items using `transact()`:
+Update existing items using `batch()`:
 
 ```typescript
-store.transact(({ users }) => {
+store.batch(({ users }) => {
   users.update("1", {
     email: "newemail@example.com",
   });
@@ -106,10 +106,10 @@ store.transact(({ users }) => {
 
 ### Removing Documents
 
-Remove items using `transact()`:
+Remove items using `batch()`:
 
 ```typescript
-store.transact(({ users }) => {
+store.batch(({ users }) => {
   users.remove("1");
 });
 ```
@@ -291,7 +291,7 @@ const schema = type({ id: "string", name: "string" });
 
 ### Store Methods
 
-- `transact(callback)` - Execute mutations within a transaction. The callback receives handles for each collection with `add()`, `update()`, and `remove()` methods.
+- `batch(callback)` - Execute mutations within a batch. The callback receives handles for each collection with `add()`, `update()`, and `remove()` methods.
 - `subscribe(query, subscriber)` - Subscribe to a query. The subscriber is called whenever the query's dependencies change.
 - `use(middleware)` - Add middleware to the store (chainable). Middleware can access `getState()`, `merge()`, and `subscribe()`.
 - `init()` - Initialize the store and run middleware (async).
@@ -299,13 +299,13 @@ const schema = type({ id: "string", name: "string" });
 
 ### Collection Handles
 
-The store exposes collection handles directly. Each collection name becomes a property on the store with read-only methods. Within `transact()` callbacks, you receive transaction handles for each collection:
+The store exposes collection handles directly. Each collection name becomes a property on the store with read-only methods. Within `batch()` callbacks, you receive batch handles for each collection:
 
 - `handle.get(id)` - Get a document by ID
 - `handle.list()` - Get all documents as an array
-- `handle.add(data)` - Add a new document (transaction handles only)
-- `handle.update(id, data)` - Update an existing document (transaction handles only)
-- `handle.remove(id)` - Remove a document (transaction handles only)
+- `handle.add(data)` - Add a new document (batch handles only)
+- `handle.update(id, data)` - Update an existing document (batch handles only)
+- `handle.remove(id)` - Remove a document (batch handles only)
 
 For full type definitions, see the TypeScript types exported from the package.
 

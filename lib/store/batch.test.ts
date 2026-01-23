@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { type Document, type DocumentId, makeDocument, makeStamp, parseDocument } from "../core";
-import { executeTransaction, type TransactionDependencies } from "./transaction";
+import { executeBatch, type BatchDependencies } from "./batch";
 import { createTimestampGenerator, noteSchema, profileSchema, userSchema } from "./test-utils";
 import type { AnyObject, CollectionConfig } from "./schema";
 
@@ -14,7 +14,7 @@ function createTestDeps(
     documents?: Record<string, Record<DocumentId, Document>>;
     tombstones?: Record<DocumentId, string>;
   } = {},
-): TransactionDependencies {
+): BatchDependencies {
   const configs = new Map();
   const collections = options.collections || [{ name: "users", schema: userSchema, keyPath: "id" }];
 
@@ -30,12 +30,12 @@ function createTestDeps(
   };
 }
 
-describe("executeTransaction", () => {
+describe("executeBatch", () => {
   describe("basic operations", () => {
     test("returns callback return value", () => {
       const deps = createTestDeps();
 
-      const result = executeTransaction(() => {
+      const result = executeBatch(() => {
         return "test-result";
       }, deps);
 
@@ -52,7 +52,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction<SingleCollectionConfig, any>(({ users }) => {
+      const result = executeBatch<SingleCollectionConfig, any>(({ users }) => {
         // Read-only operation
         return users.get("1");
       }, deps);
@@ -61,11 +61,11 @@ describe("executeTransaction", () => {
       expect(result.changes).toBeNull();
     });
 
-    test("executes callback with transaction handles", () => {
+    test("executes callback with batch handles", () => {
       const deps = createTestDeps();
       let handlesReceived: any = null;
 
-      executeTransaction((handles) => {
+      executeBatch((handles) => {
         handlesReceived = handles;
         // Access a collection to trigger proxy
         handles["users"]?.list();
@@ -80,7 +80,7 @@ describe("executeTransaction", () => {
     test("tracks changes for add() operation", () => {
       const deps = createTestDeps();
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.add({ id: "1", name: "Alice" });
       }, deps);
 
@@ -102,7 +102,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.update("1", { name: "Bob" });
       }, deps);
 
@@ -124,7 +124,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.remove("1");
       }, deps);
 
@@ -146,7 +146,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.add({ id: "1", name: "Alice" });
         handles["notes"]!.update("1", { content: "Updated Note" });
       }, deps);
@@ -168,7 +168,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.update("1", { name: "Bob" });
       }, deps);
 
@@ -178,7 +178,7 @@ describe("executeTransaction", () => {
         name: "Alice",
       });
 
-      // Transaction result should have the updated document
+      // Batch result should have the updated document
       expect(parseDocument(result.changes!.documents["users"]!["1"]!)).toEqual({
         id: "1",
         name: "Bob",
@@ -201,7 +201,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         // Only access users collection
         handles["users"]!.list();
       }, deps);
@@ -210,14 +210,14 @@ describe("executeTransaction", () => {
       expect(result.changes).toBeNull();
     });
 
-    test("tombstones are copied at transaction start", () => {
+    test("tombstones are copied at batch start", () => {
       const deps = createTestDeps({
         tombstones: {
           existing: "500:0",
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.remove("new");
       }, deps);
 
@@ -230,11 +230,11 @@ describe("executeTransaction", () => {
     });
   });
 
-  describe("read operations during transaction", () => {
-    test("read operations reflect transaction writes", () => {
+  describe("read operations during batch", () => {
+    test("read operations reflect batch writes", () => {
       const deps = createTestDeps();
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.add({ id: "1", name: "Alice" });
         const retrieved = handles["users"]!.get("1");
         const allUsers = handles["users"]!.list();
@@ -254,7 +254,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.remove("1");
         const retrieved = handles["users"]!.get("1");
         const allUsers = handles["users"]!.list();
@@ -273,7 +273,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         // Read methods
         const before = handles["users"]!.get("1");
         const listBefore = handles["users"]!.list();
@@ -301,7 +301,7 @@ describe("executeTransaction", () => {
       const deps = createTestDeps();
 
       expect(() => {
-        executeTransaction((handles: any) => {
+        executeBatch((handles: any) => {
           handles.invalidCollection.list();
         }, deps);
       }).toThrow('Collection "invalidCollection" not found');
@@ -310,7 +310,7 @@ describe("executeTransaction", () => {
     test("proxy returns undefined for non-string properties", () => {
       const deps = createTestDeps();
 
-      const result = executeTransaction((handles: any) => {
+      const result = executeBatch((handles: any) => {
         const symbolProp = Symbol("test");
         return handles[symbolProp];
       }, deps);
@@ -325,7 +325,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      executeTransaction((handles) => {
+      executeBatch((handles) => {
         const firstAccess = handles["users"]!.get("1");
         const secondAccess = handles["users"]!.get("1");
         // Both should return the same data
@@ -335,7 +335,7 @@ describe("executeTransaction", () => {
   });
 
   describe("integration tests", () => {
-    test("complete transaction workflow (add + update + remove)", () => {
+    test("complete batch workflow (add + update + remove)", () => {
       const existingDoc = makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
       const deps = createTestDeps({
         documents: {
@@ -343,7 +343,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.add({ id: "2", name: "Bob" });
         handles["users"]!.update("1", { name: "Alice Updated" });
         handles["users"]!.remove("2");
@@ -363,10 +363,10 @@ describe("executeTransaction", () => {
       expect(result.value[0]!["id"]).toBe("1");
     });
 
-    test("transaction with no changes returns proper null result", () => {
+    test("batch with no changes returns proper null result", () => {
       const deps = createTestDeps();
 
-      const result = executeTransaction(() => {
+      const result = executeBatch(() => {
         return 42;
       }, deps);
 
@@ -386,7 +386,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.add({ id: "2", name: "Bob" });
         handles["notes"]!.remove("1");
         handles["users"]!.update("1", { name: "Alice Updated" });
@@ -409,7 +409,7 @@ describe("executeTransaction", () => {
     test("callback return value preserved with changes", () => {
       const deps = createTestDeps();
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.add({ id: "1", name: "Alice" });
         return { success: true, userId: "1" };
       }, deps);
@@ -431,7 +431,7 @@ describe("executeTransaction", () => {
         return stamp;
       };
 
-      executeTransaction((handles) => {
+      executeBatch((handles) => {
         handles["users"]!.add({ id: "1", name: "Alice" });
         handles["users"]!.add({ id: "2", name: "Bob" });
         handles["users"]!.remove("1");
@@ -462,7 +462,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      executeTransaction((handles) => {
+      executeBatch((handles) => {
         // Access only users collection
         handles["users"]!.list();
         // notes and profiles are never accessed
@@ -486,7 +486,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.add({ id: "1", name: "Alice" });
         handles["notes"]!.add({ id: "1", content: "Note" });
         // profiles not modified
@@ -507,7 +507,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.remove("1");
       }, deps);
 
@@ -524,7 +524,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         return handles["users"]!.list();
       }, deps);
 
@@ -540,7 +540,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["profiles"]!.add({
           id: "1",
           name: "Alice",
@@ -564,7 +564,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.update("nonexistent", { name: "Bob" });
       }, deps);
 
@@ -579,7 +579,7 @@ describe("executeTransaction", () => {
         },
       });
 
-      const result = executeTransaction((handles) => {
+      const result = executeBatch((handles) => {
         handles["users"]!.remove("nonexistent");
       }, deps);
 
