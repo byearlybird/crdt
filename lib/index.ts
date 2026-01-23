@@ -1,3 +1,3 @@
 export * from "./store";
-export { mergeSnapshots, type MergeResult, type SnapshotDiff, type CollectionDiff } from "./core";
-export { createPersistenceMiddleware, type PersistenceOptions } from "./middleware";
+export * from "./core";
+export * from "./middleware";

@@ -1,5 +1,6 @@
 import type { StoreConfig } from "./schema";
-import type { StoreChangeEvent, StoreState } from "./store";
+import type { StoreChangeEvent } from "./store";
+import type { StoreState } from "../core";
 
 export type MiddlewareContext<T extends StoreConfig> = {
   subscribe: (listener: (event: StoreChangeEvent<T>) => void) => () => void;

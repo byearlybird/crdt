@@ -18,7 +18,6 @@ import {
 } from "./middleware";
 import { createChangeEvent } from "./utils";
 import { executeQuery, type QueryDependencies } from "./query";
-export type { StoreState } from "../core";
 
 export type StoreChangeEvent<T extends StoreConfig> = {
   [K in keyof T]?: true;
