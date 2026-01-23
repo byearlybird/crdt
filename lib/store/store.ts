@@ -1,234 +1,134 @@
-import { validate } from "./schema";
-import {
-  makeDocument,
-  parseDocument,
-  mergeDocuments,
-  mergeCollections,
-  type Collection,
-  type DocumentId,
-} from "../core";
-import type { Clock } from "../core/clock";
+import { mergeCollections, type StoreState } from "../core";
 import { advanceClock, makeStamp } from "../core/clock";
-import type { Input, Output, AnyObject } from "./schema";
-import type { Tombstones } from "../core/tombstone";
+import type { AnyObject, CollectionConfig, StoreConfig } from "./schema";
 import { mergeTombstones } from "../core/tombstone";
-import type { Document } from "../core/document";
+import {
+  executeTransaction,
+  type TransactionHandles,
+  type TransactionDependencies,
+} from "./transaction";
+import { createReadHandles, type ReadHandles } from "./read";
+import {
+  createMiddlewareManager,
+  type MiddlewareContext,
+  type StoreMiddleware,
+} from "./middleware";
 
-export type CollectionConfig<T extends AnyObject> = {
-  schema: T;
-  keyPath: keyof Output<T> & string;
+export type { StoreState } from "../core";
+
+export type StoreChangeEvent<T extends StoreConfig> = {
+  [K in keyof T]?: true;
 };
 
-export type StoreSnapshot = {
-  clock: Clock;
-  collections: Record<string, Collection>;
-  tombstones: Tombstones;
+export type StoreAPI<T extends StoreConfig> = {
+  read<R>(callback: (handles: ReadHandles<T>) => R): R;
+  transact<R>(callback: (handles: TransactionHandles<T>) => R): R;
+  use(middleware: StoreMiddleware<T>): StoreAPI<T>;
+  init(): Promise<void>;
+  dispose(): Promise<void>;
 };
 
-export type StoreChangeEvent<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  [K in keyof T]:
-    | { type: "add"; collection: K; id: DocumentId; data: Output<T[K]["schema"]> }
-    | { type: "update"; collection: K; id: DocumentId; data: Output<T[K]["schema"]> }
-    | { type: "remove"; collection: K; id: DocumentId }
-    | { type: "merge"; collection: K };
-}[keyof T];
+function notifyListeners<T extends StoreConfig>(
+  event: StoreChangeEvent<T>,
+  listeners: Set<(event: StoreChangeEvent<T>) => void>,
+): void {
+  listeners.forEach((listener) => listener(event));
+}
 
-export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  add<K extends keyof T & string>(collection: K, data: Input<T[K]["schema"]>): void;
+export function createStore<T extends StoreConfig>(config: { collections: T }): StoreAPI<T> {
+  let isInitialized = false;
 
-  get<K extends keyof T & string>(
-    collection: K,
-    id: DocumentId,
-  ): Output<T[K]["schema"]> | undefined;
-
-  getAll<K extends keyof T & string>(
-    collection: K,
-    options?: { where?: (item: Output<T[K]["schema"]>) => boolean },
-  ): Output<T[K]["schema"]>[];
-
-  update<K extends keyof T & string>(
-    collection: K,
-    id: DocumentId,
-    data: Partial<Input<T[K]["schema"]>>,
-  ): void;
-
-  remove<K extends keyof T & string>(collection: K, id: DocumentId): void;
-
-  getSnapshot(): StoreSnapshot;
-  merge(snapshot: StoreSnapshot, options?: { silent?: boolean }): void;
-  onChange(listener: (event: StoreChangeEvent<T>) => void): () => void;
-};
-
-export function createStore<T extends Record<string, CollectionConfig<AnyObject>>>(config: {
-  collections: T;
-}): StoreAPI<T> {
-  let clock: Clock = { ms: Date.now(), seq: 0 };
-  let tombstones: Tombstones = {};
-  const documents: Record<string, Record<DocumentId, Document>> = {};
   const configs = new Map<string, CollectionConfig<AnyObject>>();
   const listeners = new Set<(event: StoreChangeEvent<T>) => void>();
+  const middlewareManager = createMiddlewareManager<T>();
 
-  const tick = (): string => {
-    advance(Date.now(), 0);
-    return makeStamp(clock.ms, clock.seq);
+  const state: StoreState = {
+    clock: { ms: Date.now(), seq: 0 },
+    tombstones: {},
+    collections: {},
   };
 
-  const advance = (ms: number, seq: number): void => {
-    clock = advanceClock(clock, { ms, seq });
-  };
-
-  const notify = (collectionName: string, event: { type: string; id?: DocumentId; data?: any }) => {
-    listeners.forEach((listener) =>
-      listener({ collection: collectionName, ...event } as StoreChangeEvent<T>),
-    );
-  };
-
-  const getConfig = <K extends keyof T & string>(
-    collectionName: K,
-  ): CollectionConfig<AnyObject> => {
-    const config = configs.get(collectionName);
-
-    if (!config) {
-      throw new Error(`Collection "${collectionName}" not found`);
-    }
-
-    return config;
-  };
-
-  const getDocs = <K extends keyof T & string>(collectionName: K): Record<DocumentId, Document> => {
-    const docs = documents[collectionName];
-    if (!docs) {
-      throw new Error(`Collection "${collectionName}" not found`);
-    }
-    return docs;
-  };
-
-  // Initialize collections
   for (const [name, collectionConfig] of Object.entries(config.collections)) {
     configs.set(name, collectionConfig);
-    documents[name] = {};
+    state.collections[name] = {};
   }
 
-  return {
-    add(collectionName, data) {
-      const collectionConfig = getConfig(collectionName);
-      const valid = validate(collectionConfig.schema, data);
-      const id = valid[collectionConfig.keyPath] as DocumentId;
-      const doc = makeDocument(valid, tick());
-
-      documents[collectionName] = {
-        ...documents[collectionName],
-        [id]: doc,
-      };
-
-      notify(collectionName, { type: "add", id, data: valid });
+  const getTransactionDeps = (): TransactionDependencies => ({
+    configs,
+    documents: state.collections,
+    tombstones: state.tombstones,
+    tick: () => {
+      state.clock = advanceClock(state.clock, { ms: Date.now(), seq: 0 });
+      return makeStamp(state.clock.ms, state.clock.seq);
     },
+  });
 
-    get(collectionName, id) {
-      if (tombstones[id]) return undefined;
-      const collectionDocs = getDocs(collectionName);
-      const doc = collectionDocs[id];
-
-      if (!doc) return undefined;
-
-      return parseDocument(doc) as Output<T[typeof collectionName]["schema"]>;
-    },
-
-    getAll(collectionName, options) {
-      const collectionDocs = getDocs(collectionName);
-      const resultDocs: Output<T[typeof collectionName]["schema"]>[] = [];
-
-      for (const [id, doc] of Object.entries(collectionDocs)) {
-        if (doc && !tombstones[id]) {
-          const parsed = parseDocument(doc) as Output<T[typeof collectionName]["schema"]>;
-          if (!options?.where || options?.where(parsed)) {
-            resultDocs.push(parsed);
-          }
-        }
-      }
-
-      return resultDocs;
-    },
-
-    update(collectionName, id, data) {
-      const collectionDocs = getDocs(collectionName);
-      const currentDoc = collectionDocs[id];
-
-      if (!currentDoc) return;
-
-      const collectionConfig = getConfig(collectionName);
-      const newAttrs = makeDocument(data, tick());
-      const mergedDoc = mergeDocuments(currentDoc, newAttrs);
-
-      const parsed = parseDocument(mergedDoc);
-      validate(collectionConfig.schema, parsed);
-
-      documents[collectionName] = { ...collectionDocs, [id]: mergedDoc };
-
-      notify(collectionName, { type: "update", id, data: parsed });
-    },
-
-    remove(collectionName, id) {
-      const collectionDocs = getDocs(collectionName);
-      tombstones = { ...tombstones, [id]: tick() };
-      const { [id]: _removed, ...remainingDocs } = collectionDocs;
-      documents[collectionName] = remainingDocs;
-      notify(collectionName, { type: "remove", id });
-    },
-
-    getSnapshot(): StoreSnapshot {
-      const collectionsSnapshot: Record<string, Collection> = {};
-      for (const [name, collectionDocs] of Object.entries(documents)) {
-        collectionsSnapshot[name] = { documents: collectionDocs };
-      }
-      return {
-        clock,
-        collections: collectionsSnapshot,
-        tombstones,
-      };
-    },
-
-    merge(snapshot: StoreSnapshot, options?: { silent?: boolean }): void {
-      advance(snapshot.clock.ms, snapshot.clock.seq);
-
-      tombstones = mergeTombstones(tombstones, snapshot.tombstones);
-
-      for (const [name, collectionData] of Object.entries(snapshot.collections)) {
-        // Initialize collection if it doesn't exist
-        if (!documents[name]) {
-          documents[name] = {};
-        }
-
-        // Filter out tombstoned documents before merging
-        const filteredDocs: Record<DocumentId, Document> = {};
-        for (const [id, doc] of Object.entries(collectionData.documents)) {
-          if (!tombstones[id]) {
-            filteredDocs[id] = doc;
-          }
-        }
-
-        // Merge collections using core mergeCollections function
-        const currentCollection: Collection = {
-          documents: documents[name],
-        };
-
-        const sourceCollection: Collection = {
-          documents: filteredDocs,
-        };
-
-        const merged = mergeCollections(currentCollection, sourceCollection, tombstones);
-        documents[name] = merged.documents;
-
-        // Notify merge event only if not silent
-        if (!options?.silent) {
-          notify(name, { type: "merge" });
-        }
-      }
-    },
-
-    onChange(listener: (event: StoreChangeEvent<T>) => void): () => void {
+  const getMiddlewareContext = (): MiddlewareContext<T> => ({
+    subscribe: (listener) => {
       listeners.add(listener);
+
       return () => listeners.delete(listener);
+    },
+    notify: (event) => {
+      notifyListeners(event, listeners);
+    },
+    getState: () => ({ ...state }),
+    setState: (snapshot) => {
+      state.clock = advanceClock(state.clock, { ms: snapshot.clock.ms, seq: snapshot.clock.seq });
+      state.tombstones = snapshot.tombstones;
+
+      // Replace collections - ensure all collections from snapshot exist
+      for (const [name, collectionData] of Object.entries(snapshot.collections)) {
+        state.collections[name] = collectionData;
+      }
+    },
+  });
+
+  return {
+    read(callback) {
+      const handles = createReadHandles<T>({ configs, state });
+      return callback(handles);
+    },
+    transact(callback) {
+      const result = executeTransaction(callback, getTransactionDeps());
+
+      if (result.changes) {
+        state.tombstones = mergeTombstones(state.tombstones, result.changes.tombstones);
+
+        for (const collectionName of Object.keys(result.changes.documents)) {
+          const current = state.collections[collectionName]!;
+          const updated = result.changes.documents[collectionName]!;
+          state.collections[collectionName] = mergeCollections(current, updated, state.tombstones);
+        }
+
+        notifyListeners(result.changes.event, listeners);
+      }
+
+      return result.value;
+    },
+    use(middleware) {
+      if (isInitialized) {
+        throw new Error("Cannot add middleware after initialization");
+      }
+      middlewareManager.use(middleware);
+      return this;
+    },
+    async init() {
+      if (isInitialized) {
+        throw new Error("Store already initialized");
+      }
+
+      await middlewareManager.runInit(getMiddlewareContext());
+
+      isInitialized = true;
+    },
+    async dispose() {
+      if (!isInitialized) {
+        throw new Error("Store not initialized");
+      }
+
+      await middlewareManager.runDispose();
+      isInitialized = false;
     },
   };
 }
