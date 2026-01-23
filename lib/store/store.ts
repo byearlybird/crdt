@@ -3,25 +3,32 @@ import {
   makeStamp,
   mergeCollections,
   mergeTombstones,
+  type Document,
+  type DocumentId,
   type StoreState,
 } from "../core";
-import type { AnyObject, CollectionConfig, StoreConfig } from "./schema";
+import type { AnyObject, CollectionConfig, CollectionName, StoreConfig } from "./schema";
 import {
   executeTransaction,
   type TransactionDependencies,
   type TransactionHandles,
 } from "./transaction";
-import { createReadHandles, type ReadHandles } from "./read";
+import { createReadHandles, type ReadHandle, type ReadHandles } from "./read";
+import { createWriteHandles, type WriteHandle, type WriteHandles } from "./write";
 import {
   createMiddlewareManager,
   type MiddlewareContext,
   type StoreMiddleware,
 } from "./middleware";
-
+import { createChangeEvent } from "./utils";
 export type { StoreState } from "../core";
 
 export type StoreChangeEvent<T extends StoreConfig> = {
   [K in keyof T]?: true;
+};
+
+export type StoreCollectionHandles<T extends StoreConfig> = {
+  [N in CollectionName<T>]: ReadHandle<T[N]> & WriteHandle<T[N]>;
 };
 
 export type StoreAPI<T extends StoreConfig> = {
@@ -29,7 +36,8 @@ export type StoreAPI<T extends StoreConfig> = {
   use(middleware: StoreMiddleware<T>): StoreAPI<T>;
   init(): Promise<void>;
   dispose(): Promise<void>;
-} & ReadHandles<T>;
+} & ReadHandles<T> &
+  WriteHandles<T>;
 
 function notifyListeners<T extends StoreConfig>(
   event: StoreChangeEvent<T>,
@@ -51,6 +59,9 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     collections: {},
   };
 
+  // Store collection names with type information for use in callbacks
+  const collectionNames = Object.keys(config.collections) as CollectionName<T>[];
+
   for (const [name, collectionConfig] of Object.entries(config.collections)) {
     configs.set(name, collectionConfig);
     state.collections[name] = {};
@@ -60,10 +71,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     configs,
     documents: state.collections,
     tombstones: state.tombstones,
-    tick: () => {
-      state.clock = advanceClock(state.clock, { ms: Date.now(), seq: 0 });
-      return makeStamp(state.clock.ms, state.clock.seq);
-    },
+    tick,
   });
 
   const getMiddlewareContext = (): MiddlewareContext<T> => ({
@@ -88,8 +96,63 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
   });
 
   const readHandles = createReadHandles<T>({ configs, state });
+
+  const tick = () => {
+    state.clock = advanceClock(state.clock, { ms: Date.now(), seq: 0 });
+    return makeStamp(state.clock.ms, state.clock.seq);
+  };
+
+  const buildCallbacks = (collectionName: CollectionName<T>) => ({
+    onAdd: (id: DocumentId, document: Document) => {
+      const updated = { [id]: document };
+      state.collections[collectionName] = mergeCollections(
+        state.collections[collectionName] ?? {},
+        updated,
+        state.tombstones,
+      );
+      notifyListeners(createChangeEvent(collectionName), listeners);
+    },
+    onUpdate: (id: DocumentId, document: Document) => {
+      const updated = { [id]: document };
+      state.collections[collectionName] = mergeCollections(
+        state.collections[collectionName] ?? {},
+        updated,
+        state.tombstones,
+      );
+      notifyListeners(createChangeEvent(collectionName), listeners);
+    },
+    onRemove: (id: DocumentId, tombstoneStamp: string) => {
+      state.tombstones = mergeTombstones(state.tombstones, { [id]: tombstoneStamp });
+      state.collections[collectionName] = mergeCollections(
+        state.collections[collectionName] ?? {},
+        {},
+        state.tombstones,
+      );
+      notifyListeners(createChangeEvent(collectionName), listeners);
+    },
+  });
+
+  const writeHandles = createWriteHandles<T>({
+    configs,
+    state,
+    tick,
+    buildCallbacks,
+  });
+
+  // Combine read + write handles per collection
+  // We can't just spread both because they have the same keys (collection names),
+  // which would cause writeHandles to overwrite readHandles.
+  // Instead, we need to merge them per collection.
+  const collectionHandles = {} as StoreCollectionHandles<T>;
+  for (const collectionName of collectionNames) {
+    collectionHandles[collectionName] = {
+      ...readHandles[collectionName],
+      ...writeHandles[collectionName],
+    };
+  }
+
   const api: StoreAPI<T> = {
-    ...readHandles,
+    ...collectionHandles,
     transact(callback) {
       const result = executeTransaction(callback, getTransactionDeps());
 

@@ -238,6 +238,152 @@ describe("createStore", () => {
       profile: {},
     });
   });
+
+  describe("store-level writes", () => {
+    test("can add documents directly on store", () => {
+      const store = createProfileStore();
+
+      store.users.add({
+        id: "1",
+        name: "Alice",
+        profile: { age: 30 },
+      });
+
+      const result = store.users.get("1");
+      expect(result).toEqual({
+        id: "1",
+        name: "Alice",
+        profile: { age: 30 },
+      });
+    });
+
+    test("can update documents directly on store", () => {
+      const store = createProfileStore();
+
+      store.users.add({
+        id: "1",
+        name: "Alice",
+        profile: {},
+      });
+
+      store.users.update("1", {
+        profile: { age: 30 },
+      });
+
+      const result = store.users.get("1");
+      expect(result).toEqual({
+        id: "1",
+        name: "Alice",
+        profile: { age: 30 },
+      });
+    });
+
+    test("can remove documents directly on store", () => {
+      const store = createProfileStore();
+
+      store.users.add({
+        id: "1",
+        name: "Alice",
+        profile: {},
+      });
+
+      store.users.add({
+        id: "2",
+        name: "Bob",
+        profile: {},
+      });
+
+      store.users.remove("1");
+
+      expect(store.users.get("1")).toBeUndefined();
+      expect(store.users.get("2")).toEqual({
+        id: "2",
+        name: "Bob",
+        profile: {},
+      });
+    });
+
+    test("removed documents don't appear in list", () => {
+      const store = createProfileStore();
+
+      store.users.add({ id: "1", name: "Alice", profile: {} });
+      store.users.add({ id: "2", name: "Bob", profile: {} });
+      store.users.add({ id: "3", name: "Charlie", profile: {} });
+
+      expect(store.users.list()).toHaveLength(3);
+
+      store.users.remove("2");
+
+      const allUsers = store.users.list();
+      expect(allUsers).toHaveLength(2);
+      expect(allUsers.find((u) => u.id === "2")).toBeUndefined();
+      expect(allUsers.find((u) => u.id === "1")).toBeDefined();
+      expect(allUsers.find((u) => u.id === "3")).toBeDefined();
+    });
+
+    test("store-level writes notify listeners", async () => {
+      const store = createProfileStore();
+
+      const changes: string[] = [];
+      const middleware = ({ subscribe }: any) => {
+        subscribe((event: any) => {
+          changes.push(...Object.keys(event));
+        });
+      };
+
+      store.use(middleware);
+      await store.init();
+
+      store.users.add({ id: "1", name: "Alice", profile: {} });
+
+      expect(changes).toContain("users");
+    });
+
+    test("store-level writes and transact can be mixed", () => {
+      const store = createProfileStore();
+
+      // Add via store-level write
+      store.users.add({
+        id: "1",
+        name: "Alice",
+        profile: {},
+      });
+
+      expect(store.users.get("1")).toEqual({
+        id: "1",
+        name: "Alice",
+        profile: {},
+      });
+
+      // Update via transact
+      store.transact(({ users }) => {
+        users.update("1", {
+          profile: { age: 30 },
+        });
+      });
+
+      expect(store.users.get("1")).toEqual({
+        id: "1",
+        name: "Alice",
+        profile: { age: 30 },
+      });
+
+      // Remove via store-level write
+      store.users.remove("1");
+
+      expect(store.users.get("1")).toBeUndefined();
+    });
+
+    test("tombstones from store-level writes are store-level", () => {
+      const store = createMultiCollectionStore();
+
+      store.users.add({ id: "123", name: "Alice", profile: {} });
+      store.users.remove("123");
+
+      // Should be undefined (tombstoned)
+      expect(store.users.get("123")).toBeUndefined();
+    });
+  });
 });
 
 describe("middleware", () => {

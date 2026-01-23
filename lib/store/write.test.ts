@@ -27,12 +27,14 @@ function createTestDeps(
   const timestampCounter = { value: 1000 };
   const getTimestamp = () => makeStamp(timestampCounter.value++, 0);
 
+  const documents = options.documents || {};
+
   const deps: WriteDependencies<any> = {
     config: {
       schema: options.schema || userSchema,
       keyPath: options.keyPath || "id",
     },
-    documents: options.documents || {},
+    documents: () => documents,
     getTimestamp,
     callbacks: {
       onAdd: (id, doc) => addCalls.push([id, doc]),

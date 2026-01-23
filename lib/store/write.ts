@@ -1,4 +1,4 @@
-import type { AnyObject, CollectionConfig, Input } from "./schema";
+import type { AnyObject, CollectionConfig, CollectionName, Input, StoreConfig } from "./schema";
 import { validate } from "./schema";
 import {
   type Document,
@@ -6,6 +6,7 @@ import {
   makeDocument,
   mergeDocuments,
   parseDocument,
+  type StoreState,
 } from "../core";
 
 type DeepPartial<T> = T extends object ? { [P in keyof T]?: DeepPartial<T[P]> } : T;
@@ -24,7 +25,7 @@ export type WriteCallbacks = {
 
 export type WriteDependencies<C extends CollectionConfig<AnyObject>> = {
   config: C;
-  documents: Record<DocumentId, Document>;
+  documents: () => Record<DocumentId, Document>;
   getTimestamp: () => string;
   callbacks: WriteCallbacks;
 };
@@ -42,7 +43,8 @@ export function createWriteHandle<C extends CollectionConfig<AnyObject>>(
     },
 
     update(id, data) {
-      const current = deps.documents[id];
+      const documents = deps.documents();
+      const current = documents[id];
       if (!current) return;
 
       const changes = makeDocument(data, deps.getTimestamp());
@@ -59,4 +61,37 @@ export function createWriteHandle<C extends CollectionConfig<AnyObject>>(
       deps.callbacks.onRemove(id, tombstoneStamp);
     },
   };
+}
+
+export type WriteHandles<T extends StoreConfig> = {
+  [N in CollectionName<T>]: WriteHandle<T[N]>;
+};
+
+export type WriteHandlesDependencies<T extends StoreConfig = StoreConfig> = {
+  configs: Map<string, CollectionConfig<AnyObject>>;
+  state: StoreState;
+  tick: () => string;
+  buildCallbacks: (collectionName: CollectionName<T>) => WriteCallbacks;
+};
+
+export function createWriteHandles<T extends StoreConfig>(
+  deps: WriteHandlesDependencies<T>,
+): WriteHandles<T> {
+  const handles = {} as WriteHandles<T>;
+
+  for (const [collectionName] of deps.configs) {
+    const config = deps.configs.get(collectionName)!;
+    const callbacks = deps.buildCallbacks(collectionName as CollectionName<T>);
+
+    Object.assign(handles, {
+      [collectionName]: createWriteHandle({
+        config,
+        documents: () => deps.state.collections[collectionName] ?? {},
+        getTimestamp: deps.tick,
+        callbacks,
+      }),
+    });
+  }
+
+  return handles;
 }

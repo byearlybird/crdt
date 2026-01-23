@@ -64,7 +64,7 @@ export function executeTransaction<T extends StoreConfig, R>(
 
       const writeHandle = createWriteHandle({
         config,
-        documents: documents[collectionName]!,
+        documents: () => documents[collectionName]!,
         getTimestamp: deps.tick,
         callbacks,
       });
