@@ -5,3 +5,4 @@ export type { TransactionHandle, TransactionHandles, TransactionDependencies } f
 export type { ReadHandle, ReadHandles, ReadDependencies } from "./read";
 export type { WriteHandle, WriteHandles, WriteCallbacks, WriteDependencies } from "./write";
 export type { MiddlewareContext, StoreMiddleware } from "./middleware";
+export type { QueryDependencies } from "./query";

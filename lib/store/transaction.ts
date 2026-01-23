@@ -3,6 +3,7 @@ import type { Document, DocumentId, Tombstones } from "../core";
 import type { StoreChangeEvent } from "./store";
 import { createReadHandle, type ReadHandle } from "./read";
 import { createWriteHandle, type WriteCallbacks, type WriteHandle } from "./write";
+import { createHandleProxy } from "./utils";
 
 export type TransactionHandle<T extends CollectionConfig<AnyObject>> = ReadHandle<T> &
   WriteHandle<T>;
@@ -98,32 +99,4 @@ export function executeTransaction<T extends StoreConfig, R>(
       event,
     },
   };
-}
-
-/**
- * Creates a Proxy that lazily initializes collection handles on first access.
- * Used by transactions.
- */
-function createHandleProxy<T>(
-  configs: Map<string, CollectionConfig<AnyObject>>,
-  onAccess: (collectionName: string, target: any) => void,
-): T {
-  const target = {} as any;
-  return new Proxy(target, {
-    get(target, prop: string | symbol) {
-      if (typeof prop !== "string") {
-        return undefined;
-      }
-
-      if (!configs.has(prop)) {
-        throw new Error(`Collection "${prop}" not found`);
-      }
-
-      if (!(prop in target)) {
-        onAccess(prop, target);
-      }
-
-      return target[prop];
-    },
-  });
 }
