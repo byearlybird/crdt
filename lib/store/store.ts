@@ -21,6 +21,7 @@ import {
   type StoreMiddleware,
 } from "./middleware";
 import { createChangeEvent } from "./utils";
+import { executeQuery, type QueryDependencies } from "./query";
 export type { StoreState } from "../core";
 
 export type StoreChangeEvent<T extends StoreConfig> = {
@@ -33,6 +34,7 @@ export type StoreCollectionHandles<T extends StoreConfig> = {
 
 export type StoreAPI<T extends StoreConfig> = {
   transact<R>(callback: (handles: TransactionHandles<T>) => R): R;
+  query<R>(selector: (handles: ReadHandles<T>) => R, callback: (value: R) => void): () => void;
   use(middleware: StoreMiddleware<T>): StoreAPI<T>;
   init(): Promise<void>;
   dispose(): Promise<void>;
@@ -72,6 +74,15 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     documents: state.collections,
     tombstones: state.tombstones,
     tick,
+  });
+
+  const getQueryDeps = (): QueryDependencies<T> => ({
+    configs,
+    state,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
   });
 
   const getMiddlewareContext = (): MiddlewareContext<T> => ({
@@ -153,6 +164,9 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
 
   const api: StoreAPI<T> = {
     ...collectionHandles,
+    query(selector, callback) {
+      return executeQuery(selector, callback, getQueryDeps());
+    },
     transact(callback) {
       const result = executeTransaction(callback, getTransactionDeps());
 
