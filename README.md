@@ -34,7 +34,7 @@ const store = createStore({
 store.transact(({ users }) => {
   users.add({ id: "1", name: "Alice" });
 });
-const user = store.read(({ users }) => users.get("1")); // { id: "1", name: "Alice" }
+const user = store.users.get("1"); // { id: "1", name: "Alice" }
 ```
 
 ## Features
@@ -116,14 +116,14 @@ store.transact(({ users }) => {
 
 ### Reading Data
 
-Read data using `read()`:
+Read data directly from collection handles:
 
 ```typescript
 // Get a single item
-const user = store.read(({ users }) => users.get("1"));
+const user = store.users.get("1");
 
 // Get all items as an array
-const allUsers = store.read(({ users }) => users.list());
+const allUsers = store.users.list();
 
 // You can easily derive other operations:
 const userIds = allUsers.map((u) => u.id);
@@ -208,7 +208,7 @@ function useUsers() {
 
   return useQuery({
     queryKey: ["users"],
-    queryFn: () => store.read(({ users }) => users.list()),
+    queryFn: () => store.users.list(),
   });
 }
 ```
@@ -225,7 +225,7 @@ function useUsers() {
         ({ users }) => users.list(),
         () => callback(),
       ),
-    () => store.read(({ users }) => users.list()),
+    () => store.users.list(),
   );
 }
 ```
@@ -235,7 +235,7 @@ function useUsers() {
 ```typescript
 import { writable } from "svelte/store";
 
-const users = writable(store.read(({ users }) => users.list()));
+const users = writable(store.users.list());
 store.subscribe(
   ({ users }) => users.list(),
   (allUsers) => {
@@ -249,7 +249,7 @@ store.subscribe(
 ```typescript
 import { ref } from "vue";
 
-const users = ref(store.read(({ users }) => users.list()));
+const users = ref(store.users.list());
 store.subscribe(
   ({ users }) => users.list(),
   (allUsers) => {
@@ -292,7 +292,6 @@ const schema = type({ id: "string", name: "string" });
 ### Store Methods
 
 - `transact(callback)` - Execute mutations within a transaction. The callback receives handles for each collection with `add()`, `update()`, and `remove()` methods.
-- `read(callback)` - Read data synchronously. The callback receives read-only handles for each collection with `get(id)` and `list()` methods.
 - `subscribe(query, subscriber)` - Subscribe to a query. The subscriber is called whenever the query's dependencies change.
 - `use(middleware)` - Add middleware to the store (chainable). Middleware can access `getState()`, `merge()`, and `subscribe()`.
 - `init()` - Initialize the store and run middleware (async).
@@ -300,7 +299,7 @@ const schema = type({ id: "string", name: "string" });
 
 ### Collection Handles
 
-Within `transact()` and `read()` callbacks, you receive handles for each collection:
+The store exposes collection handles directly. Each collection name becomes a property on the store with read-only methods. Within `transact()` callbacks, you receive transaction handles for each collection:
 
 - `handle.get(id)` - Get a document by ID
 - `handle.list()` - Get all documents as an array

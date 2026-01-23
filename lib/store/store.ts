@@ -25,12 +25,11 @@ export type StoreChangeEvent<T extends StoreConfig> = {
 };
 
 export type StoreAPI<T extends StoreConfig> = {
-  read<R>(callback: (handles: ReadHandles<T>) => R): R;
   transact<R>(callback: (handles: TransactionHandles<T>) => R): R;
   use(middleware: StoreMiddleware<T>): StoreAPI<T>;
   init(): Promise<void>;
   dispose(): Promise<void>;
-};
+} & ReadHandles<T>;
 
 function notifyListeners<T extends StoreConfig>(
   event: StoreChangeEvent<T>,
@@ -88,11 +87,9 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     },
   });
 
-  return {
-    read(callback) {
-      const handles = createReadHandles<T>({ configs, state });
-      return callback(handles);
-    },
+  const readHandles = createReadHandles<T>({ configs, state });
+  const api: StoreAPI<T> = {
+    ...readHandles,
     transact(callback) {
       const result = executeTransaction(callback, getTransactionDeps());
 
@@ -135,4 +132,6 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
       isInitialized = false;
     },
   };
+
+  return api;
 }

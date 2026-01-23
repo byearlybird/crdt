@@ -13,7 +13,7 @@ describe("createStore", () => {
       });
     });
 
-    const result = store.read(({ users }) => users.get("1"));
+    const result = store.users.get("1");
     expect(result).toEqual({
       id: "1",
       name: "Alice",
@@ -40,8 +40,8 @@ describe("createStore", () => {
       users.remove("1");
     });
 
-    expect(store.read(({ users }) => users.get("1"))).toBeUndefined();
-    expect(store.read(({ users }) => users.get("2"))).toEqual({
+    expect(store.users.get("1")).toBeUndefined();
+    expect(store.users.get("2")).toEqual({
       id: "2",
       name: "Bob",
       profile: {},
@@ -65,7 +65,7 @@ describe("createStore", () => {
       });
     });
 
-    const result = store.read(({ users }) => users.get("1"));
+    const result = store.users.get("1");
     expect(result).toEqual({
       id: "1",
       name: "Alice",
@@ -82,7 +82,7 @@ describe("createStore", () => {
     });
 
     // Should be undefined (tombstoned)
-    expect(store.read(({ users }) => users.get("123"))).toBeUndefined();
+    expect(store.users.get("123")).toBeUndefined();
   });
 
   test("removed documents don't appear in list", () => {
@@ -94,13 +94,13 @@ describe("createStore", () => {
       users.add({ id: "3", name: "Charlie", profile: {} });
     });
 
-    expect(store.read(({ users }) => users.list())).toHaveLength(3);
+    expect(store.users.list()).toHaveLength(3);
 
     store.transact(({ users }) => {
       users.remove("2");
     });
 
-    const allUsers = store.read(({ users }) => users.list());
+    const allUsers = store.users.list();
     expect(allUsers).toHaveLength(2);
     expect(allUsers.find((u) => u.id === "2")).toBeUndefined();
     expect(allUsers.find((u) => u.id === "1")).toBeDefined();
@@ -174,8 +174,8 @@ describe("createStore", () => {
       }).toThrow("Transaction failed");
 
       // Changes should not be persisted
-      expect(store.read(({ users }) => users.get("2"))).toBeUndefined();
-      expect(store.read(({ users }) => users.get("1"))?.name).toBe("Alice");
+      expect(store.users.get("2")).toBeUndefined();
+      expect(store.users.get("1")?.name).toBe("Alice");
     });
 
     test("transact can read within transaction", () => {
@@ -211,33 +211,31 @@ describe("createStore", () => {
       });
 
       expect(result).toBe(2); // Should see only the 2 existing users
-      expect(store.read(({ users }) => users.get("3"))).toBeDefined(); // But the new one should be added
+      expect(store.users.get("3")).toBeDefined(); // But the new one should be added
     });
   });
 
-  describe("read", () => {
-    test("read() returns current results", () => {
-      const store = createProfileStore();
+  test("direct handle access returns current results", () => {
+    const store = createProfileStore();
 
-      store.transact(({ users }) => {
-        users.add({ id: "1", name: "Alice", profile: {} });
-      });
+    store.transact(({ users }) => {
+      users.add({ id: "1", name: "Alice", profile: {} });
+    });
 
-      expect(store.read(({ users }) => users.get("1"))).toEqual({
-        id: "1",
-        name: "Alice",
-        profile: {},
-      });
+    expect(store.users.get("1")).toEqual({
+      id: "1",
+      name: "Alice",
+      profile: {},
+    });
 
-      store.transact(({ users }) => {
-        users.update("1", { name: "Alice Updated" });
-      });
+    store.transact(({ users }) => {
+      users.update("1", { name: "Alice Updated" });
+    });
 
-      expect(store.read(({ users }) => users.get("1"))).toEqual({
-        id: "1",
-        name: "Alice Updated",
-        profile: {},
-      });
+    expect(store.users.get("1")).toEqual({
+      id: "1",
+      name: "Alice Updated",
+      profile: {},
     });
   });
 });
@@ -315,7 +313,7 @@ describe("middleware", () => {
 
     await store.init();
 
-    const user = store.read(({ users }) => users.get("1"));
+    const user = store.users.get("1");
     expect(user).toEqual({
       id: "1",
       name: "Alice",
@@ -398,7 +396,7 @@ describe("middleware", () => {
       users.add({ id: "1", name: "Alice", profile: {} });
     });
 
-    const user = store.read(({ users }) => users.get("1"));
+    const user = store.users.get("1");
     expect(user).toEqual({
       id: "1",
       name: "Alice",
@@ -442,8 +440,8 @@ describe("middleware", () => {
     setStateFn(newSnapshot, { silent: true });
 
     // Verify old data is gone and new data is present
-    expect(store.read(({ users }) => users.get("1"))).toBeUndefined();
-    expect(store.read(({ users }) => users.get("2"))).toEqual({
+    expect(store.users.get("1")).toBeUndefined();
+    expect(store.users.get("2")).toEqual({
       id: "2",
       name: "Bob",
       profile: {},

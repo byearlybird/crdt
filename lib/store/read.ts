@@ -23,18 +23,25 @@ export type ReadDependencies = {
 };
 
 export function createReadHandle<C extends CollectionConfig<AnyObject>>(
-  documents: Record<DocumentId, Document>,
-  tombstones: Tombstones,
+  getDocuments: (() => Record<DocumentId, Document>) | Record<DocumentId, Document>,
+  getTombstones: (() => Tombstones) | Tombstones,
 ): ReadHandle<C> {
+  const documentsFn = typeof getDocuments === "function" ? getDocuments : () => getDocuments;
+  const tombstonesFn = typeof getTombstones === "function" ? getTombstones : () => getTombstones;
+
   return {
     get(id) {
+      const tombstones = tombstonesFn();
       if (isDeleted(id, tombstones)) return undefined;
+      const documents = documentsFn();
       const document = documents[id];
       if (!document) return undefined;
       return parseDocument<Output<C["schema"]>>(document);
     },
 
     list() {
+      const documents = documentsFn();
+      const tombstones = tombstonesFn();
       const results: Output<C["schema"]>[] = [];
       for (const [id, document] of Object.entries(documents)) {
         if (document && !isDeleted(id, tombstones)) {
@@ -50,9 +57,11 @@ export function createReadHandles<T extends StoreConfig>(deps: ReadDependencies)
   const handles = {} as ReadHandles<T>;
 
   for (const [collectionName] of deps.configs) {
-    const documents = deps.state.collections[collectionName] ?? {};
     Object.assign(handles, {
-      [collectionName]: createReadHandle(documents, deps.state.tombstones),
+      [collectionName]: createReadHandle(
+        () => deps.state.collections[collectionName] ?? {},
+        () => deps.state.tombstones,
+      ),
     });
   }
 
