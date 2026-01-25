@@ -36,9 +36,13 @@ describe("executeBatch", () => {
     test("returns callback return value", () => {
       const deps = createTestDeps();
 
-      const result = executeBatch(() => {
-        return "test-result";
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        () => {
+          return "test-result";
+        },
+        deps,
+      );
 
       expect(result.value).toBe("test-result");
       expect(result.changes).toBeNull();
@@ -53,10 +57,14 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch<SingleCollectionConfig, any>(({ users }) => {
-        // Read-only operation
-        return users.get("1");
-      }, deps);
+      const result = executeBatch<SingleCollectionConfig, ["users"], any>(
+        ["users"],
+        ({ users }) => {
+          // Read-only operation
+          return users.get("1");
+        },
+        deps,
+      );
 
       expect(result.value).toEqual({ id: "1", name: "Alice" });
       expect(result.changes).toBeNull();
@@ -66,14 +74,17 @@ describe("executeBatch", () => {
       const deps = createTestDeps();
       let handlesReceived: any = null;
 
-      executeBatch((handles) => {
-        handlesReceived = handles;
-        // Access a collection to trigger proxy
-        handles["users"]?.list();
-      }, deps);
+      executeBatch(
+        ["users"],
+        (handles) => {
+          handlesReceived = handles;
+          handles.users.list();
+        },
+        deps,
+      );
 
       expect(handlesReceived).toBeDefined();
-      expect(typeof handlesReceived["users"]).toBe("object");
+      expect(typeof handlesReceived.users).toBe("object");
     });
   });
 
@@ -81,9 +92,13 @@ describe("executeBatch", () => {
     test("tracks changes for add() operation", () => {
       const deps = createTestDeps();
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.add({ id: "1", name: "Alice" });
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          users.add({ id: "1", name: "Alice" });
+        },
+        deps,
+      );
 
       expect(result.changes).not.toBeNull();
       expect(result.changes!.documents["users"]).toBeDefined();
@@ -103,9 +118,13 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.update("1", { name: "Bob" });
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          users.update("1", { name: "Bob" });
+        },
+        deps,
+      );
 
       expect(result.changes).not.toBeNull();
       expect(result.changes!.documents["users"]).toBeDefined();
@@ -125,9 +144,13 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.remove("1");
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          users.remove("1");
+        },
+        deps,
+      );
 
       expect(result.changes).not.toBeNull();
       expect(result.changes!.tombstones["1"]).toBeDefined();
@@ -147,10 +170,14 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.add({ id: "1", name: "Alice" });
-        handles["notes"]!.update("1", { content: "Updated Note" });
-      }, deps);
+      const result = executeBatch(
+        ["users", "notes"],
+        ({ users, notes }) => {
+          users.add({ id: "1", name: "Alice" });
+          notes.update("1", { content: "Updated Note" });
+        },
+        deps,
+      );
 
       expect(result.changes).not.toBeNull();
       expect(result.changes!.event["users"]).toBe(true);
@@ -169,9 +196,13 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.update("1", { name: "Bob" });
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          users.update("1", { name: "Bob" });
+        },
+        deps,
+      );
 
       // Original deps.documents should be unchanged
       expect(createReadLens(deps.documents["users"]!["1"]!)).toEqual({
@@ -186,7 +217,7 @@ describe("executeBatch", () => {
       });
     });
 
-    test("lazy collection document initialization", () => {
+    test("only declared collections are copied", () => {
       const deps = createTestDeps({
         collections: [
           { name: "users", schema: userSchema },
@@ -202,10 +233,14 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        // Only access users collection
-        handles["users"]!.list();
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          // Only access users collection
+          users.list();
+        },
+        deps,
+      );
 
       // Since nothing was modified, changes should be null
       expect(result.changes).toBeNull();
@@ -218,9 +253,13 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.remove("new");
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          users.remove("new");
+        },
+        deps,
+      );
 
       // Original tombstones unchanged
       expect(deps.tombstones).toEqual({ existing: "500:0" });
@@ -235,12 +274,16 @@ describe("executeBatch", () => {
     test("read operations reflect batch writes", () => {
       const deps = createTestDeps();
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.add({ id: "1", name: "Alice" });
-        const retrieved = handles["users"]!.get("1");
-        const allUsers = handles["users"]!.list();
-        return { retrieved, allUsers };
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          users.add({ id: "1", name: "Alice" });
+          const retrieved = users.get("1");
+          const allUsers = users.list();
+          return { retrieved, allUsers };
+        },
+        deps,
+      );
 
       expect(result.value["retrieved"]).toEqual({ id: "1", name: "Alice" });
       expect(result.value["allUsers"]).toHaveLength(1);
@@ -255,12 +298,16 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.remove("1");
-        const retrieved = handles["users"]!.get("1");
-        const allUsers = handles["users"]!.list();
-        return { retrieved, allUsers };
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          users.remove("1");
+          const retrieved = users.get("1");
+          const allUsers = users.list();
+          return { retrieved, allUsers };
+        },
+        deps,
+      );
 
       expect(result.value["retrieved"]).toBeUndefined();
       expect(result.value["allUsers"]).toHaveLength(0);
@@ -274,21 +321,25 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        // Read methods
-        const before = handles["users"]!.get("1");
-        const listBefore = handles["users"]!.list();
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          // Read methods
+          const before = users.get("1");
+          const listBefore = users.list();
 
-        // Write methods
-        handles["users"]!.update("1", { name: "Bob" });
-        handles["users"]!.add({ id: "2", name: "Charlie" });
+          // Write methods
+          users.update("1", { name: "Bob" });
+          users.add({ id: "2", name: "Charlie" });
 
-        // Read after write
-        const after = handles["users"]!.get("1");
-        const listAfter = handles["users"]!.list();
+          // Read after write
+          const after = users.get("1");
+          const listAfter = users.list();
 
-        return { before, listBefore, after, listAfter };
-      }, deps);
+          return { before, listBefore, after, listAfter };
+        },
+        deps,
+      );
 
       expect(result.value["before"]).toEqual({ id: "1", name: "Alice" });
       expect(result.value["listBefore"]).toHaveLength(1);
@@ -297,41 +348,46 @@ describe("executeBatch", () => {
     });
   });
 
-  describe("proxy behavior", () => {
-    test("proxy throws error for non-existent collection", () => {
+  describe("explicit collection declaration", () => {
+    test("throws error for non-existent collection", () => {
       const deps = createTestDeps();
 
       expect(() => {
-        executeBatch((handles: any) => {
-          handles.invalidCollection.list();
-        }, deps);
+        executeBatch(["invalidCollection"], () => {}, deps);
       }).toThrow('Collection "invalidCollection" not found');
     });
 
-    test("proxy returns undefined for non-string properties", () => {
+    test("rejects async callbacks", () => {
       const deps = createTestDeps();
 
-      const result = executeBatch((handles: any) => {
-        const symbolProp = Symbol("test");
-        return handles[symbolProp];
-      }, deps);
-
-      expect(result.value).toBeUndefined();
+      expect(() => {
+        executeBatch(
+          ["users"],
+          async ({ users }) => {
+            users.add({ id: "1", name: "Alice" });
+          },
+          deps,
+        );
+      }).toThrow("Batch callback must be synchronous");
     });
 
-    test("proxy caches initialized handles", () => {
+    test("handles are consistent across multiple accesses", () => {
       const deps = createTestDeps({
         documents: {
           users: { "1": atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0)) },
         },
       });
 
-      executeBatch((handles) => {
-        const firstAccess = handles["users"]!.get("1");
-        const secondAccess = handles["users"]!.get("1");
-        // Both should return the same data
-        expect(firstAccess).toEqual(secondAccess);
-      }, deps);
+      executeBatch(
+        ["users"],
+        ({ users }) => {
+          const firstAccess = users.get("1");
+          const secondAccess = users.get("1");
+          // Both should return the same data
+          expect(firstAccess).toEqual(secondAccess);
+        },
+        deps,
+      );
     });
   });
 
@@ -344,12 +400,16 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.add({ id: "2", name: "Bob" });
-        handles["users"]!.update("1", { name: "Alice Updated" });
-        handles["users"]!.remove("2");
-        return handles["users"]!.list();
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          users.add({ id: "2", name: "Bob" });
+          users.update("1", { name: "Alice Updated" });
+          users.remove("2");
+          return users.list();
+        },
+        deps,
+      );
 
       expect(result.changes).not.toBeNull();
       expect(result.changes!.event["users"]).toBe(true);
@@ -367,9 +427,13 @@ describe("executeBatch", () => {
     test("batch with no changes returns proper null result", () => {
       const deps = createTestDeps();
 
-      const result = executeBatch(() => {
-        return 42;
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        () => {
+          return 42;
+        },
+        deps,
+      );
 
       expect(result.value).toBe(42);
       expect(result.changes).toBeNull();
@@ -387,12 +451,16 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.add({ id: "2", name: "Bob" });
-        handles["notes"]!.remove("1");
-        handles["users"]!.update("1", { name: "Alice Updated" });
-        handles["notes"]!.add({ id: "2", content: "Note 2" });
-      }, deps);
+      const result = executeBatch(
+        ["users", "notes"],
+        ({ users, notes }) => {
+          users.add({ id: "2", name: "Bob" });
+          notes.remove("1");
+          users.update("1", { name: "Alice Updated" });
+          notes.add({ id: "2", content: "Note 2" });
+        },
+        deps,
+      );
 
       expect(result.changes).not.toBeNull();
       expect(result.changes!.event["users"]).toBe(true);
@@ -410,10 +478,14 @@ describe("executeBatch", () => {
     test("callback return value preserved with changes", () => {
       const deps = createTestDeps();
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.add({ id: "1", name: "Alice" });
-        return { success: true, userId: "1" };
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          users.add({ id: "1", name: "Alice" });
+          return { success: true, userId: "1" };
+        },
+        deps,
+      );
 
       expect(result.value).toEqual({ success: true, userId: "1" });
       expect(result.changes).not.toBeNull();
@@ -432,11 +504,15 @@ describe("executeBatch", () => {
         return stamp;
       };
 
-      executeBatch((handles) => {
-        handles["users"]!.add({ id: "1", name: "Alice" });
-        handles["users"]!.add({ id: "2", name: "Bob" });
-        handles["users"]!.remove("1");
-      }, deps);
+      executeBatch(
+        ["users"],
+        ({ users }) => {
+          users.add({ id: "1", name: "Alice" });
+          users.add({ id: "2", name: "Bob" });
+          users.remove("1");
+        },
+        deps,
+      );
 
       // Three operations should generate three timestamps
       expect(stamps).toHaveLength(3);
@@ -447,7 +523,7 @@ describe("executeBatch", () => {
   });
 
   describe("edge cases", () => {
-    test("accessing collection initializes only that collection's documents", () => {
+    test("only declared collections are copied", () => {
       const deps = createTestDeps({
         collections: [
           { name: "users", schema: userSchema },
@@ -463,14 +539,18 @@ describe("executeBatch", () => {
         },
       });
 
-      executeBatch((handles) => {
-        // Access only users collection
-        handles["users"]!.list();
-        // notes and profiles are never accessed
-      }, deps);
+      executeBatch(
+        ["users"],
+        ({ users }) => {
+          // Access only users collection
+          users.list();
+          // notes and profiles are never accessed
+        },
+        deps,
+      );
 
       // No assertion needed - just verifying no errors occur
-      // The lazy initialization ensures only accessed collections are copied
+      // Only declared collections are copied upfront
     });
 
     test("event object only includes changed collections", () => {
@@ -487,11 +567,15 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.add({ id: "1", name: "Alice" });
-        handles["notes"]!.add({ id: "1", content: "Note" });
-        // profiles not modified
-      }, deps);
+      const result = executeBatch(
+        ["users", "notes", "profiles"],
+        ({ users, notes }) => {
+          users.add({ id: "1", name: "Alice" });
+          notes.add({ id: "1", content: "Note" });
+          // profiles not modified
+        },
+        deps,
+      );
 
       expect(result.changes).not.toBeNull();
       expect(result.changes!.event["users"]).toBe(true);
@@ -508,9 +592,13 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.remove("1");
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          users.remove("1");
+        },
+        deps,
+      );
 
       expect(result.changes).not.toBeNull();
       expect(result.changes!.documents["users"]!["1"]).toBeUndefined();
@@ -525,9 +613,13 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        return handles["users"]!.list();
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          return users.list();
+        },
+        deps,
+      );
 
       expect(result.value).toEqual([]);
       expect(result.changes).toBeNull();
@@ -541,14 +633,18 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        handles["profiles"]!.add({
-          id: "1",
-          name: "Alice",
-          profile: { age: 30, email: "alice@example.com" },
-        });
-        return handles["profiles"]!.get("1");
-      }, deps);
+      const result = executeBatch(
+        ["profiles"],
+        ({ profiles }) => {
+          profiles.add({
+            id: "1",
+            name: "Alice",
+            profile: { age: 30, email: "alice@example.com" },
+          });
+          return profiles.get("1");
+        },
+        deps,
+      );
 
       expect(result.value).toEqual({
         id: "1",
@@ -565,9 +661,13 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.update("nonexistent", { name: "Bob" });
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          users.update("nonexistent", { name: "Bob" });
+        },
+        deps,
+      );
 
       // No changes should be recorded
       expect(result.changes).toBeNull();
@@ -580,9 +680,13 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch((handles) => {
-        handles["users"]!.remove("nonexistent");
-      }, deps);
+      const result = executeBatch(
+        ["users"],
+        ({ users }) => {
+          users.remove("nonexistent");
+        },
+        deps,
+      );
 
       expect(result.changes).not.toBeNull();
       expect(result.changes!.tombstones["nonexistent"]).toBeDefined();

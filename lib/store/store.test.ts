@@ -5,7 +5,7 @@ describe("createStore", () => {
   test("can add documents to collections", () => {
     const store = createProfileStore();
 
-    store.batch(({ users }) => {
+    store.batch(["users"], ({ users }) => {
       users.add({
         id: "1",
         name: "Alice",
@@ -24,7 +24,7 @@ describe("createStore", () => {
   test("can remove documents from collections", () => {
     const store = createProfileStore();
 
-    store.batch(({ users }) => {
+    store.batch(["users"], ({ users }) => {
       users.add({
         id: "1",
         name: "Alice",
@@ -51,7 +51,7 @@ describe("createStore", () => {
   test("can update documents in collections", () => {
     const store = createProfileStore();
 
-    store.batch(({ users }) => {
+    store.batch(["users"], ({ users }) => {
       users.add({
         id: "1",
         name: "Alice",
@@ -59,7 +59,7 @@ describe("createStore", () => {
       });
     });
 
-    store.batch(({ users }) => {
+    store.batch(["users"], ({ users }) => {
       users.update("1", {
         profile: { age: 30 },
       });
@@ -76,7 +76,7 @@ describe("createStore", () => {
   test("tombstones are store-level and globally unique", () => {
     const store = createMultiCollectionStore();
 
-    store.batch(({ users }) => {
+    store.batch(["users"], ({ users }) => {
       users.add({ id: "123", name: "Alice", profile: {} });
       users.remove("123");
     });
@@ -88,7 +88,7 @@ describe("createStore", () => {
   test("removed documents don't appear in list", () => {
     const store = createProfileStore();
 
-    store.batch(({ users }) => {
+    store.batch(["users"], ({ users }) => {
       users.add({ id: "1", name: "Alice", profile: {} });
       users.add({ id: "2", name: "Bob", profile: {} });
       users.add({ id: "3", name: "Charlie", profile: {} });
@@ -96,7 +96,7 @@ describe("createStore", () => {
 
     expect(store.users.list()).toHaveLength(3);
 
-    store.batch(({ users }) => {
+    store.batch(["users"], ({ users }) => {
       users.remove("2");
     });
 
@@ -111,7 +111,7 @@ describe("createStore", () => {
     test("batch returns callback return value", () => {
       const store = createProfileStore();
 
-      const result = store.batch(({ users }) => {
+      const result = store.batch(["users"], ({ users }) => {
         users.add({ id: "1", name: "Alice", profile: { age: 30 } });
         return users.get("1");
       });
@@ -126,7 +126,7 @@ describe("createStore", () => {
     test("empty batch works", () => {
       const store = createProfileStore();
 
-      const result = store.batch(() => {
+      const result = store.batch(["users"], () => {
         return "done";
       });
 
@@ -136,7 +136,7 @@ describe("createStore", () => {
     test("read-only batch doesn't notify listeners", async () => {
       const store = createProfileStore();
 
-      store.batch(({ users }) => {
+      store.batch(["users"], ({ users }) => {
         users.add({ id: "1", name: "Alice", profile: {} });
       });
 
@@ -151,7 +151,7 @@ describe("createStore", () => {
       await store.init();
 
       // Read-only batch
-      store.batch(({ users }) => {
+      store.batch(["users"], ({ users }) => {
         users.get("1"); // Just read
       });
 
@@ -161,12 +161,12 @@ describe("createStore", () => {
     test("batch rolls back on error", () => {
       const store = createProfileStore();
 
-      store.batch(({ users }) => {
+      store.batch(["users"], ({ users }) => {
         users.add({ id: "1", name: "Alice", profile: {} });
       });
 
       expect(() => {
-        store.batch(({ users }) => {
+        store.batch(["users"], ({ users }) => {
           users.add({ id: "2", name: "Bob", profile: {} });
           users.update("1", { name: "Alice Updated" });
           throw new Error("Batch failed");
@@ -181,11 +181,11 @@ describe("createStore", () => {
     test("batch can read within batch", () => {
       const store = createProfileStore();
 
-      store.batch(({ users }) => {
+      store.batch(["users"], ({ users }) => {
         users.add({ id: "1", name: "Alice", profile: { age: 30 } });
       });
 
-      const result = store.batch(({ users }) => {
+      const result = store.batch(["users"], ({ users }) => {
         const user = users.get("1");
         if (user) {
           users.update("1", { profile: { age: 31 } });
@@ -199,12 +199,12 @@ describe("createStore", () => {
     test("batch list works within batch", () => {
       const store = createProfileStore();
 
-      store.batch(({ users }) => {
+      store.batch(["users"], ({ users }) => {
         users.add({ id: "1", name: "Alice", profile: { age: 30 } });
         users.add({ id: "2", name: "Bob", profile: { age: 25 } });
       });
 
-      const result = store.batch(({ users }) => {
+      const result = store.batch(["users"], ({ users }) => {
         const all = users.list();
         users.add({ id: "3", name: "Charlie", profile: { age: 35 } });
         return all.length;
@@ -218,7 +218,7 @@ describe("createStore", () => {
   test("direct handle access returns current results", () => {
     const store = createProfileStore();
 
-    store.batch(({ users }) => {
+    store.batch(["users"], ({ users }) => {
       users.add({ id: "1", name: "Alice", profile: {} });
     });
 
@@ -228,7 +228,7 @@ describe("createStore", () => {
       profile: {},
     });
 
-    store.batch(({ users }) => {
+    store.batch(["users"], ({ users }) => {
       users.update("1", { name: "Alice Updated" });
     });
 
@@ -356,7 +356,7 @@ describe("createStore", () => {
       });
 
       // Update via batch
-      store.batch(({ users }) => {
+      store.batch(["users"], ({ users }) => {
         users.update("1", {
           profile: { age: 30 },
         });
@@ -429,7 +429,7 @@ describe("middleware", () => {
 
     await store.init();
 
-    store.batch(({ users }) => {
+    store.batch(["users"], ({ users }) => {
       users.add({ id: "1", name: "Alice", profile: {} });
     });
 
@@ -526,7 +526,7 @@ describe("middleware", () => {
     changes.length = 0;
 
     // Make a change after dispose
-    store.batch(({ users }) => {
+    store.batch(["users"], ({ users }) => {
       users.add({ id: "1", name: "Alice", profile: {} });
     });
 
@@ -538,7 +538,7 @@ describe("middleware", () => {
     const store = createProfileStore();
 
     // Should be able to use store immediately without init
-    store.batch(({ users }) => {
+    store.batch(["users"], ({ users }) => {
       users.add({ id: "1", name: "Alice", profile: {} });
     });
 
@@ -554,7 +554,7 @@ describe("middleware", () => {
     const store = createProfileStore();
 
     // Add initial data
-    store.batch(({ users }) => {
+    store.batch(["users"], ({ users }) => {
       users.add({ id: "1", name: "Alice", profile: {} });
     });
 

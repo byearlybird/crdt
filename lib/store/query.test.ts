@@ -218,7 +218,7 @@ describe("query", () => {
 
     callback.mockClear();
 
-    store.batch(({ users }) => {
+    store.batch(["users"], ({ users }) => {
       users.add({ id: "1", name: "Alice", profile: {} });
       users.add({ id: "2", name: "Bob", profile: {} });
     });
@@ -271,7 +271,6 @@ describe("query", () => {
 
     expect(() => {
       store.query((handles) => {
-        // @ts-expect-error - intentionally accessing non-existent collection
         return (handles as any).nonexistent.list();
       }, vi.fn());
     }).toThrow('Collection "nonexistent" not found');

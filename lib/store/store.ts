@@ -8,7 +8,7 @@ import {
   type StoreState,
 } from "../core";
 import type { AnyObject, CollectionConfig, CollectionName, StoreConfig } from "./schema";
-import { executeBatch, type BatchDependencies, type BatchHandles } from "./batch";
+import { executeBatch, type BatchDependencies, type BatchHandle, type BatchHandles } from "./batch";
 import { createReadHandles, type ReadHandle, type ReadHandles } from "./read";
 import { createWriteHandles, type WriteHandle, type WriteHandles } from "./write";
 import {
@@ -28,7 +28,10 @@ export type StoreCollectionHandles<T extends StoreConfig> = {
 };
 
 export type StoreAPI<T extends StoreConfig> = {
-  batch<R>(callback: (handles: BatchHandles<T>) => R): R;
+  batch<K extends (keyof T & string)[], R>(
+    collections: [...K],
+    callback: (handles: { [P in K[number]]: BatchHandle<T[P]> }) => R,
+  ): R;
   query<R>(selector: (handles: ReadHandles<T>) => R, callback: (value: R) => void): () => void;
   use(middleware: StoreMiddleware<T>): StoreAPI<T>;
   init(): Promise<void>;
@@ -162,8 +165,8 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     query(selector, callback) {
       return executeQuery(selector, callback, getQueryDeps());
     },
-    batch(callback) {
-      const result = executeBatch(callback, getBatchDeps());
+    batch(collections, callback) {
+      const result = executeBatch(collections, callback, getBatchDeps());
 
       if (result.changes) {
         state.tombstones = mergeTombstones(state.tombstones, result.changes.tombstones);

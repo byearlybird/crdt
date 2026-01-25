@@ -3,7 +3,6 @@ import type { Document, DocumentId, Tombstones } from "../core";
 import type { StoreChangeEvent } from "./store";
 import { createReadHandle, type ReadHandle } from "./read";
 import { createWriteHandle, type WriteCallbacks, type WriteHandle } from "./write";
-import { createHandleProxy } from "./utils";
 
 export type BatchHandle<T extends CollectionConfig<AnyObject>> = ReadHandle<T> & WriteHandle<T>;
 
@@ -29,17 +28,30 @@ export type BatchResult<T extends StoreConfig, R> = {
   changes: BatchChanges<T> | null;
 };
 
-export function executeBatch<T extends StoreConfig, R>(
-  callback: (handles: BatchHandles<T>) => R,
+export function executeBatch<
+  T extends StoreConfig,
+  K extends (keyof T & string)[],
+  R,
+>(
+  collections: [...K],
+  callback: (handles: { [P in K[number]]: BatchHandle<T[P]> }) => R,
   deps: BatchDependencies,
 ): BatchResult<T, R> {
   const documents: Record<string, Record<DocumentId, Document>> = {};
   const tombstones: Tombstones = { ...deps.tombstones };
   const changed = new Set<string>();
 
-  const handles = createHandleProxy<BatchHandles<T>>(deps.configs, (collectionName, target) => {
-    // Copy-on-write: isolate collection documents for a batch
-    documents[collectionName] = { ...deps.documents[collectionName]! };
+  // Build handles upfront for declared collections only
+  const handles = {} as { [P in K[number]]: BatchHandle<T[P]> };
+
+  for (const collectionName of collections) {
+    // Validate collection exists
+    if (!deps.configs.has(collectionName)) {
+      throw new Error(`Collection "${collectionName}" not found`);
+    }
+
+    // Copy-on-write: copy declared collections upfront
+    documents[collectionName] = { ...deps.documents[collectionName] };
     const config = deps.configs.get(collectionName)!;
 
     const callbacks: WriteCallbacks = {
@@ -58,22 +70,23 @@ export function executeBatch<T extends StoreConfig, R>(
       },
     };
 
-    const readHandle = createReadHandle(documents[collectionName]!, tombstones);
-
-    const writeHandle = createWriteHandle({
-      config,
-      documents: () => documents[collectionName]!,
-      getTimestamp: deps.tick,
-      callbacks,
-    });
-
-    target[collectionName] = {
-      ...readHandle,
-      ...writeHandle,
+    handles[collectionName as K[number]] = {
+      ...createReadHandle(documents[collectionName]!, tombstones),
+      ...createWriteHandle({
+        config,
+        documents: () => documents[collectionName]!,
+        getTimestamp: deps.tick,
+        callbacks,
+      }),
     };
-  });
+  }
 
   const value = callback(handles);
+
+  // Reject async callbacks
+  if (value instanceof Promise) {
+    throw new TypeError("Batch callback must be synchronous");
+  }
 
   // Build changes only if something was modified
   if (changed.size === 0) {
