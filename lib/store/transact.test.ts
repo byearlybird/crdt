@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { type Document, type DocumentId, createReadLens, makeStamp } from "../core";
 import { atomizeDocument } from "./write";
-import { executeBatch, type BatchDependencies } from "./batch";
+import { executeTransact, type TransactDependencies } from "./transact";
 import { createTimestampGenerator, noteSchema, profileSchema, userSchema } from "./test-utils";
 import type { AnyObject, CollectionConfig } from "./schema";
 
@@ -15,7 +15,7 @@ function createTestDeps(
     documents?: Record<string, Record<DocumentId, Document>>;
     tombstones?: Record<DocumentId, string>;
   } = {},
-): BatchDependencies {
+): TransactDependencies {
   const configs = new Map();
   const collections = options.collections || [{ name: "users", schema: userSchema, keyPath: "id" }];
 
@@ -31,12 +31,12 @@ function createTestDeps(
   };
 }
 
-describe("executeBatch", () => {
+describe("executeTransact", () => {
   describe("basic operations", () => {
     test("returns callback return value", () => {
       const deps = createTestDeps();
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         () => {
           return "test-result";
@@ -57,7 +57,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch<SingleCollectionConfig, ["users"], any>(
+      const result = executeTransact<SingleCollectionConfig, ["users"], any>(
         ["users"],
         ({ users }) => {
           // Read-only operation
@@ -70,11 +70,11 @@ describe("executeBatch", () => {
       expect(result.changes).toBeNull();
     });
 
-    test("executes callback with batch handles", () => {
+    test("executes callback with transaction handles", () => {
       const deps = createTestDeps();
       let handlesReceived: any = null;
 
-      executeBatch(
+      executeTransact(
         ["users"],
         (handles) => {
           handlesReceived = handles;
@@ -92,7 +92,7 @@ describe("executeBatch", () => {
     test("tracks changes for add() operation", () => {
       const deps = createTestDeps();
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           users.add({ id: "1", name: "Alice" });
@@ -118,7 +118,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           users.update("1", { name: "Bob" });
@@ -144,7 +144,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           users.remove("1");
@@ -170,7 +170,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users", "notes"],
         ({ users, notes }) => {
           users.add({ id: "1", name: "Alice" });
@@ -196,7 +196,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           users.update("1", { name: "Bob" });
@@ -210,7 +210,7 @@ describe("executeBatch", () => {
         name: "Alice",
       });
 
-      // Batch result should have the updated document
+      // Transaction result should have the updated document
       expect(createReadLens(result.changes!.documents["users"]!["1"]!)).toEqual({
         id: "1",
         name: "Bob",
@@ -233,7 +233,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           // Only access users collection
@@ -246,14 +246,14 @@ describe("executeBatch", () => {
       expect(result.changes).toBeNull();
     });
 
-    test("tombstones are copied at batch start", () => {
+    test("tombstones are copied at transaction start", () => {
       const deps = createTestDeps({
         tombstones: {
           existing: "500:0",
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           users.remove("new");
@@ -270,11 +270,11 @@ describe("executeBatch", () => {
     });
   });
 
-  describe("read operations during batch", () => {
-    test("read operations reflect batch writes", () => {
+  describe("read operations during transaction", () => {
+    test("read operations reflect transaction writes", () => {
       const deps = createTestDeps();
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           users.add({ id: "1", name: "Alice" });
@@ -298,7 +298,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           users.remove("1");
@@ -321,7 +321,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           // Read methods
@@ -353,7 +353,7 @@ describe("executeBatch", () => {
       const deps = createTestDeps();
 
       expect(() => {
-        executeBatch(["invalidCollection"], () => {}, deps);
+        executeTransact(["invalidCollection"], () => {}, deps);
       }).toThrow('Collection "invalidCollection" not found');
     });
 
@@ -361,14 +361,14 @@ describe("executeBatch", () => {
       const deps = createTestDeps();
 
       expect(() => {
-        executeBatch(
+        executeTransact(
           ["users"],
           async ({ users }) => {
             users.add({ id: "1", name: "Alice" });
           },
           deps,
         );
-      }).toThrow("Batch callback must be synchronous");
+      }).toThrow("Transaction callback must be synchronous");
     });
 
     test("handles are consistent across multiple accesses", () => {
@@ -378,7 +378,7 @@ describe("executeBatch", () => {
         },
       });
 
-      executeBatch(
+      executeTransact(
         ["users"],
         ({ users }) => {
           const firstAccess = users.get("1");
@@ -392,7 +392,7 @@ describe("executeBatch", () => {
   });
 
   describe("integration tests", () => {
-    test("complete batch workflow (add + update + remove)", () => {
+    test("complete transaction workflow (add + update + remove)", () => {
       const existingDoc = atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
       const deps = createTestDeps({
         documents: {
@@ -400,7 +400,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           users.add({ id: "2", name: "Bob" });
@@ -424,10 +424,10 @@ describe("executeBatch", () => {
       expect(result.value[0]!["id"]).toBe("1");
     });
 
-    test("batch with no changes returns proper null result", () => {
+    test("transaction with no changes returns proper null result", () => {
       const deps = createTestDeps();
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         () => {
           return 42;
@@ -451,7 +451,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users", "notes"],
         ({ users, notes }) => {
           users.add({ id: "2", name: "Bob" });
@@ -478,7 +478,7 @@ describe("executeBatch", () => {
     test("callback return value preserved with changes", () => {
       const deps = createTestDeps();
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           users.add({ id: "1", name: "Alice" });
@@ -504,7 +504,7 @@ describe("executeBatch", () => {
         return stamp;
       };
 
-      executeBatch(
+      executeTransact(
         ["users"],
         ({ users }) => {
           users.add({ id: "1", name: "Alice" });
@@ -539,7 +539,7 @@ describe("executeBatch", () => {
         },
       });
 
-      executeBatch(
+      executeTransact(
         ["users"],
         ({ users }) => {
           // Access only users collection
@@ -567,7 +567,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users", "notes", "profiles"],
         ({ users, notes }) => {
           users.add({ id: "1", name: "Alice" });
@@ -592,7 +592,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           users.remove("1");
@@ -613,7 +613,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           return users.list();
@@ -633,7 +633,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["profiles"],
         ({ profiles }) => {
           profiles.add({
@@ -661,7 +661,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           users.update("nonexistent", { name: "Bob" });
@@ -680,7 +680,7 @@ describe("executeBatch", () => {
         },
       });
 
-      const result = executeBatch(
+      const result = executeTransact(
         ["users"],
         ({ users }) => {
           users.remove("nonexistent");

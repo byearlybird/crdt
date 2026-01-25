@@ -8,7 +8,12 @@ import {
   type StoreState,
 } from "../core";
 import type { AnyObject, CollectionConfig, CollectionName, StoreConfig } from "./schema";
-import { executeBatch, type BatchDependencies, type BatchHandle, type BatchHandles } from "./batch";
+import {
+  executeTransact,
+  type TransactDependencies,
+  type TransactHandle,
+  type TransactHandles,
+} from "./transact";
 import { createReadHandles, type ReadHandle, type ReadHandles } from "./read";
 import { createWriteHandles, type WriteHandle, type WriteHandles } from "./write";
 import {
@@ -17,7 +22,6 @@ import {
   type StoreMiddleware,
 } from "./middleware";
 import { createChangeEvent } from "./utils";
-import { executeQuery, type QueryDependencies } from "./query";
 
 export type StoreChangeEvent<T extends StoreConfig> = {
   [K in keyof T]?: true;
@@ -28,11 +32,14 @@ export type StoreCollectionHandles<T extends StoreConfig> = {
 };
 
 export type StoreAPI<T extends StoreConfig> = {
-  batch<K extends (keyof T & string)[], R>(
+  transact<K extends (keyof T & string)[], R>(
     collections: [...K],
-    callback: (handles: { [P in K[number]]: BatchHandle<T[P]> }) => R,
+    callback: (handles: { [P in K[number]]: TransactHandle<T[P]> }) => R,
   ): R;
-  query<R>(selector: (handles: ReadHandles<T>) => R, callback: (value: R) => void): () => void;
+  subscribe<K extends (keyof T & string)[]>(
+    collections: [...K],
+    callback: (event: StoreChangeEvent<T>) => void,
+  ): () => void;
   use(middleware: StoreMiddleware<T>): StoreAPI<T>;
   init(): Promise<void>;
   dispose(): Promise<void>;
@@ -67,20 +74,11 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     state.collections[name] = {};
   }
 
-  const getBatchDeps = (): BatchDependencies => ({
+  const getTransactDeps = (): TransactDependencies => ({
     configs,
     documents: state.collections,
     tombstones: state.tombstones,
     tick,
-  });
-
-  const getQueryDeps = (): QueryDependencies<T> => ({
-    configs,
-    state,
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
   });
 
   const getMiddlewareContext = (): MiddlewareContext<T> => ({
@@ -162,11 +160,31 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
 
   const api: StoreAPI<T> = {
     ...collectionHandles,
-    query(selector, callback) {
-      return executeQuery(selector, callback, getQueryDeps());
+    subscribe(collections, callback) {
+      // Validate all collections exist
+      for (const collectionName of collections) {
+        if (!configs.has(collectionName)) {
+          throw new Error(`Collection "${collectionName}" not found`);
+        }
+      }
+
+      const unsubscribe = (listener: (event: StoreChangeEvent<T>) => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      };
+
+      const unsubscribeFn = unsubscribe((event) => {
+        // Check if any of the subscribed collections changed
+        const hasRelevantChange = collections.some((name) => event[name as keyof T]);
+        if (hasRelevantChange) {
+          callback(event);
+        }
+      });
+
+      return unsubscribeFn;
     },
-    batch(collections, callback) {
-      const result = executeBatch(collections, callback, getBatchDeps());
+    transact(collections, callback) {
+      const result = executeTransact(collections, callback, getTransactDeps());
 
       if (result.changes) {
         state.tombstones = mergeTombstones(state.tombstones, result.changes.tombstones);
