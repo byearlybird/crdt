@@ -11,11 +11,7 @@ export type MiddlewareContext<T extends StoreConfig> = {
 
 export type StoreMiddleware<T extends StoreConfig> = (
   context: MiddlewareContext<T>,
-) =>
-  | (() => void | Promise<void>)
-  | void
-  | Promise<void>
-  | Promise<() => void | Promise<void>>;
+) => (() => void | Promise<void>) | void | Promise<void> | Promise<() => void | Promise<void>>;
 
 export type MiddlewareManager<T extends StoreConfig> = {
   use: (middleware: StoreMiddleware<T>) => void;
