@@ -442,9 +442,9 @@ describe("middleware", () => {
       collections: {
         users: {
           "1": {
-            id: { "~value": "1", "~stamp": "1000:0" },
-            name: { "~value": "Alice", "~stamp": "1000:0" },
-            profile: { "~value": {}, "~stamp": "1000:0" },
+            id: { "~val": "1", "~ts": "1000:0" },
+            name: { "~val": "Alice", "~ts": "1000:0" },
+            profile: { "~val": {}, "~ts": "1000:0" },
           },
         },
       },
@@ -564,9 +564,9 @@ describe("middleware", () => {
       collections: {
         users: {
           "2": {
-            id: { "~value": "2", "~stamp": "2000:0" },
-            name: { "~value": "Bob", "~stamp": "2000:0" },
-            profile: { "~value": {}, "~stamp": "2000:0" },
+            id: { "~val": "2", "~ts": "2000:0" },
+            name: { "~val": "Bob", "~ts": "2000:0" },
+            profile: { "~val": {}, "~ts": "2000:0" },
           },
         },
       },

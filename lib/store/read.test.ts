@@ -1,11 +1,13 @@
 import { describe, expect, test } from "vitest";
-import { type Document, type DocumentId, makeDocument, makeStamp } from "../core";
+import { type DocumentId, makeStamp } from "../core";
+import type { Document } from "../core-two";
+import { atomizeDocument } from "./write";
 import { createReadHandle, createReadHandles, type ReadDependencies } from "./read";
 
 describe("createReadHandle", () => {
   test("get() - returns parsed document for valid ID", () => {
     const stamp = makeStamp(1000, 0);
-    const doc = makeDocument({ id: "1", name: "Alice" }, stamp);
+    const doc = atomizeDocument({ id: "1", name: "Alice" }, stamp);
     const documents: Record<DocumentId, Document> = { "1": doc };
     const tombstones = {};
 
@@ -17,7 +19,7 @@ describe("createReadHandle", () => {
 
   test("get() - returns undefined for deleted document", () => {
     const stamp = makeStamp(1000, 0);
-    const doc = makeDocument({ id: "1", name: "Alice" }, stamp);
+    const doc = atomizeDocument({ id: "1", name: "Alice" }, stamp);
     const documents: Record<DocumentId, Document> = { "1": doc };
     const tombstones = { "1": stamp };
 
@@ -42,9 +44,9 @@ describe("createReadHandle", () => {
     const stamp2 = makeStamp(1000, 1);
     const stamp3 = makeStamp(1000, 2);
 
-    const doc1 = makeDocument({ id: "1", name: "Alice" }, stamp1);
-    const doc2 = makeDocument({ id: "2", name: "Bob" }, stamp2);
-    const doc3 = makeDocument({ id: "3", name: "Charlie" }, stamp3);
+    const doc1 = atomizeDocument({ id: "1", name: "Alice" }, stamp1);
+    const doc2 = atomizeDocument({ id: "2", name: "Bob" }, stamp2);
+    const doc3 = atomizeDocument({ id: "3", name: "Charlie" }, stamp3);
 
     const documents: Record<DocumentId, Document> = {
       "1": doc1,
@@ -71,9 +73,9 @@ describe("createReadHandle", () => {
     const stamp2 = makeStamp(1000, 1);
     const stamp3 = makeStamp(1000, 2);
 
-    const doc1 = makeDocument({ id: "1", name: "Alice" }, stamp1);
-    const doc2 = makeDocument({ id: "2", name: "Bob" }, stamp2);
-    const doc3 = makeDocument({ id: "3", name: "Charlie" }, stamp3);
+    const doc1 = atomizeDocument({ id: "1", name: "Alice" }, stamp1);
+    const doc2 = atomizeDocument({ id: "2", name: "Bob" }, stamp2);
+    const doc3 = atomizeDocument({ id: "3", name: "Charlie" }, stamp3);
 
     const documents: Record<DocumentId, Document> = {
       "1": doc1,
@@ -101,8 +103,8 @@ describe("createReadHandles", () => {
     const stamp1 = makeStamp(1000, 0);
     const stamp2 = makeStamp(1000, 1);
 
-    const userDoc = makeDocument({ id: "1", name: "Alice" }, stamp1);
-    const noteDoc = makeDocument({ id: "1", content: "Note 1" }, stamp2);
+    const userDoc = atomizeDocument({ id: "1", name: "Alice" }, stamp1);
+    const noteDoc = atomizeDocument({ id: "1", content: "Note 1" }, stamp2);
 
     const deps: ReadDependencies = {
       configs: new Map([
@@ -153,7 +155,7 @@ describe("createReadHandles", () => {
 
   test("respects tombstones across collections", () => {
     const stamp1 = makeStamp(1000, 0);
-    const userDoc = makeDocument({ id: "1", name: "Alice" }, stamp1);
+    const userDoc = atomizeDocument({ id: "1", name: "Alice" }, stamp1);
 
     const deps: ReadDependencies = {
       configs: new Map([["users", { schema: {} as any, keyPath: "id" }]]),

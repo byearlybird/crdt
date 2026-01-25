@@ -1,15 +1,25 @@
 import type { AnyObject, CollectionConfig, CollectionName, Input, StoreConfig } from "./schema";
 import { validate } from "./schema";
-import {
-  type Document,
-  type DocumentId,
-  makeDocument,
-  mergeDocuments,
-  parseDocument,
-  type StoreState,
-} from "../core";
+import type { DocumentId, StoreState } from "../core";
+import type { Document } from "../core-two";
+import { Atomizer, mergeDocs, createReadLens } from "../core-two";
 
 type DeepPartial<T> = T extends object ? { [P in keyof T]?: DeepPartial<T[P]> } : T;
+
+/**
+ * Converts a plain object into a Document by atomizing each field.
+ * Nested objects are stored as blob values (not flattened).
+ */
+export function atomizeDocument<T extends Record<string, any>>(
+  data: T,
+  timestamp: string,
+): Document<T> {
+  const document = {} as Document<T>;
+  for (const [key, value] of Object.entries(data)) {
+    document[key as keyof T] = Atomizer.pack(value, timestamp);
+  }
+  return document;
+}
 
 export type WriteHandle<T extends CollectionConfig<AnyObject>> = {
   add(data: Input<T["schema"]>): void;
@@ -37,7 +47,7 @@ export function createWriteHandle<C extends CollectionConfig<AnyObject>>(
     add(data) {
       const validated = validate(deps.config.schema, data);
       const id = validated[deps.config.keyPath] as DocumentId;
-      const document = makeDocument(validated, deps.getTimestamp());
+      const document = atomizeDocument(validated, deps.getTimestamp());
 
       deps.callbacks.onAdd(id, document);
     },
@@ -47,10 +57,11 @@ export function createWriteHandle<C extends CollectionConfig<AnyObject>>(
       const current = documents[id];
       if (!current) return;
 
-      const changes = makeDocument(data, deps.getTimestamp());
-      const merged = mergeDocuments(current, changes);
-      const parsed = parseDocument(merged);
-      validate(deps.config.schema, parsed);
+      const changes = atomizeDocument(data as Record<string, any>, deps.getTimestamp());
+      const merged = mergeDocs(current, changes);
+      // Use createReadLens to get plain object for validation
+      const plain = createReadLens(merged);
+      validate(deps.config.schema, plain);
 
       deps.callbacks.onUpdate(id, merged);
     },

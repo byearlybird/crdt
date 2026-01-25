@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { type Document, makeDocument, makeStamp } from "../core";
+import { makeStamp } from "../core";
+import type { Document } from "../core-two";
+import { atomizeDocument } from "./write";
 import { createStore } from "./store";
 
 // Shared test schemas
@@ -56,7 +58,7 @@ export function createMultiCollectionStore() {
 
 // Document creation helpers
 export function createUserDoc(id: string, name: string, stamp: string): Document {
-  return makeDocument({ id, name }, stamp);
+  return atomizeDocument({ id, name }, stamp);
 }
 
 export function createProfileDoc(
@@ -65,9 +67,9 @@ export function createProfileDoc(
   profile: { age?: number; email?: string },
   stamp: string,
 ): Document {
-  return makeDocument({ id, name, profile }, stamp);
+  return atomizeDocument({ id, name, profile }, stamp);
 }
 
 export function createNoteDoc(id: string, content: string, stamp: string): Document {
-  return makeDocument({ id, content }, stamp);
+  return atomizeDocument({ id, content }, stamp);
 }

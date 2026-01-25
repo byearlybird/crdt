@@ -1,10 +1,6 @@
-import {
-  type Document,
-  type DocumentId,
-  parseDocument,
-  type StoreState,
-  type Tombstones,
-} from "../core";
+import type { DocumentId, StoreState, Tombstones } from "../core";
+import type { Document } from "../core-two";
+import { createReadLens } from "../core-two";
 import { isDeleted } from "./utils";
 import type { AnyObject, CollectionConfig, CollectionName, Output, StoreConfig } from "./schema";
 
@@ -36,7 +32,7 @@ export function createReadHandle<C extends CollectionConfig<AnyObject>>(
       const documents = documentsFn();
       const document = documents[id];
       if (!document) return undefined;
-      return parseDocument<Output<C["schema"]>>(document);
+      return createReadLens<Output<C["schema"]>>(document);
     },
 
     list() {
@@ -45,7 +41,7 @@ export function createReadHandle<C extends CollectionConfig<AnyObject>>(
       const results: Output<C["schema"]>[] = [];
       for (const [id, document] of Object.entries(documents)) {
         if (document && !isDeleted(id, tombstones)) {
-          results.push(parseDocument<Output<C["schema"]>>(document));
+          results.push(createReadLens<Output<C["schema"]>>(document));
         }
       }
       return results;

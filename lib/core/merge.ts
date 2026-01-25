@@ -1,7 +1,8 @@
 import type { Clock } from "./clock";
 import { advanceClock } from "./clock";
-import type { Collection, DocumentId } from "./collection";
-import { mergeCollections } from "./collection";
+import type { DocumentId } from "./collection";
+import type { Collection } from "../core-two";
+import { mergeCollections } from "../core-two";
 import type { Tombstones } from "./tombstone";
 import { mergeTombstones } from "./tombstone";
 

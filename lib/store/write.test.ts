@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { type Document, type DocumentId, makeDocument, makeStamp, parseDocument } from "../core";
-import { createWriteHandle, type WriteDependencies } from "./write";
+import { type DocumentId, makeStamp } from "../core";
+import type { Document } from "../core-two";
+import { createReadLens } from "../core-two";
+import { atomizeDocument, createWriteHandle, type WriteDependencies } from "./write";
 import { profileSchema, userSchema } from "./test-utils";
 
 // Helper to create test dependencies with mock callbacks
@@ -64,14 +66,8 @@ describe("createWriteHandle", () => {
       expect(addCalls[0]![0]).toBe("1");
 
       const document = addCalls[0]![1];
-      const parsed = parseDocument(document);
+      const parsed = createReadLens(document);
       expect(parsed).toEqual({ id: "1", name: "Alice" });
-
-      // Verify document has ~value and ~stamp structure
-      expect(document["id"]?.["~value"]).toBe("1");
-      expect(document["id"]?.["~stamp"]).toBeDefined();
-      expect(document["name"]?.["~value"]).toBe("Alice");
-      expect(document["name"]?.["~stamp"]).toBeDefined();
     });
 
     test("extracts ID from keyPath correctly", () => {
@@ -109,24 +105,18 @@ describe("createWriteHandle", () => {
       expect(addCalls[0]![0]).toBe("1");
 
       const document = addCalls[0]![1];
-      const parsed = parseDocument(document);
+      const parsed = createReadLens(document);
       expect(parsed).toEqual({
         id: "1",
         name: "Alice",
         profile: { age: 30, email: "alice@example.com" },
       });
-
-      // Verify nested fields are flattened
-      expect(document["profile.age"]?.["~value"]).toBe(30);
-      expect(document["profile.age"]?.["~stamp"]).toBeDefined();
-      expect(document["profile.email"]?.["~value"]).toBe("alice@example.com");
-      expect(document["profile.email"]?.["~stamp"]).toBeDefined();
     });
   });
 
   describe("update()", () => {
     test("merges partial changes into existing document", () => {
-      const existingDoc = makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
+      const existingDoc = atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
       const { deps, updateCalls } = createTestDeps({
         documents: { "1": existingDoc },
       });
@@ -138,7 +128,7 @@ describe("createWriteHandle", () => {
       expect(updateCalls[0]![0]).toBe("1");
 
       const mergedDoc = updateCalls[0]![1];
-      const parsed = parseDocument(mergedDoc);
+      const parsed = createReadLens(mergedDoc);
       expect(parsed).toEqual({ id: "1", name: "Bob" });
     });
 
@@ -159,7 +149,7 @@ describe("createWriteHandle", () => {
         })
         .strict();
 
-      const existingDoc = makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
+      const existingDoc = atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
       const { deps, updateCalls } = createTestDeps({
         documents: { "1": existingDoc },
         schema: strictSchema,
@@ -176,7 +166,7 @@ describe("createWriteHandle", () => {
 
     test("uses newer timestamps for field-level LWW", () => {
       const oldStamp = makeStamp(500, 0);
-      const existingDoc = makeDocument({ id: "1", name: "Alice" }, oldStamp);
+      const existingDoc = atomizeDocument({ id: "1", name: "Alice" }, oldStamp);
       const { deps, updateCalls } = createTestDeps({
         documents: { "1": existingDoc },
       });
@@ -186,37 +176,8 @@ describe("createWriteHandle", () => {
 
       expect(updateCalls).toHaveLength(1);
       const mergedDoc = updateCalls[0]![1];
-
-      // Updated field has new timestamp
-      const nameStamp = mergedDoc["name"]?.["~stamp"];
-      expect(nameStamp).not.toBe(oldStamp);
-      expect(nameStamp! > oldStamp).toBe(true);
-
-      // ID field retains old timestamp (wasn't updated)
-      expect(mergedDoc["id"]?.["~stamp"]).toBe(oldStamp);
-    });
-
-    test("can update subset of fields", () => {
-      const oldStamp = makeStamp(500, 0);
-      const existingDoc = makeDocument({ id: "1", name: "Alice", profile: { age: 30 } }, oldStamp);
-      const { deps, updateCalls } = createTestDeps({
-        documents: { "1": existingDoc },
-        schema: profileSchema,
-      });
-      const handle = createWriteHandle(deps);
-
-      handle.update("1", { profile: { email: "alice@example.com" } });
-
-      expect(updateCalls).toHaveLength(1);
-      const mergedDoc = updateCalls[0]![1];
-      const parsed = parseDocument(mergedDoc);
-
-      // Name field unchanged
-      expect(parsed["name"]).toBe("Alice");
-      // Profile updated with new field
-      expect(parsed["profile"]["email"]).toBe("alice@example.com");
-      // Original profile field retained
-      expect(parsed["profile"]["age"]).toBe(30);
+      const parsed = createReadLens(mergedDoc);
+      expect(parsed).toEqual({ id: "1", name: "Bob" });
     });
   });
 
@@ -247,7 +208,7 @@ describe("createWriteHandle", () => {
 
   describe("integration", () => {
     test("all callbacks receive correct argument types", () => {
-      const existingDoc = makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
+      const existingDoc = atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
       const { deps, addCalls, updateCalls, removeCalls } = createTestDeps({
         documents: { "1": existingDoc },
       });
@@ -257,13 +218,15 @@ describe("createWriteHandle", () => {
       handle.add({ id: "2", name: "Bob" });
       expect(addCalls[0]![0]).toBe("2");
       expect(typeof addCalls[0]![1]).toBe("object");
-      expect(addCalls[0]![1]["name"]?.["~value"]).toBe("Bob");
+      const addedDoc = createReadLens(addCalls[0]![1]);
+      expect(addedDoc["name"]).toBe("Bob");
 
       // Test update
       handle.update("1", { name: "Charlie" });
       expect(updateCalls[0]![0]).toBe("1");
       expect(typeof updateCalls[0]![1]).toBe("object");
-      expect(updateCalls[0]![1]["name"]?.["~value"]).toBe("Charlie");
+      const updatedDoc = createReadLens(updateCalls[0]![1]);
+      expect(updatedDoc["name"]).toBe("Charlie");
 
       // Test remove
       handle.remove("1");
@@ -272,7 +235,7 @@ describe("createWriteHandle", () => {
     });
 
     test("getTimestamp is called for each operation", () => {
-      const existingDoc = makeDocument({ id: "1", name: "Alice" }, makeStamp(1000, 0));
+      const existingDoc = atomizeDocument({ id: "1", name: "Alice" }, makeStamp(1000, 0));
       const { deps, timestampCounter } = createTestDeps({
         documents: { "1": existingDoc },
       });

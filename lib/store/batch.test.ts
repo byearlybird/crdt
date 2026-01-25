@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { type Document, type DocumentId, makeDocument, makeStamp, parseDocument } from "../core";
+import { type DocumentId, makeStamp } from "../core";
+import type { Document } from "../core-two";
+import { createReadLens } from "../core-two";
+import { atomizeDocument } from "./write";
 import { executeBatch, type BatchDependencies } from "./batch";
 import { createTimestampGenerator, noteSchema, profileSchema, userSchema } from "./test-utils";
 import type { AnyObject, CollectionConfig } from "./schema";
@@ -47,7 +50,7 @@ describe("executeBatch", () => {
       const deps = createTestDeps({
         documents: {
           users: {
-            "1": makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0)),
+            "1": atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0)),
           },
         },
       });
@@ -87,7 +90,7 @@ describe("executeBatch", () => {
       expect(result.changes).not.toBeNull();
       expect(result.changes!.documents["users"]).toBeDefined();
       expect(result.changes!.documents["users"]!["1"]).toBeDefined();
-      expect(parseDocument(result.changes!.documents["users"]!["1"]!)).toEqual({
+      expect(createReadLens(result.changes!.documents["users"]!["1"]!)).toEqual({
         id: "1",
         name: "Alice",
       });
@@ -95,7 +98,7 @@ describe("executeBatch", () => {
     });
 
     test("tracks changes for update() operation", () => {
-      const existingDoc = makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
+      const existingDoc = atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
       const deps = createTestDeps({
         documents: {
           users: { "1": existingDoc },
@@ -109,7 +112,7 @@ describe("executeBatch", () => {
       expect(result.changes).not.toBeNull();
       expect(result.changes!.documents["users"]).toBeDefined();
       expect(result.changes!.documents["users"]!["1"]).toBeDefined();
-      expect(parseDocument(result.changes!.documents["users"]!["1"]!)).toEqual({
+      expect(createReadLens(result.changes!.documents["users"]!["1"]!)).toEqual({
         id: "1",
         name: "Bob",
       });
@@ -117,7 +120,7 @@ describe("executeBatch", () => {
     });
 
     test("tracks changes for remove() operation", () => {
-      const existingDoc = makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
+      const existingDoc = atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
       const deps = createTestDeps({
         documents: {
           users: { "1": existingDoc },
@@ -142,7 +145,7 @@ describe("executeBatch", () => {
         ],
         documents: {
           users: {},
-          notes: { "1": makeDocument({ id: "1", content: "Note 1" }, makeStamp(500, 0)) },
+          notes: { "1": atomizeDocument({ id: "1", content: "Note 1" }, makeStamp(500, 0)) },
         },
       });
 
@@ -161,7 +164,7 @@ describe("executeBatch", () => {
 
   describe("copy-on-write isolation", () => {
     test("isolates document changes (copy-on-write)", () => {
-      const existingDoc = makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
+      const existingDoc = atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
       const deps = createTestDeps({
         documents: {
           users: { "1": existingDoc },
@@ -173,13 +176,13 @@ describe("executeBatch", () => {
       }, deps);
 
       // Original deps.documents should be unchanged
-      expect(parseDocument(deps.documents["users"]!["1"]!)).toEqual({
+      expect(createReadLens(deps.documents["users"]!["1"]!)).toEqual({
         id: "1",
         name: "Alice",
       });
 
       // Batch result should have the updated document
-      expect(parseDocument(result.changes!.documents["users"]!["1"]!)).toEqual({
+      expect(createReadLens(result.changes!.documents["users"]!["1"]!)).toEqual({
         id: "1",
         name: "Bob",
       });
@@ -193,10 +196,10 @@ describe("executeBatch", () => {
           { name: "profiles", schema: profileSchema },
         ],
         documents: {
-          users: { "1": makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0)) },
-          notes: { "1": makeDocument({ id: "1", content: "Note" }, makeStamp(500, 0)) },
+          users: { "1": atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0)) },
+          notes: { "1": atomizeDocument({ id: "1", content: "Note" }, makeStamp(500, 0)) },
           profiles: {
-            "1": makeDocument({ id: "1", name: "Alice", profile: {} }, makeStamp(500, 0)),
+            "1": atomizeDocument({ id: "1", name: "Alice", profile: {} }, makeStamp(500, 0)),
           },
         },
       });
@@ -247,7 +250,7 @@ describe("executeBatch", () => {
     });
 
     test("read operations respect tombstones", () => {
-      const existingDoc = makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
+      const existingDoc = atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
       const deps = createTestDeps({
         documents: {
           users: { "1": existingDoc },
@@ -266,7 +269,7 @@ describe("executeBatch", () => {
     });
 
     test("combines read and write handles correctly", () => {
-      const existingDoc = makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
+      const existingDoc = atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
       const deps = createTestDeps({
         documents: {
           users: { "1": existingDoc },
@@ -321,7 +324,7 @@ describe("executeBatch", () => {
     test("proxy caches initialized handles", () => {
       const deps = createTestDeps({
         documents: {
-          users: { "1": makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0)) },
+          users: { "1": atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0)) },
         },
       });
 
@@ -336,7 +339,7 @@ describe("executeBatch", () => {
 
   describe("integration tests", () => {
     test("complete batch workflow (add + update + remove)", () => {
-      const existingDoc = makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
+      const existingDoc = atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
       const deps = createTestDeps({
         documents: {
           users: { "1": existingDoc },
@@ -353,7 +356,7 @@ describe("executeBatch", () => {
       expect(result.changes).not.toBeNull();
       expect(result.changes!.event["users"]).toBe(true);
       expect(result.changes!.documents["users"]!["1"]).toBeDefined();
-      const parsed = parseDocument(result.changes!.documents["users"]!["1"]!);
+      const parsed = createReadLens(result.changes!.documents["users"]!["1"]!);
       expect(parsed["name"]).toBe("Alice Updated");
       expect(result.changes!.documents["users"]!["2"]).toBeUndefined();
       expect(result.changes!.tombstones["2"]).toBeDefined();
@@ -381,8 +384,8 @@ describe("executeBatch", () => {
           { name: "notes", schema: noteSchema },
         ],
         documents: {
-          users: { "1": makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0)) },
-          notes: { "1": makeDocument({ id: "1", content: "Note 1" }, makeStamp(500, 0)) },
+          users: { "1": atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0)) },
+          notes: { "1": atomizeDocument({ id: "1", content: "Note 1" }, makeStamp(500, 0)) },
         },
       });
 
@@ -454,10 +457,10 @@ describe("executeBatch", () => {
           { name: "profiles", schema: profileSchema },
         ],
         documents: {
-          users: { "1": makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0)) },
-          notes: { "1": makeDocument({ id: "1", content: "Note" }, makeStamp(500, 0)) },
+          users: { "1": atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0)) },
+          notes: { "1": atomizeDocument({ id: "1", content: "Note" }, makeStamp(500, 0)) },
           profiles: {
-            "1": makeDocument({ id: "1", name: "Alice", profile: {} }, makeStamp(500, 0)),
+            "1": atomizeDocument({ id: "1", name: "Alice", profile: {} }, makeStamp(500, 0)),
           },
         },
       });
@@ -500,7 +503,7 @@ describe("executeBatch", () => {
     });
 
     test("removed documents deleted from collection but tombstone persists", () => {
-      const existingDoc = makeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
+      const existingDoc = atomizeDocument({ id: "1", name: "Alice" }, makeStamp(500, 0));
       const deps = createTestDeps({
         documents: {
           users: { "1": existingDoc },

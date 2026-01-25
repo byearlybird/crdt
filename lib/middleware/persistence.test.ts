@@ -78,9 +78,9 @@ describe("createPersistenceMiddleware", () => {
       collections: {
         users: {
           "1": {
-            id: { "~value": "1", "~stamp": "1000:0" },
-            name: { "~value": "Alice", "~stamp": "1000:0" },
-            profile: { "~value": {}, "~stamp": "1000:0" },
+            id: { "~val": "1", "~ts": "1000:0" },
+            name: { "~val": "Alice", "~ts": "1000:0" },
+            profile: { "~val": {}, "~ts": "1000:0" },
           },
         },
       },
@@ -364,9 +364,9 @@ describe("createPersistenceMiddleware", () => {
       collections: {
         users: {
           "1": {
-            id: { "~value": "1", "~stamp": "1000:0" },
-            name: { "~value": "Alice", "~stamp": "1000:0" },
-            profile: { "~value": {}, "~stamp": "1000:0" },
+            id: { "~val": "1", "~ts": "1000:0" },
+            name: { "~val": "Alice", "~ts": "1000:0" },
+            profile: { "~val": {}, "~ts": "1000:0" },
           },
         },
       },

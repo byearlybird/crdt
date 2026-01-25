@@ -1,12 +1,12 @@
 import {
   advanceClock,
   makeStamp,
-  mergeCollections,
   mergeTombstones,
-  type Document,
   type DocumentId,
   type StoreState,
 } from "../core";
+import type { Document } from "../core-two";
+import { mergeCollections } from "../core-two";
 import type { AnyObject, CollectionConfig, CollectionName, StoreConfig } from "./schema";
 import { executeBatch, type BatchDependencies, type BatchHandles } from "./batch";
 import { createReadHandles, type ReadHandle, type ReadHandles } from "./read";
