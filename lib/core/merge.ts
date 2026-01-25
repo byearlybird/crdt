@@ -1,118 +1,70 @@
-import type { Clock } from "./clock";
-import { advanceClock } from "./clock";
-import type { DocumentId } from "./collection";
-import type { Collection } from "../core-two";
-import { mergeCollections } from "../core-two";
+import { Atomizer } from "./atomizer";
+import { KEYS } from "./types";
+import type { Document, Collection, DocumentId } from "./types";
 import type { Tombstones } from "./tombstone";
-import { mergeTombstones } from "./tombstone";
 
-export type StoreState = {
-  clock: Clock;
-  collections: Record<string, Collection>;
-  tombstones: Tombstones;
-};
+/** Merges incoming doc fields into local. Adds new keys from incoming; LWW on conflicts. */
+export function mergeDocs(local: Document<any>, incoming: Document<any>): Document<any> {
+  const merged = { ...local } as Document<any>;
+  let hasChanges = false;
 
-export type CollectionDiff = {
-  added: DocumentId[]; // IDs new to local
-  updated: DocumentId[]; // IDs that existed in both (merged)
-  removed: DocumentId[]; // IDs tombstoned by remote
-};
+  for (const key of Object.keys(incoming)) {
+    const localAtom = local[key];
+    const incomingAtom = incoming[key];
+    if (incomingAtom === undefined) continue;
 
-export type SnapshotDiff = {
-  collections: Record<string, CollectionDiff>;
-};
-
-export type MergeResult = {
-  merged: StoreState;
-  diff: SnapshotDiff;
-};
-
-export function mergeSnapshots(local: StoreState, remote: StoreState): MergeResult {
-  // Merge clocks
-  const mergedClock = advanceClock(local.clock, remote.clock);
-
-  // Merge tombstones
-  const mergedTombstones = mergeTombstones(local.tombstones, remote.tombstones);
-
-  // Merge collections and compute diff
-  const mergedCollections: Record<string, Collection> = {};
-  const diff: SnapshotDiff = { collections: {} };
-
-  const allCollectionNames = new Set([
-    ...Object.keys(local.collections),
-    ...Object.keys(remote.collections),
-  ]);
-
-  for (const name of allCollectionNames) {
-    const localCollection = local.collections[name] ?? {};
-    const remoteCollection = remote.collections[name] ?? {};
-
-    // Filter remote by merged tombstones (documents that are tombstoned shouldn't be added)
-    const filteredRemote: Collection = {};
-    for (const [id, doc] of Object.entries(remoteCollection)) {
-      if (!mergedTombstones[id]) {
-        filteredRemote[id] = doc;
+    if (!localAtom) {
+      if (Atomizer.isAtom(incomingAtom)) {
+        merged[key] = incomingAtom;
+        hasChanges = true;
       }
+      continue;
     }
 
-    // Merge collections
-    const mergedCollection = mergeCollections(localCollection, filteredRemote, mergedTombstones);
-    mergedCollections[name] = mergedCollection;
-
-    // Compute diff
-    const added: DocumentId[] = [];
-    const updated: DocumentId[] = [];
-    const removed: DocumentId[] = [];
-
-    // Get live (non-tombstoned) document IDs from local
-    const localLive = new Set<DocumentId>();
-    for (const id of Object.keys(localCollection)) {
-      if (!local.tombstones[id]) {
-        localLive.add(id);
+    if (Atomizer.isAtom(localAtom) && Atomizer.isAtom(incomingAtom)) {
+      if (incomingAtom[KEYS.TS] > localAtom[KEYS.TS]) {
+        merged[key] = incomingAtom;
+        hasChanges = true;
       }
-    }
-
-    // Get live document IDs from merged result
-    const mergedLive = new Set<DocumentId>();
-    for (const id of Object.keys(mergedCollection)) {
-      if (!mergedTombstones[id]) {
-        mergedLive.add(id);
-      }
-    }
-
-    // Documents in remote that weren't in local (after filtering tombstones)
-    for (const id of Object.keys(filteredRemote)) {
-      if (!localLive.has(id)) {
-        added.push(id);
-      }
-    }
-
-    // Documents that existed in both local and remote (merged)
-    for (const id of Object.keys(filteredRemote)) {
-      if (localLive.has(id)) {
-        updated.push(id);
-      }
-    }
-
-    // Documents that were in local but are now tombstoned by remote
-    for (const id of localLive) {
-      if (!mergedLive.has(id)) {
-        removed.push(id);
-      }
-    }
-
-    // Only include collection in diff if there are changes
-    if (added.length > 0 || updated.length > 0 || removed.length > 0) {
-      diff.collections[name] = { added, updated, removed };
     }
   }
 
-  return {
-    merged: {
-      clock: mergedClock,
-      collections: mergedCollections,
-      tombstones: mergedTombstones,
-    },
-    diff,
-  };
+  return hasChanges ? merged : local;
+}
+
+/**
+ * Merges two collections, respecting tombstones.
+ * Documents that are tombstoned are excluded from the result.
+ * For documents that exist in both collections, fields are merged using LWW semantics.
+ */
+export function mergeCollections<T extends object>(
+  local: Collection<T>,
+  incoming: Collection<T>,
+  tombstones: Tombstones,
+): Collection<T> {
+  const mergedCollection: Record<DocumentId, Document<T>> = {};
+  const allDocumentIds = new Set([...Object.keys(local), ...Object.keys(incoming)]);
+
+  for (const id of allDocumentIds) {
+    // Skip tombstoned documents
+    if (tombstones[id]) {
+      continue;
+    }
+
+    const localDoc = local[id];
+    const incomingDoc = incoming[id];
+
+    if (localDoc && incomingDoc) {
+      // Both exist: merge documents
+      mergedCollection[id] = mergeDocs(localDoc, incomingDoc) as Document<T>;
+    } else if (localDoc) {
+      // Only in local: keep it
+      mergedCollection[id] = localDoc;
+    } else if (incomingDoc) {
+      // Only in incoming: keep it
+      mergedCollection[id] = incomingDoc;
+    }
+  }
+
+  return mergedCollection;
 }

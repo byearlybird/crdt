@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { type DocumentId, makeStamp } from "../core";
-import type { Document } from "../core-two";
+import { type Document, type DocumentId, makeStamp } from "../core";
 import { atomizeDocument } from "./write";
 import { createReadHandle, createReadHandles, type ReadDependencies } from "./read";
 

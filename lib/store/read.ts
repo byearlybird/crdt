@@ -1,6 +1,5 @@
-import type { DocumentId, StoreState, Tombstones } from "../core";
-import type { Document } from "../core-two";
-import { createReadLens } from "../core-two";
+import type { Document, DocumentId, StoreState, Tombstones } from "../core";
+import { createReadLens } from "../core";
 import { isDeleted } from "./utils";
 import type { AnyObject, CollectionConfig, CollectionName, Output, StoreConfig } from "./schema";
 

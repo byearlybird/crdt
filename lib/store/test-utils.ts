@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { makeStamp } from "../core";
-import type { Document } from "../core-two";
+import { makeStamp, type Document } from "../core";
 import { atomizeDocument } from "./write";
 import { createStore } from "./store";
 

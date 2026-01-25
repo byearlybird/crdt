@@ -309,6 +309,12 @@ The store exposes collection handles directly. Each collection name becomes a pr
 
 For full type definitions, see the TypeScript types exported from the package.
 
+## Package structure
+
+- **`lib/core/`** – CRDT primitives: hybrid logical clock, per-field atoms (LWW), tombstones, and document/collection merging.
+- **`lib/store/`** – Store API with collections, batching, queries, and change subscriptions.
+- **`lib/middleware/`** – Optional middleware (e.g. persistence).
+
 ## Development
 
 ```bash

@@ -54,7 +54,7 @@ async function loadState(key: string): Promise<StoreState | null> {
           try {
             const state = JSON.parse(result) as StoreState;
             resolve(state);
-          } catch (error) {
+          } catch {
             resolve(null);
           }
         } else {
@@ -62,7 +62,7 @@ async function loadState(key: string): Promise<StoreState | null> {
         }
       };
     });
-  } catch (error) {
+  } catch {
     // Handle errors gracefully - return null if DB can't be opened
     return null;
   }

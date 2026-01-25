@@ -1,8 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { type DocumentId, makeStamp } from "../core";
-import type { Document } from "../core-two";
-import { createReadLens } from "../core-two";
+import { type Document, type DocumentId, createReadLens, makeStamp } from "../core";
 import { atomizeDocument, createWriteHandle, type WriteDependencies } from "./write";
 import { profileSchema, userSchema } from "./test-utils";
 

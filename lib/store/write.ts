@@ -1,8 +1,7 @@
 import type { AnyObject, CollectionConfig, CollectionName, Input, StoreConfig } from "./schema";
 import { validate } from "./schema";
-import type { DocumentId, StoreState } from "../core";
-import type { Document } from "../core-two";
-import { Atomizer, mergeDocs, createReadLens } from "../core-two";
+import type { Document, DocumentId, StoreState } from "../core";
+import { Atomizer, createReadLens, mergeDocs } from "../core";
 
 type DeepPartial<T> = T extends object ? { [P in keyof T]?: DeepPartial<T[P]> } : T;
 

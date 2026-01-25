@@ -1,7 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { type DocumentId, makeStamp } from "../core";
-import type { Document } from "../core-two";
-import { createReadLens } from "../core-two";
+import { type Document, type DocumentId, createReadLens, makeStamp } from "../core";
 import { atomizeDocument } from "./write";
 import { executeBatch, type BatchDependencies } from "./batch";
 import { createTimestampGenerator, noteSchema, profileSchema, userSchema } from "./test-utils";
