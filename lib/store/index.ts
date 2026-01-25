@@ -1,5 +1,6 @@
 export { createStore } from "./store";
-export type { StoreAPI, StoreChangeEvent, StoreCollectionHandles } from "./store";
+export type { StoreAPI, StoreCollectionHandles } from "./store";
+export type { StoreChangeEvent } from "./types";
 export type { StoreState } from "../core";
 export type { AnyObject, CollectionConfig, StoreConfig } from "./schema";
 export type { TransactHandle, TransactHandles, TransactDependencies } from "./transact";

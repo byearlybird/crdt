@@ -1,6 +1,6 @@
 import type { AnyObject, CollectionConfig, CollectionName, StoreConfig } from "./schema";
 import type { Document, DocumentId, Tombstones } from "../core";
-import type { StoreChangeEvent } from "./store";
+import type { StoreChangeEvent } from "./types";
 import { createReadHandle, type ReadHandle } from "./read";
 import { createWriteHandle, type WriteCallbacks, type WriteHandle } from "./write";
 

@@ -3,17 +3,10 @@ import {
   makeStamp,
   mergeCollections,
   mergeTombstones,
-  type Document,
-  type DocumentId,
   type StoreState,
 } from "../core";
 import type { AnyObject, CollectionConfig, CollectionName, StoreConfig } from "./schema";
-import {
-  executeTransact,
-  type TransactDependencies,
-  type TransactHandle,
-  type TransactHandles,
-} from "./transact";
+import { executeTransact, type TransactDependencies, type TransactHandle } from "./transact";
 import { createReadHandles, type ReadHandle, type ReadHandles } from "./read";
 import { createWriteHandles, type WriteHandle, type WriteHandles } from "./write";
 import {
@@ -21,11 +14,9 @@ import {
   type MiddlewareContext,
   type StoreMiddleware,
 } from "./middleware";
-import { createChangeEvent } from "./utils";
-
-export type StoreChangeEvent<T extends StoreConfig> = {
-  [K in keyof T]?: true;
-};
+import { notifyListeners } from "./events";
+import type { StoreChangeEvent } from "./types";
+import { createBuildCallbacks } from "./callbacks";
 
 export type StoreCollectionHandles<T extends StoreConfig> = {
   [N in CollectionName<T>]: ReadHandle<T[N]> & WriteHandle<T[N]>;
@@ -45,13 +36,6 @@ export type StoreAPI<T extends StoreConfig> = {
   dispose(): Promise<void>;
 } & ReadHandles<T> &
   WriteHandles<T>;
-
-function notifyListeners<T extends StoreConfig>(
-  event: StoreChangeEvent<T>,
-  listeners: Set<(event: StoreChangeEvent<T>) => void>,
-): void {
-  listeners.forEach((listener) => listener(event));
-}
 
 export function createStore<T extends StoreConfig>(config: { collections: T }): StoreAPI<T> {
   let isInitialized = false;
@@ -109,35 +93,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     return makeStamp(state.clock.ms, state.clock.seq);
   };
 
-  const buildCallbacks = (collectionName: CollectionName<T>) => ({
-    onAdd: (id: DocumentId, document: Document) => {
-      const updated = { [id]: document };
-      state.collections[collectionName] = mergeCollections(
-        state.collections[collectionName] ?? {},
-        updated,
-        state.tombstones,
-      );
-      notifyListeners(createChangeEvent(collectionName), listeners);
-    },
-    onUpdate: (id: DocumentId, document: Document) => {
-      const updated = { [id]: document };
-      state.collections[collectionName] = mergeCollections(
-        state.collections[collectionName] ?? {},
-        updated,
-        state.tombstones,
-      );
-      notifyListeners(createChangeEvent(collectionName), listeners);
-    },
-    onRemove: (id: DocumentId, tombstoneStamp: string) => {
-      state.tombstones = mergeTombstones(state.tombstones, { [id]: tombstoneStamp });
-      state.collections[collectionName] = mergeCollections(
-        state.collections[collectionName] ?? {},
-        {},
-        state.tombstones,
-      );
-      notifyListeners(createChangeEvent(collectionName), listeners);
-    },
-  });
+  const buildCallbacks = createBuildCallbacks<T>({ state, listeners });
 
   const writeHandles = createWriteHandles<T>({
     configs,
@@ -168,12 +124,12 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
         }
       }
 
-      const unsubscribe = (listener: (event: StoreChangeEvent<T>) => void) => {
+      const addListener = (listener: (event: StoreChangeEvent<T>) => void) => {
         listeners.add(listener);
         return () => listeners.delete(listener);
       };
 
-      const unsubscribeFn = unsubscribe((event) => {
+      const unsubscribe = addListener((event) => {
         // Check if any of the subscribed collections changed
         const hasRelevantChange = collections.some((name) => event[name as keyof T]);
         if (hasRelevantChange) {
@@ -181,7 +137,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
         }
       });
 
-      return unsubscribeFn;
+      return unsubscribe;
     },
     transact(collections, callback) {
       const result = executeTransact(collections, callback, getTransactDeps());

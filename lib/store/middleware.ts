@@ -1,5 +1,5 @@
 import type { StoreConfig } from "./schema";
-import type { StoreChangeEvent } from "./store";
+import type { StoreChangeEvent } from "./types";
 import type { StoreState } from "../core";
 
 export type MiddlewareContext<T extends StoreConfig> = {
