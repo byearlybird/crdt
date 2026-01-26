@@ -1,10 +1,4 @@
-import {
-  advanceClock,
-  makeStamp,
-  mergeTombstones,
-  type Collection,
-  type StoreState,
-} from "../core";
+import { advanceClock, makeStamp, type Collection, type StoreState } from "../core";
 import { createEmitter } from "../emitter";
 import { createHandle, type Handle } from "../store-two/collection-handle";
 import type { CollectionName, Output, StoreConfig } from "./schema";
@@ -15,7 +9,15 @@ import {
   type StoreMiddleware,
 } from "./middleware";
 import type { StoreChangeEvent } from "./types";
-import { createChangeEvent } from "./events";
+import {
+  applyStateSnapshot,
+  createChangeEvent,
+  ensureInitialized,
+  ensureNotInitialized,
+  getCollectionConfig,
+  hasRelevantChange,
+  validateCollectionNames,
+} from "./store-utils";
 
 export type StoreAPI<T extends StoreConfig> = {
   subscribe<K extends (keyof T & string)[]>(
@@ -31,7 +33,6 @@ export type StoreAPI<T extends StoreConfig> = {
 
 export function createStore<T extends StoreConfig>(config: { collections: T }): StoreAPI<T> {
   let isInitialized = false;
-
   const emitter = createEmitter<StoreChangeEvent<T>>();
   const middlewareManager = createMiddlewareManager<T>();
 
@@ -41,79 +42,63 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     collections: {},
   };
 
-  const collectionNames = Object.keys(config.collections) as CollectionName<T>[];
-
-  for (const name of Object.keys(config.collections)) {
-    state.collections[name] = {};
-  }
-
-  const tick = () => {
+  const getNextStamp = () => {
     state.clock = advanceClock(state.clock, { ms: Date.now(), seq: 0 });
     return makeStamp(state.clock.ms, state.clock.seq);
   };
 
-  const getMiddlewareContext = (): MiddlewareContext<T> => ({
-    subscribe: (listener) => {
-      return emitter.subscribe(listener);
-    },
-    notify: (event) => {
-      emitter.emit(event);
-    },
-    getState: () => ({ ...state }),
-    setState: (snapshot) => {
-      state.clock = advanceClock(state.clock, snapshot.clock);
-      state.tombstones = mergeTombstones(state.tombstones, snapshot.tombstones);
+  function createMiddlewareContext(): MiddlewareContext<T> {
+    return {
+      subscribe: (listener) => emitter.subscribe(listener),
+      notify: (event) => emitter.emit(event),
+      getState: () => ({ ...state }),
+      setState: (snapshot) => applyStateSnapshot(state, snapshot),
+    };
+  }
 
-      // Replace collections from snapshot (filtered by tombstones)
-      for (const [name, collectionData] of Object.entries(snapshot.collections)) {
-        const filtered: typeof collectionData = {};
-        for (const [id, doc] of Object.entries(collectionData)) {
-          if (!state.tombstones[id]) {
-            filtered[id] = doc;
-          }
-        }
-        state.collections[name] = filtered;
-      }
-    },
-  });
+  const middlewareContext = createMiddlewareContext();
 
-  // Create handles for each collection
-  const collectionHandles = {} as {
-    [N in CollectionName<T>]: Handle<Output<T[N]["schema"]>>;
-  };
-
-  for (const collectionName of collectionNames) {
-    const collectionConfig = config.collections[collectionName];
-    if (!collectionConfig) {
-      throw new Error(`Collection config for "${collectionName}" not found`);
-    }
-    const cfg = collectionConfig; // Capture for closure
-
-    collectionHandles[collectionName] = createHandle({
+  function createHandleOptions<N extends CollectionName<T>>(
+    collectionName: N,
+    collectionConfig: T[N],
+  ) {
+    return {
       getCollection: () =>
         state.collections[collectionName] as Collection<Output<T[typeof collectionName]["schema"]>>,
       getTombstones: () => state.tombstones,
-      getTimestamp: tick,
-      validate: (data) => validate(cfg.schema, data as Record<string, unknown>),
-      getId: (data) => data[cfg.keyPath] as string,
-      onMutate: () => emitter.emit(createChangeEvent<T>(collectionName)),
-    });
+      getTimestamp: getNextStamp,
+      validate: (data: unknown) =>
+        validate(collectionConfig.schema, data as Record<string, unknown>),
+      getId: (data: Output<T[N]["schema"]>) => data[collectionConfig.keyPath] as string,
+      onMutate: () => emitter.emit(createChangeEvent(collectionName)),
+    };
   }
+
+  function createCollectionHandles(): {
+    [N in CollectionName<T>]: Handle<Output<T[N]["schema"]>>;
+  } {
+    const handles = {} as {
+      [N in CollectionName<T>]: Handle<Output<T[N]["schema"]>>;
+    };
+
+    for (const collectionName of Object.keys(config.collections) as CollectionName<T>[]) {
+      state.collections[collectionName] = {};
+      const collectionConfig = getCollectionConfig(config.collections, collectionName);
+      handles[collectionName] = createHandle(createHandleOptions(collectionName, collectionConfig));
+    }
+
+    return handles;
+  }
+
+  const collectionHandles = createCollectionHandles();
 
   const api: StoreAPI<T> = {
     ...collectionHandles,
     subscribe(collections, callback) {
-      // Validate all collections exist
-      for (const collectionName of collections) {
-        if (!(collectionName in config.collections)) {
-          throw new Error(`Collection "${collectionName}" not found`);
-        }
-      }
+      validateCollectionNames(collections, config.collections);
 
       const unsubscribe = emitter.subscribe((event) => {
-        // Check if any of the subscribed collections changed
-        const hasRelevantChange = collections.some((name) => event[name as keyof T]);
-        if (hasRelevantChange) {
+        if (hasRelevantChange(event, collections)) {
           callback(event);
         }
       });
@@ -121,26 +106,17 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
       return unsubscribe;
     },
     use(middleware) {
-      if (isInitialized) {
-        throw new Error("Cannot add middleware after initialization");
-      }
+      ensureNotInitialized(isInitialized, "Cannot add middleware after initialization");
       middlewareManager.use(middleware);
       return this;
     },
     async init() {
-      if (isInitialized) {
-        throw new Error("Store already initialized");
-      }
-
-      await middlewareManager.runInit(getMiddlewareContext());
-
+      ensureNotInitialized(isInitialized, "Store already initialized");
+      await middlewareManager.runInit(middlewareContext);
       isInitialized = true;
     },
     async dispose() {
-      if (!isInitialized) {
-        throw new Error("Store not initialized");
-      }
-
+      ensureInitialized(isInitialized, "Store not initialized");
       await middlewareManager.runDispose();
       isInitialized = false;
     },
