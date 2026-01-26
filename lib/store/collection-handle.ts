@@ -10,8 +10,8 @@ import {
 export type Handle<T, Id extends string = string> = {
   get(id: Id): T | undefined;
   list(): T[];
-  put(data: T): void;
-  patch(id: Id, data: Partial<T>): void;
+  put(data: T): T;
+  patch(id: Id, data: Partial<T>): T;
   remove(id: Id): void;
 };
 
@@ -57,6 +57,7 @@ export function createHandle<T extends Record<string, unknown>, Id extends strin
       }
       getCollection()[id] = Atomizer.atomize<T>(validated, getTimestamp());
       onMutate?.();
+      return createReadLens<T>(getCollection()[id]!);
     },
     patch(id, data) {
       const collection = getCollection();
@@ -71,6 +72,7 @@ export function createHandle<T extends Record<string, unknown>, Id extends strin
       validate(plain);
       collection[id] = merged;
       onMutate?.();
+      return plain;
     },
     remove(id) {
       getTombstones()[id] = getTimestamp();

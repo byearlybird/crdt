@@ -471,3 +471,164 @@ describe("subscribe", () => {
     expect(callback).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("transact", () => {
+  test("transaction throws error for non-existent collection", () => {
+    const store = createMultiCollectionStore();
+
+    expect(() => {
+      store.transact(["users", "orders" as any], (_tx) => {
+        // This should never execute
+      });
+    }).toThrow('Collection "orders" not found');
+  });
+
+  test("transaction with multiple collections commits atomically", () => {
+    const store = createMultiCollectionStore();
+
+    store.transact(["users", "notes"], (tx) => {
+      const user = tx.users.put({ id: "u1", name: "Alice", profile: {} });
+      tx.notes.put({ id: "n1", content: `Note for ${user.name}` });
+    });
+
+    expect(store.users.get("u1")).toEqual({ id: "u1", name: "Alice", profile: {} });
+    expect(store.notes.get("n1")).toEqual({ id: "n1", content: "Note for Alice" });
+  });
+
+  test("transaction rollback on error", () => {
+    const store = createMultiCollectionStore();
+
+    store.users.put({ id: "u1", name: "Alice", profile: {} });
+
+    expect(() => {
+      store.transact(["users", "notes"], (tx) => {
+        tx.users.put({ id: "u2", name: "Bob", profile: {} });
+        tx.notes.put({ id: "n1", content: "Hello" });
+        throw new Error("Transaction failed");
+      });
+    }).toThrow("Transaction failed");
+
+    // Original state should be preserved
+    expect(store.users.get("u1")).toEqual({ id: "u1", name: "Alice", profile: {} });
+    expect(store.users.get("u2")).toBeUndefined();
+    expect(store.notes.get("n1")).toBeUndefined();
+  });
+
+  test("transaction emits single event on commit", () => {
+    const store = createMultiCollectionStore();
+
+    const events: any[] = [];
+    store.subscribe((event) => {
+      events.push(event);
+    });
+
+    store.transact(["users", "notes"], (tx) => {
+      tx.users.put({ id: "u1", name: "Alice", profile: {} });
+      tx.notes.put({ id: "n1", content: "Hello" });
+    });
+
+    // Should emit only one event with both collections
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({ users: true, notes: true });
+  });
+
+  test("transaction return value is passed through", () => {
+    const store = createMultiCollectionStore();
+
+    const result = store.transact(["users"], (tx) => {
+      const user = tx.users.put({ id: "u1", name: "Alice", profile: {} });
+      return user;
+    });
+
+    expect(result).toEqual({ id: "u1", name: "Alice", profile: {} });
+  });
+
+  test("transaction with cross-collection references", () => {
+    const store = createMultiCollectionStore();
+
+    store.transact(["users", "notes"], (tx) => {
+      const user = tx.users.put({ id: "u1", name: "Alice", profile: {} });
+      tx.notes.put({ id: "n1", content: `Note for user ${user.id}` });
+    });
+
+    const note = store.notes.get("n1");
+    expect(note).toEqual({ id: "n1", content: "Note for user u1" });
+  });
+
+  test("transaction only emits event for mutated collections", () => {
+    const store = createMultiCollectionStore();
+
+    const events: any[] = [];
+    store.subscribe((event) => {
+      events.push(event);
+    });
+
+    store.transact(["users", "notes"], (tx) => {
+      // Only mutate users, not notes
+      tx.users.put({ id: "u1", name: "Alice", profile: {} });
+    });
+
+    // Should only include users in the event
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({ users: true });
+    expect(events[0]).not.toHaveProperty("notes");
+  });
+
+  test("transaction with no mutations emits no event", () => {
+    const store = createMultiCollectionStore();
+
+    store.users.put({ id: "u1", name: "Alice", profile: {} });
+
+    const events: any[] = [];
+    store.subscribe((event) => {
+      events.push(event);
+    });
+
+    store.transact(["users", "notes"], (tx) => {
+      // Just read, don't mutate
+      const user = tx.users.get("u1");
+      expect(user).toEqual({ id: "u1", name: "Alice", profile: {} });
+    });
+
+    // Should not emit any event
+    expect(events).toHaveLength(0);
+  });
+
+  test("transaction can use returned documents from put", () => {
+    const store = createMultiCollectionStore();
+
+    store.transact(["users", "notes"], (tx) => {
+      const user = tx.users.put({ id: "u1", name: "Alice", profile: {} });
+      expect(user.id).toBe("u1");
+      expect(user.name).toBe("Alice");
+      tx.notes.put({ id: "n1", content: `Created by ${user.name}` });
+    });
+
+    expect(store.notes.get("n1")).toEqual({ id: "n1", content: "Created by Alice" });
+  });
+
+  test("transaction can use returned documents from patch", () => {
+    const store = createMultiCollectionStore();
+
+    store.users.put({ id: "u1", name: "Alice", profile: {} });
+
+    store.transact(["users", "notes"], (tx) => {
+      const updated = tx.users.patch("u1", { name: "Alice Updated" });
+      expect(updated.name).toBe("Alice Updated");
+      tx.notes.put({ id: "n1", content: `Updated by ${updated.name}` });
+    });
+
+    expect(store.users.get("u1")).toEqual({ id: "u1", name: "Alice Updated", profile: {} });
+    expect(store.notes.get("n1")).toEqual({ id: "n1", content: "Updated by Alice Updated" });
+  });
+
+  test("transaction throws error for non-existent collection", () => {
+    const store = createProfileStore();
+
+    expect(() => {
+      store.transact(["nonexistent" as any], (_tx) => {
+        // This should never execute
+      });
+    }).toThrow('Collection "nonexistent" not found');
+  });
+});

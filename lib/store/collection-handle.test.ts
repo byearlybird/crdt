@@ -21,8 +21,15 @@ function setup() {
 describe("createHandle", () => {
   test("put and get", () => {
     const { handle } = setup();
-    handle.put({ id: "1", name: "Alice" });
+    const result = handle.put({ id: "1", name: "Alice" });
+    expect(result).toEqual({ id: "1", name: "Alice" });
     expect(handle.get("1")).toEqual({ id: "1", name: "Alice" });
+  });
+
+  test("put returns document", () => {
+    const { handle } = setup();
+    const doc = handle.put({ id: "1", name: "Alice" });
+    expect(doc).toEqual({ id: "1", name: "Alice" });
   });
 
   test("list returns non-deleted docs", () => {
@@ -41,8 +48,16 @@ describe("createHandle", () => {
   test("patch merges partial data", () => {
     const { handle } = setup();
     handle.put({ id: "1", name: "Alice" });
-    handle.patch("1", { name: "Bob" });
+    const result = handle.patch("1", { name: "Bob" });
+    expect(result).toEqual({ id: "1", name: "Bob" });
     expect(handle.get("1")).toEqual({ id: "1", name: "Bob" });
+  });
+
+  test("patch returns document", () => {
+    const { handle } = setup();
+    handle.put({ id: "1", name: "Alice" });
+    const doc = handle.patch("1", { name: "Bob" });
+    expect(doc).toEqual({ id: "1", name: "Bob" });
   });
 
   test("patch on missing id throws", () => {
