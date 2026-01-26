@@ -137,7 +137,7 @@ describe("getState and setState", () => {
     expect(state).toHaveProperty("tombstones");
   });
 
-  test("setState applies state via applyState", () => {
+  test("setState merges state via applyState", () => {
     const store = createProfileStore();
 
     store.users.add({ id: "1", name: "Alice", profile: {} });
@@ -160,7 +160,12 @@ describe("getState and setState", () => {
       applyState(newSnapshot);
     });
 
-    expect(store.users.get("1")).toBeUndefined();
+    // Local doc "1" is preserved (merge, not replace)
+    expect(store.users.get("1")).toEqual({
+      id: "1",
+      name: "Alice",
+      profile: {},
+    });
     expect(store.users.get("2")).toEqual({
       id: "2",
       name: "Bob",
@@ -233,7 +238,7 @@ describe("getState and setState", () => {
     expect(notified).toBe(true);
   });
 
-  test("applyState and notify together", () => {
+  test("applyState returns diff for notify", () => {
     const store = createProfileStore();
 
     const events: any[] = [];
@@ -256,8 +261,8 @@ describe("getState and setState", () => {
     };
 
     store.setState(({ applyState, notify }) => {
-      applyState(snapshot);
-      notify({ users: true });
+      const diff = applyState(snapshot);
+      notify(diff);
     });
 
     expect(store.users.get("1")).toEqual({

@@ -182,8 +182,8 @@ describe("createPersistence", () => {
     const store1 = createProfileStore();
     const store2 = createProfileStore();
 
-    await createPersistence(store1, { key: "test-store", debounceMs: 50 });
-    await createPersistence(store2, { key: "test-store", debounceMs: 50 });
+    const cleanup1 = await createPersistence(store1, { key: "test-store", debounceMs: 50 });
+    const cleanup2 = await createPersistence(store2, { key: "test-store", debounceMs: 50 });
 
     // Make change in store1
     store1.users.add({ id: "1", name: "Alice", profile: {} });
@@ -198,6 +198,9 @@ describe("createPersistence", () => {
       name: "Alice",
       profile: {},
     });
+
+    await cleanup1();
+    await cleanup2();
   });
 
   test("handles missing IndexedDB gracefully", async () => {

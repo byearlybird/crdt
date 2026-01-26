@@ -5,7 +5,7 @@ import type { CollectionName, Output, StoreConfig } from "./schema";
 import { validate } from "./schema";
 import type { StoreChangeEvent } from "./types";
 import {
-  applyStateSnapshot,
+  mergeState,
   hasRelevantChange,
   validateCollectionNames,
 } from "./store-utils";
@@ -21,7 +21,7 @@ export type StoreAPI<T extends StoreConfig> = {
   getState(): StoreState;
   setState(
     fn: (ctx: {
-      applyState: (snapshot: StoreState) => void;
+      applyState: (snapshot: StoreState) => StoreChangeEvent<T>;
       notify: (event: StoreChangeEvent<T>) => void;
     }) => void,
   ): void;
@@ -91,7 +91,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     },
     setState(fn) {
       fn({
-        applyState: (snapshot) => applyStateSnapshot(state, snapshot),
+        applyState: (snapshot) => mergeState(state, snapshot) as StoreChangeEvent<T>,
         notify: (event) => emitter.emit(event),
       });
     },

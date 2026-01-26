@@ -1,21 +1,27 @@
-import { advanceClock, mergeTombstones, type Collection, type StoreState } from "../core";
+import { advanceClock, mergeCollections, mergeTombstones, type StoreState } from "../core";
 import type { StoreConfig } from "./schema";
 import type { StoreChangeEvent } from "./types";
 
-export function filterTombstones<T extends Collection>(
-  collection: T,
-  tombstones: Record<string, string>,
-): T {
-  return Object.fromEntries(Object.entries(collection).filter(([id]) => !tombstones[id])) as T;
-}
+export function mergeState(
+  currentState: StoreState,
+  snapshot: StoreState,
+): Record<string, true> {
+  const diff: Record<string, true> = {};
 
-export function applyStateSnapshot(currentState: StoreState, snapshot: StoreState): void {
   currentState.clock = advanceClock(currentState.clock, snapshot.clock);
   currentState.tombstones = mergeTombstones(currentState.tombstones, snapshot.tombstones);
 
-  for (const [name, collectionData] of Object.entries(snapshot.collections)) {
-    currentState.collections[name] = filterTombstones(collectionData, currentState.tombstones);
+  for (const [name, incomingCollection] of Object.entries(snapshot.collections)) {
+    const localCollection = currentState.collections[name] ?? {};
+    currentState.collections[name] = mergeCollections(
+      localCollection,
+      incomingCollection,
+      currentState.tombstones,
+    );
+    diff[name] = true;
   }
+
+  return diff;
 }
 
 export function validateCollectionNames<T extends StoreConfig>(
