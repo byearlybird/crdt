@@ -23,6 +23,12 @@ export const noteSchema = z.object({
   content: z.string(),
 });
 
+export const settingsSchema = z.object({
+  id: z.string(),
+  key: z.string(),
+  value: z.string(),
+});
+
 // Timestamp generator helper
 export function createTimestampGenerator(start = 1000) {
   let counter = start;
@@ -46,6 +52,7 @@ export function createMultiCollectionStore() {
   return createStore({
     users: collection(profileSchema, (data) => data.id),
     notes: collection(noteSchema, (data) => data.id),
+    settings: collection(settingsSchema, (data) => data.id),
   });
 }
 

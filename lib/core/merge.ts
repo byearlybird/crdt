@@ -1,7 +1,7 @@
 import { Atomizer } from "./atomizer";
 import { KEYS } from "./types";
-import type { Document, Collection, DocumentId } from "./types";
-import type { Tombstones } from "./tombstone";
+import type { Document, DocumentId, CollectionState } from "./types";
+import { mergeTombstones } from "./tombstone";
 
 /** Merges incoming doc fields into local. Adds new keys from incoming; LWW on conflicts. */
 export function mergeDocs(local: Document<any>, incoming: Document<any>): Document<any> {
@@ -33,26 +33,29 @@ export function mergeDocs(local: Document<any>, incoming: Document<any>): Docume
 }
 
 /**
- * Merges two collections, respecting tombstones.
+ * Merges two collection states, respecting tombstones.
  * Documents that are tombstoned are excluded from the result.
  * For documents that exist in both collections, fields are merged using LWW semantics.
  */
 export function mergeCollections<T extends object>(
-  local: Collection<T>,
-  incoming: Collection<T>,
-  tombstones: Tombstones,
-): Collection<T> {
+  local: CollectionState<T>,
+  incoming: CollectionState<T>,
+): CollectionState<T> {
+  const mergedTombstones = mergeTombstones(local.tombstones, incoming.tombstones);
   const mergedCollection: Record<DocumentId, Document<T>> = {};
-  const allDocumentIds = new Set([...Object.keys(local), ...Object.keys(incoming)]);
+  const allDocumentIds = new Set([
+    ...Object.keys(local.documents),
+    ...Object.keys(incoming.documents),
+  ]);
 
   for (const id of allDocumentIds) {
     // Skip tombstoned documents
-    if (tombstones[id]) {
+    if (mergedTombstones[id]) {
       continue;
     }
 
-    const localDoc = local[id];
-    const incomingDoc = incoming[id];
+    const localDoc = local.documents[id];
+    const incomingDoc = incoming.documents[id];
 
     if (localDoc && incomingDoc) {
       // Both exist: merge documents
@@ -66,5 +69,8 @@ export function mergeCollections<T extends object>(
     }
   }
 
-  return mergedCollection;
+  return {
+    documents: mergedCollection,
+    tombstones: mergedTombstones,
+  };
 }

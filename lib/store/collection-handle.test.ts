@@ -19,16 +19,16 @@ function setup() {
 }
 
 describe("createHandle", () => {
-  test("add and get", () => {
+  test("put and get", () => {
     const { handle } = setup();
-    handle.add({ id: "1", name: "Alice" });
+    handle.put({ id: "1", name: "Alice" });
     expect(handle.get("1")).toEqual({ id: "1", name: "Alice" });
   });
 
   test("list returns non-deleted docs", () => {
     const { handle } = setup();
-    handle.add({ id: "1", name: "Alice" });
-    handle.add({ id: "2", name: "Bob" });
+    handle.put({ id: "1", name: "Alice" });
+    handle.put({ id: "2", name: "Bob" });
     expect(handle.list()).toHaveLength(2);
     expect(
       handle
@@ -38,33 +38,34 @@ describe("createHandle", () => {
     ).toEqual(["Alice", "Bob"]);
   });
 
-  test("update merges partial data", () => {
+  test("patch merges partial data", () => {
     const { handle } = setup();
-    handle.add({ id: "1", name: "Alice" });
-    handle.update("1", { name: "Bob" });
+    handle.put({ id: "1", name: "Alice" });
+    handle.patch("1", { name: "Bob" });
     expect(handle.get("1")).toEqual({ id: "1", name: "Bob" });
   });
 
-  test("update on missing id is no-op", () => {
+  test("patch on missing id throws", () => {
     const { handle } = setup();
-    handle.update("missing", { name: "x" });
+    expect(() => handle.patch("missing", { name: "x" })).toThrow(
+      'Cannot patch non-existent document "missing"',
+    );
     expect(handle.get("missing")).toBeUndefined();
   });
 
   test("remove deletes doc and tombstones", () => {
     const { handle } = setup();
-    handle.add({ id: "1", name: "Alice" });
+    handle.put({ id: "1", name: "Alice" });
     handle.remove("1");
     expect(handle.get("1")).toBeUndefined();
     expect(handle.list()).toHaveLength(0);
   });
 
-  test("add throws on tombstoned id", () => {
+  test("put revives tombstoned id", () => {
     const { handle } = setup();
-    handle.add({ id: "1", name: "Alice" });
+    handle.put({ id: "1", name: "Alice" });
     handle.remove("1");
-    expect(() => handle.add({ id: "1", name: "Bob" })).toThrow(
-      'Cannot add document with tombstoned id "1"',
-    );
+    handle.put({ id: "1", name: "Bob" }); // Should revive
+    expect(handle.get("1")).toEqual({ id: "1", name: "Bob" });
   });
 });

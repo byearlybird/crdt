@@ -77,14 +77,16 @@ describe("createPersistence", () => {
       clock: { ms: 1000, seq: 0 },
       collections: {
         users: {
-          "1": {
-            id: { "~val": "1", "~ts": "1000:0" },
-            name: { "~val": "Alice", "~ts": "1000:0" },
-            profile: { "~val": {}, "~ts": "1000:0" },
+          documents: {
+            "1": {
+              id: { "~val": "1", "~ts": "1000:0" },
+              name: { "~val": "Alice", "~ts": "1000:0" },
+              profile: { "~val": {}, "~ts": "1000:0" },
+            },
           },
+          tombstones: {},
         },
       },
-      tombstones: {},
     };
 
     // Pre-populate IndexedDB
@@ -121,7 +123,7 @@ describe("createPersistence", () => {
 
     await createPersistence(store, { key: "test-store", debounceMs: 50 });
 
-    store.users.add({ id: "1", name: "Alice", profile: {} });
+    store.users.put({ id: "1", name: "Alice", profile: {} });
 
     // Wait for debounce and IndexedDB operations
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -146,7 +148,7 @@ describe("createPersistence", () => {
     db.close();
 
     const parsed = JSON.parse(saved);
-    expect(parsed.collections.users["1"]).toBeDefined();
+    expect(parsed.collections.users.documents["1"]).toBeDefined();
   });
 
   test("debounces multiple rapid changes", async () => {
@@ -162,9 +164,9 @@ describe("createPersistence", () => {
     await createPersistence(store, { key: "test-store", debounceMs: 100 });
 
     // Make multiple rapid changes
-    store.users.add({ id: "1", name: "Alice", profile: {} });
-    store.users.add({ id: "2", name: "Bob", profile: {} });
-    store.users.update("1", { name: "Alice Updated" });
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+    store.users.put({ id: "2", name: "Bob", profile: {} });
+    store.users.patch("1", { name: "Alice Updated" });
 
     // Wait but not enough to trigger save
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -186,7 +188,7 @@ describe("createPersistence", () => {
     const cleanup2 = await createPersistence(store2, { key: "test-store", debounceMs: 50 });
 
     // Make change in store1
-    store1.users.add({ id: "1", name: "Alice", profile: {} });
+    store1.users.put({ id: "1", name: "Alice", profile: {} });
 
     // Wait for debounce, broadcast, and message propagation
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -226,7 +228,7 @@ describe("createPersistence", () => {
     await expect(createPersistence(store, { key: "test-store" })).resolves.not.toThrow();
 
     // Store should still work
-    store.users.add({ id: "1", name: "Alice", profile: {} });
+    store.users.put({ id: "1", name: "Alice", profile: {} });
     expect(store.users.get("1")).toBeDefined();
 
     // Restore
@@ -247,7 +249,7 @@ describe("createPersistence", () => {
     await expect(createPersistence(store, { key: "test-store" })).resolves.not.toThrow();
 
     // Store should still work
-    store.users.add({ id: "1", name: "Alice", profile: {} });
+    store.users.put({ id: "1", name: "Alice", profile: {} });
     expect(store.users.get("1")).toBeDefined();
   });
 
@@ -256,7 +258,7 @@ describe("createPersistence", () => {
 
     const cleanup = await createPersistence(store, { key: "test-store", debounceMs: 100 });
 
-    store.users.add({ id: "1", name: "Alice", profile: {} });
+    store.users.put({ id: "1", name: "Alice", profile: {} });
 
     // Dispose before debounce completes
     await cleanup();
@@ -288,7 +290,7 @@ describe("createPersistence", () => {
 
     const cleanup = await createPersistence(store, { key: "test-store", debounceMs: 100 });
 
-    store.users.add({ id: "1", name: "Alice", profile: {} });
+    store.users.put({ id: "1", name: "Alice", profile: {} });
 
     // Dispose before debounce completes - this should flush
     await cleanup();
@@ -317,7 +319,7 @@ describe("createPersistence", () => {
     // Clear any saves from init
     saveCount = 0;
 
-    store.users.add({ id: "1", name: "Alice", profile: {} });
+    store.users.put({ id: "1", name: "Alice", profile: {} });
 
     // Wait less than custom debounce - should not save yet
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -352,14 +354,16 @@ describe("createPersistence", () => {
       clock: { ms: 1000, seq: 0 },
       collections: {
         users: {
-          "1": {
-            id: { "~val": "1", "~ts": "1000:0" },
-            name: { "~val": "Alice", "~ts": "1000:0" },
-            profile: { "~val": {}, "~ts": "1000:0" },
+          documents: {
+            "1": {
+              id: { "~val": "1", "~ts": "1000:0" },
+              name: { "~val": "Alice", "~ts": "1000:0" },
+              profile: { "~val": {}, "~ts": "1000:0" },
+            },
           },
+          tombstones: {},
         },
       },
-      tombstones: {},
     };
 
     // Pre-populate IndexedDB

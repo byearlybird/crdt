@@ -54,102 +54,137 @@ describe("mergeDocs", () => {
 describe("mergeCollections", () => {
   test("merges documents that exist in both collections", () => {
     const local = {
-      "1": { name: Atomizer.pack("Alice", "1000"), age: Atomizer.pack(30, "1000") },
+      documents: {
+        "1": { name: Atomizer.pack("Alice", "1000"), age: Atomizer.pack(30, "1000") },
+      },
+      tombstones: {},
     };
     const incoming = {
-      "1": { name: Atomizer.pack("Bob", "2000"), age: Atomizer.pack(30, "1000") },
+      documents: {
+        "1": { name: Atomizer.pack("Bob", "2000"), age: Atomizer.pack(30, "1000") },
+      },
+      tombstones: {},
     };
-    const tombstones = {};
 
-    const result = mergeCollections(local, incoming, tombstones);
+    const result = mergeCollections(local, incoming);
 
-    expect(result["1"]).toBeDefined();
-    expect(result["1"]!.name).toEqual(Atomizer.pack("Bob", "2000")); // LWW: incoming wins
-    expect(result["1"]!.age).toEqual(Atomizer.pack(30, "1000")); // Local kept (same timestamp)
+    expect(result.documents["1"]).toBeDefined();
+    expect(result.documents["1"]!.name).toEqual(Atomizer.pack("Bob", "2000")); // LWW: incoming wins
+    expect(result.documents["1"]!.age).toEqual(Atomizer.pack(30, "1000")); // Local kept (same timestamp)
   });
 
   test("adds documents that only exist in incoming", () => {
     const local = {
-      "1": { name: Atomizer.pack("Alice", "1000") },
+      documents: {
+        "1": { name: Atomizer.pack("Alice", "1000") },
+      },
+      tombstones: {},
     };
     const incoming = {
-      "2": { name: Atomizer.pack("Bob", "1000") },
+      documents: {
+        "2": { name: Atomizer.pack("Bob", "1000") },
+      },
+      tombstones: {},
     };
-    const tombstones = {};
 
-    const result = mergeCollections(local, incoming, tombstones);
+    const result = mergeCollections(local, incoming);
 
-    expect(result["1"]).toBeDefined();
-    expect(result["2"]).toBeDefined();
-    expect(result["1"]!.name).toEqual(Atomizer.pack("Alice", "1000"));
-    expect(result["2"]!.name).toEqual(Atomizer.pack("Bob", "1000"));
+    expect(result.documents["1"]).toBeDefined();
+    expect(result.documents["2"]).toBeDefined();
+    expect(result.documents["1"]!.name).toEqual(Atomizer.pack("Alice", "1000"));
+    expect(result.documents["2"]!.name).toEqual(Atomizer.pack("Bob", "1000"));
   });
 
   test("keeps documents that only exist in local", () => {
     const local = {
-      "1": { name: Atomizer.pack("Alice", "1000") },
+      documents: {
+        "1": { name: Atomizer.pack("Alice", "1000") },
+      },
+      tombstones: {},
     };
-    const incoming = {};
-    const tombstones = {};
+    const incoming = {
+      documents: {},
+      tombstones: {},
+    };
 
-    const result = mergeCollections(local, incoming, tombstones);
+    const result = mergeCollections(local, incoming);
 
-    expect(result["1"]).toBeDefined();
-    expect(result["1"]!.name).toEqual(Atomizer.pack("Alice", "1000"));
+    expect(result.documents["1"]).toBeDefined();
+    expect(result.documents["1"]!.name).toEqual(Atomizer.pack("Alice", "1000"));
   });
 
   test("filters out tombstoned documents", () => {
     const local = {
-      "1": { name: Atomizer.pack("Alice", "1000") },
-      "2": { name: Atomizer.pack("Bob", "1000") },
+      documents: {
+        "1": { name: Atomizer.pack("Alice", "1000") },
+        "2": { name: Atomizer.pack("Bob", "1000") },
+      },
+      tombstones: { "2": "1500" }, // Bob is tombstoned
     };
     const incoming = {
-      "3": { name: Atomizer.pack("Charlie", "1000") },
+      documents: {
+        "3": { name: Atomizer.pack("Charlie", "1000") },
+      },
+      tombstones: {},
     };
-    const tombstones = { "2": "1500" }; // Bob is tombstoned
 
-    const result = mergeCollections(local, incoming, tombstones);
+    const result = mergeCollections(local, incoming);
 
-    expect(result["1"]).toBeDefined();
-    expect(result["2"]).toBeUndefined(); // Tombstoned, should be filtered
-    expect(result["3"]).toBeDefined();
+    expect(result.documents["1"]).toBeDefined();
+    expect(result.documents["2"]).toBeUndefined(); // Tombstoned, should be filtered
+    expect(result.documents["3"]).toBeDefined();
   });
 
   test("filters out tombstoned documents from incoming", () => {
     const local = {
-      "1": { name: Atomizer.pack("Alice", "1000") },
+      documents: {
+        "1": { name: Atomizer.pack("Alice", "1000") },
+      },
+      tombstones: {},
     };
     const incoming = {
-      "2": { name: Atomizer.pack("Bob", "1000") },
+      documents: {
+        "2": { name: Atomizer.pack("Bob", "1000") },
+      },
+      tombstones: { "2": "1500" }, // Bob is tombstoned
     };
-    const tombstones = { "2": "1500" }; // Bob is tombstoned
 
-    const result = mergeCollections(local, incoming, tombstones);
+    const result = mergeCollections(local, incoming);
 
-    expect(result["1"]).toBeDefined();
-    expect(result["2"]).toBeUndefined(); // Tombstoned, should be filtered
+    expect(result.documents["1"]).toBeDefined();
+    expect(result.documents["2"]).toBeUndefined(); // Tombstoned, should be filtered
   });
 
   test("handles empty collections", () => {
-    const local = {};
-    const incoming = {};
-    const tombstones = {};
+    const local = {
+      documents: {},
+      tombstones: {},
+    };
+    const incoming = {
+      documents: {},
+      tombstones: {},
+    };
 
-    const result = mergeCollections(local, incoming, tombstones);
+    const result = mergeCollections(local, incoming);
 
-    expect(Object.keys(result)).toHaveLength(0);
+    expect(Object.keys(result.documents)).toHaveLength(0);
   });
 
   test("handles collections with all tombstoned documents", () => {
     const local = {
-      "1": { name: Atomizer.pack("Alice", "1000") },
-      "2": { name: Atomizer.pack("Bob", "1000") },
+      documents: {
+        "1": { name: Atomizer.pack("Alice", "1000") },
+        "2": { name: Atomizer.pack("Bob", "1000") },
+      },
+      tombstones: { "1": "1500", "2": "1500" }, // All tombstoned
     };
-    const incoming = {};
-    const tombstones = { "1": "1500", "2": "1500" }; // All tombstoned
+    const incoming = {
+      documents: {},
+      tombstones: {},
+    };
 
-    const result = mergeCollections(local, incoming, tombstones);
+    const result = mergeCollections(local, incoming);
 
-    expect(Object.keys(result)).toHaveLength(0);
+    expect(Object.keys(result.documents)).toHaveLength(0);
   });
 });

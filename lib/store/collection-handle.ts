@@ -10,8 +10,8 @@ import {
 export type Handle<T, Id extends string = string> = {
   get(id: Id): T | undefined;
   list(): T[];
-  add(data: T): void;
-  update(id: Id, data: Partial<T>): void;
+  put(data: T): void;
+  patch(id: Id, data: Partial<T>): void;
   remove(id: Id): void;
 };
 
@@ -48,19 +48,22 @@ export function createHandle<T extends Record<string, unknown>, Id extends strin
       }
       return results;
     },
-    add(data) {
+    put(data) {
       const validated = validate(data);
       const id = getId(validated);
-      if (isDeleted(id, getTombstones())) {
-        throw new Error(`Cannot add document with tombstoned id "${id}"`);
+      const tombstones = getTombstones();
+      if (tombstones[id]) {
+        delete tombstones[id]; // Revive
       }
       getCollection()[id] = Atomizer.atomize<T>(validated, getTimestamp());
       onMutate?.();
     },
-    update(id, data) {
+    patch(id, data) {
       const collection = getCollection();
       const current = collection[id];
-      if (!current) return;
+      if (!current) {
+        throw new Error(`Cannot patch non-existent document "${id}"`);
+      }
 
       const changes = Atomizer.atomize<Partial<T>>(data, getTimestamp());
       const merged = mergeDocs(current, changes);

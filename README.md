@@ -30,7 +30,7 @@ const store = createStore({
 });
 
 store.batch(({ users }) => {
-  users.add({ id: "1", name: "Alice" });
+  users.put({ id: "1", name: "Alice" });
 });
 const user = store.users.get("1"); // { id: "1", name: "Alice" }
 ```
@@ -80,7 +80,7 @@ Add new items to a collection using `batch()`:
 
 ```typescript
 store.batch(({ users }) => {
-  users.add({
+  users.put({
     id: "1",
     name: "Alice",
     email: "alice@example.com",
@@ -94,7 +94,7 @@ Update existing items using `batch()`:
 
 ```typescript
 store.batch(({ users }) => {
-  users.update("1", {
+  users.patch("1", {
     email: "newemail@example.com",
   });
 });
@@ -297,8 +297,8 @@ The store exposes collection handles directly. Each collection name becomes a pr
 
 - `handle.get(id)` - Get a document by ID
 - `handle.list()` - Get all documents as an array
-- `handle.add(data)` - Add a new document (batch handles only)
-- `handle.update(id, data)` - Update an existing document (batch handles only)
+- `handle.put(data)` - Insert or replace a document (upsert, revives tombstoned IDs)
+- `handle.patch(id, data)` - Partially update an existing document (throws if ID missing)
 - `handle.remove(id)` - Remove a document (batch handles only)
 
 For full type definitions, see the TypeScript types exported from the package.

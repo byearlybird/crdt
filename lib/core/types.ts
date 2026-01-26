@@ -27,6 +27,14 @@ export type Collection<T extends object = Record<Fieldname, unknown>> = Record<
   Document<T>
 >;
 
+/**
+ * Collection state containing documents and tombstones.
+ */
+export type CollectionState<T extends object = Record<Fieldname, unknown>> = {
+  documents: Collection<T>;
+  tombstones: Tombstones;
+};
+
 /** Map of collection name → document shape (plain view). Use for State inference. */
 export type StateSchema = Record<string, object>;
 
@@ -36,6 +44,5 @@ export type State<S extends StateSchema = Record<string, object>> = {
 
 export type StoreState = {
   clock: Clock;
-  collections: Record<string, Collection>;
-  tombstones: Tombstones;
+  collections: Record<string, CollectionState>;
 };

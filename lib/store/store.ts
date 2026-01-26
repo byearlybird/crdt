@@ -1,4 +1,10 @@
-import { advanceClock, makeStamp, type Collection, type StoreState } from "../core";
+import {
+  advanceClock,
+  makeStamp,
+  type Collection,
+  type StoreState,
+  type Tombstones,
+} from "../core";
 import { createEmitter } from "../emitter";
 import { createHandle, type Handle } from "./collection-handle";
 import type { CollectionName, DocType, IdType, StoreConfig } from "./schema";
@@ -25,7 +31,6 @@ export function createStore<T extends StoreConfig>(config: T): StoreAPI<T> {
 
   const state: StoreState = {
     clock: { ms: Date.now(), seq: 0 },
-    tombstones: {},
     collections: {},
   };
 
@@ -39,15 +44,17 @@ export function createStore<T extends StoreConfig>(config: T): StoreAPI<T> {
   };
 
   for (const collectionName of Object.keys(config) as CollectionName<T>[]) {
-    state.collections[collectionName] = {};
+    state.collections[collectionName] = {
+      documents: {},
+      tombstones: {},
+    };
     const collectionConfig = config[collectionName];
     if (!collectionConfig) {
       throw new Error(`Collection config not found for "${collectionName}"`);
     }
     collectionHandles[collectionName] = createHandle({
-      getCollection: () =>
-        state.collections[collectionName] as Collection<DocType<T[typeof collectionName]>>,
-      getTombstones: () => state.tombstones,
+      getCollection: () => state.collections[collectionName]?.documents ?? {},
+      getTombstones: () => state.collections[collectionName]?.tombstones ?? {},
       getTimestamp: getNextStamp,
       validate: (data: unknown) =>
         validate(collectionConfig.schema, data as Record<string, unknown>),

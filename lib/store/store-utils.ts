@@ -1,4 +1,4 @@
-import { advanceClock, mergeCollections, mergeTombstones, type StoreState } from "../core";
+import { advanceClock, mergeCollections, type StoreState } from "../core";
 import type { StoreConfig } from "./schema";
 import type { StoreChangeEvent } from "./types";
 
@@ -6,15 +6,13 @@ export function mergeState(currentState: StoreState, snapshot: StoreState): Reco
   const diff: Record<string, true> = {};
 
   currentState.clock = advanceClock(currentState.clock, snapshot.clock);
-  currentState.tombstones = mergeTombstones(currentState.tombstones, snapshot.tombstones);
 
-  for (const [name, incomingCollection] of Object.entries(snapshot.collections)) {
-    const localCollection = currentState.collections[name] ?? {};
-    currentState.collections[name] = mergeCollections(
-      localCollection,
-      incomingCollection,
-      currentState.tombstones,
-    );
+  for (const [name, incomingCollectionState] of Object.entries(snapshot.collections)) {
+    const localCollectionState = currentState.collections[name] ?? {
+      documents: {},
+      tombstones: {},
+    };
+    currentState.collections[name] = mergeCollections(localCollectionState, incomingCollectionState);
     diff[name] = true;
   }
 
