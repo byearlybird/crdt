@@ -58,4 +58,13 @@ describe("createHandle", () => {
     expect(handle.get("1")).toBeUndefined();
     expect(handle.list()).toHaveLength(0);
   });
+
+  test("add throws on tombstoned id", () => {
+    const { handle } = setup();
+    handle.add({ id: "1", name: "Alice" });
+    handle.remove("1");
+    expect(() => handle.add({ id: "1", name: "Bob" })).toThrow(
+      'Cannot add document with tombstoned id "1"',
+    );
+  });
 });

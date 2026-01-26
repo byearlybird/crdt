@@ -51,6 +51,9 @@ export function createHandle<T extends Record<string, unknown>, Id extends strin
     add(data) {
       const validated = validate(data);
       const id = getId(validated);
+      if (isDeleted(id, getTombstones())) {
+        throw new Error(`Cannot add document with tombstoned id "${id}"`);
+      }
       getCollection()[id] = Atomizer.atomize<T>(validated, getTimestamp());
       onMutate?.();
     },
