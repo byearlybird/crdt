@@ -127,7 +127,7 @@ describe("createStore", () => {
   });
 });
 
-describe("getState and setState", () => {
+describe("getState and merge", () => {
   test("getState returns current state", () => {
     const store = createProfileStore();
 
@@ -137,7 +137,7 @@ describe("getState and setState", () => {
     expect(state).toHaveProperty("tombstones");
   });
 
-  test("setState merges state via mergeState", () => {
+  test("merge merges state from snapshot", () => {
     const store = createProfileStore();
 
     store.users.add({ id: "1", name: "Alice", profile: {} });
@@ -156,9 +156,7 @@ describe("getState and setState", () => {
       tombstones: {},
     };
 
-    store.setState(({ mergeState }) => {
-      mergeState(newSnapshot);
-    });
+    store.merge(newSnapshot);
 
     // Local doc "1" is preserved (merge, not replace)
     expect(store.users.get("1")).toEqual({
@@ -173,7 +171,7 @@ describe("getState and setState", () => {
     });
   });
 
-  test("setState advances clock", () => {
+  test("merge advances clock", () => {
     const store = createProfileStore();
 
     const initial = store.getState();
@@ -185,60 +183,14 @@ describe("getState and setState", () => {
       tombstones: {},
     };
 
-    store.setState(({ mergeState }) => {
-      mergeState(newSnapshot);
-    });
+    store.merge(newSnapshot);
 
     const after = store.getState();
     expect(after.clock.ms).toBe(initialMs + 1000);
     expect(after.clock.seq).toBeGreaterThanOrEqual(5);
   });
 
-  test("mergeState without notify is silent", () => {
-    const store = createProfileStore();
-
-    let notified = false;
-    store.subscribe(() => {
-      notified = true;
-    });
-
-    const snapshot = {
-      clock: { ms: 1000, seq: 0 },
-      collections: {
-        users: {
-          "1": {
-            id: { "~val": "1", "~ts": "1000:0" },
-            name: { "~val": "Alice", "~ts": "1000:0" },
-            profile: { "~val": {}, "~ts": "1000:0" },
-          },
-        },
-      },
-      tombstones: {},
-    };
-
-    store.setState(({ mergeState }) => {
-      mergeState(snapshot);
-    });
-
-    expect(notified).toBe(false);
-  });
-
-  test("notify triggers subscribers", () => {
-    const store = createProfileStore();
-
-    let notified = false;
-    store.subscribe(() => {
-      notified = true;
-    });
-
-    store.setState(({ notify }) => {
-      notify({ users: true });
-    });
-
-    expect(notified).toBe(true);
-  });
-
-  test("mergeState returns diff for notify", () => {
+  test("merge returns diff and notifies", () => {
     const store = createProfileStore();
 
     const events: any[] = [];
@@ -260,16 +212,14 @@ describe("getState and setState", () => {
       tombstones: {},
     };
 
-    store.setState(({ mergeState, notify }) => {
-      const diff = mergeState(snapshot);
-      notify(diff);
-    });
+    const diff = store.merge(snapshot);
 
     expect(store.users.get("1")).toEqual({
       id: "1",
       name: "Alice",
       profile: {},
     });
+    expect(diff).toEqual({ users: true });
     expect(events).toEqual([{ users: true }]);
   });
 });

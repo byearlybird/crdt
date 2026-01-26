@@ -15,12 +15,7 @@ export type StoreAPI<T extends StoreConfig> = {
     ): () => void;
   };
   getState(): StoreState;
-  setState(
-    fn: (ctx: {
-      mergeState: (snapshot: StoreState) => StoreChangeEvent<T>;
-      notify: (event: StoreChangeEvent<T>) => void;
-    }) => void,
-  ): void;
+  merge(snapshot: StoreState): StoreChangeEvent<T>;
 } & {
   [N in CollectionName<T>]: Handle<Output<T[N]["schema"]>, CollectionId<T[N]>>;
 };
@@ -85,11 +80,10 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     getState() {
       return { ...state };
     },
-    setState(fn) {
-      fn({
-        mergeState: (snapshot) => mergeState(state, snapshot) as StoreChangeEvent<T>,
-        notify: (event) => emitter.emit(event),
-      });
+    merge(snapshot) {
+      const diff = mergeState(state, snapshot) as StoreChangeEvent<T>;
+      emitter.emit(diff);
+      return diff;
     },
   } as StoreAPI<T>;
 }
