@@ -1,5 +1,5 @@
 import { advanceClock, mergeTombstones, type Collection, type StoreState } from "../core";
-import type { CollectionName, StoreConfig } from "./schema";
+import type { StoreConfig } from "./schema";
 import type { StoreChangeEvent } from "./types";
 
 export function filterTombstones<T extends Collection>(
@@ -18,17 +18,6 @@ export function applyStateSnapshot(currentState: StoreState, snapshot: StoreStat
   }
 }
 
-export function getCollectionConfig<T extends StoreConfig, N extends CollectionName<T>>(
-  config: T,
-  collectionName: N,
-): T[N] {
-  const collectionConfig = config[collectionName];
-  if (!collectionConfig) {
-    throw new Error(`Collection config not found for "${collectionName}"`);
-  }
-  return collectionConfig;
-}
-
 export function validateCollectionNames<T extends StoreConfig>(
   collections: (keyof T & string)[],
   config: T,
@@ -44,22 +33,4 @@ export function hasRelevantChange<T extends StoreConfig>(
   collections: (keyof T & string)[],
 ): boolean {
   return collections.some((name) => event[name as keyof T]);
-}
-
-export function createChangeEvent<T extends StoreConfig>(
-  collectionName: keyof T & string,
-): StoreChangeEvent<T> {
-  return { [collectionName]: true } as StoreChangeEvent<T>;
-}
-
-export function ensureNotInitialized(isInitialized: boolean, operation: string): void {
-  if (isInitialized) {
-    throw new Error(operation);
-  }
-}
-
-export function ensureInitialized(isInitialized: boolean, operation: string): void {
-  if (!isInitialized) {
-    throw new Error(operation);
-  }
 }
