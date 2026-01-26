@@ -9,13 +9,13 @@ export const Atomizer = {
   }),
 
   // Extract value safely
-  unpack: <T>(node: any): T | undefined => {
-    return Atomizer.isAtom(node) ? node[KEYS.VAL] : undefined;
+  unpack: <T>(node: unknown): T | undefined => {
+    return Atomizer.isAtom(node) ? (node[KEYS.VAL] as T) : undefined;
   },
 
   // Check if a node is an atom
-  isAtom: (node: any): boolean => {
-    return node && typeof node === "object" && KEYS.VAL in node;
+  isAtom: (node: unknown): node is Atom<unknown> => {
+    return node !== null && typeof node === "object" && KEYS.VAL in node;
   },
 
   // Converts a plain object into a Document by atomizing each field.

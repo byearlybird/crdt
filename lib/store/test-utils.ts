@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Atomizer, makeStamp, type Document } from "../core";
+import { collection } from "./schema";
 import { createStore } from "./store";
 
 // Shared test schemas
@@ -31,26 +32,20 @@ export function createTimestampGenerator(start = 1000) {
 // Store creation helpers
 export function createUserStore() {
   return createStore({
-    collections: {
-      users: { schema: userSchema, getId: (data) => data.id },
-    },
+    users: collection(userSchema, (data) => data.id),
   });
 }
 
 export function createProfileStore() {
   return createStore({
-    collections: {
-      users: { schema: profileSchema, getId: (data) => data.id },
-    },
+    users: collection(profileSchema, (data) => data.id),
   });
 }
 
 export function createMultiCollectionStore() {
   return createStore({
-    collections: {
-      users: { schema: profileSchema, getId: (data) => data.id },
-      notes: { schema: noteSchema, getId: (data) => data.id },
-    },
+    users: collection(profileSchema, (data) => data.id),
+    notes: collection(noteSchema, (data) => data.id),
   });
 }
 

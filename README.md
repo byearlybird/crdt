@@ -26,9 +26,7 @@ const userSchema = z.object({
 });
 
 const store = createStore({
-  collections: {
-    users: { schema: userSchema, getId: (data) => data.id },
-  },
+  users: { schema: userSchema, getId: (data) => data.id },
 });
 
 store.batch(({ users }) => {
@@ -58,22 +56,20 @@ import { createStore } from "@byearlybird/starling";
 import { z } from "zod";
 
 const store = createStore({
-  collections: {
-    users: {
-      schema: z.object({
-        id: z.string(),
-        name: z.string(),
-        email: z.string().optional(),
-      }),
-      getId: (data) => data.id,
-    },
-    notes: {
-      schema: z.object({
-        id: z.string(),
-        content: z.string(),
-      }),
-      getId: (data) => data.id,
-    },
+  users: {
+    schema: z.object({
+      id: z.string(),
+      name: z.string(),
+      email: z.string().optional(),
+    }),
+    getId: (data) => data.id,
+  },
+  notes: {
+    schema: z.object({
+      id: z.string(),
+      content: z.string(),
+    }),
+    getId: (data) => data.id,
   },
 });
 ```
@@ -174,9 +170,7 @@ const syncMiddleware = ({ getState, merge, subscribe }) => {
 
 // Use the middleware
 const store = createStore({
-  collections: {
-    users: { schema: userSchema, getId: (data) => data.id },
-  },
+  users: { schema: userSchema, getId: (data) => data.id },
 }).use(syncMiddleware);
 
 // Initialize the store (this runs middleware)

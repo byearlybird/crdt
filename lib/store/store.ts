@@ -1,7 +1,7 @@
 import { advanceClock, makeStamp, type Collection, type StoreState } from "../core";
 import { createEmitter } from "../emitter";
-import { createHandle, type Handle } from "../store-two/collection-handle";
-import type { CollectionId, CollectionName, Output, StoreConfig } from "./schema";
+import { createHandle, type Handle } from "./collection-handle";
+import type { CollectionName, DocType, IdType, StoreConfig } from "./schema";
 import { validate } from "./schema";
 import type { StoreChangeEvent } from "./types";
 import { mergeState, hasRelevantChange, validateCollectionNames } from "./store-utils";
@@ -17,10 +17,10 @@ export type StoreAPI<T extends StoreConfig> = {
   getState(): StoreState;
   merge(snapshot: StoreState): StoreChangeEvent<T>;
 } & {
-  [N in CollectionName<T>]: Handle<Output<T[N]["schema"]>, CollectionId<T[N]>>;
+  [N in CollectionName<T>]: Handle<DocType<T[N]>, IdType<T[N]>>;
 };
 
-export function createStore<T extends StoreConfig>(config: { collections: T }): StoreAPI<T> {
+export function createStore<T extends StoreConfig>(config: T): StoreAPI<T> {
   const emitter = createEmitter<StoreChangeEvent<T>>();
 
   const state: StoreState = {
@@ -35,24 +35,23 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
   };
 
   const collectionHandles = {} as {
-    [N in CollectionName<T>]: Handle<Output<T[N]["schema"]>, CollectionId<T[N]>>;
+    [N in CollectionName<T>]: Handle<DocType<T[N]>, IdType<T[N]>>;
   };
 
-  for (const collectionName of Object.keys(config.collections) as CollectionName<T>[]) {
+  for (const collectionName of Object.keys(config) as CollectionName<T>[]) {
     state.collections[collectionName] = {};
-    const collectionConfig = config.collections[collectionName];
+    const collectionConfig = config[collectionName];
     if (!collectionConfig) {
       throw new Error(`Collection config not found for "${collectionName}"`);
     }
     collectionHandles[collectionName] = createHandle({
       getCollection: () =>
-        state.collections[collectionName] as Collection<Output<T[typeof collectionName]["schema"]>>,
+        state.collections[collectionName] as Collection<DocType<T[typeof collectionName]>>,
       getTombstones: () => state.tombstones,
       getTimestamp: getNextStamp,
       validate: (data: unknown) =>
         validate(collectionConfig.schema, data as Record<string, unknown>),
-      getId: (data: Output<T[typeof collectionName]["schema"]>) =>
-        collectionConfig.getId(data),
+      getId: (data: DocType<T[typeof collectionName]>) => collectionConfig.getId(data),
       onMutate: () => emitter.emit({ [collectionName]: true } as StoreChangeEvent<T>),
     });
   }
@@ -69,7 +68,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
 
       const collections = collectionsOrCallback as (keyof T & string)[];
       const callback = maybeCallback!;
-      validateCollectionNames(collections, config.collections);
+      validateCollectionNames(collections, config);
 
       return emitter.subscribe((event) => {
         if (hasRelevantChange(event, collections)) {

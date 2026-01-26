@@ -25,20 +25,61 @@ export type Output<T extends AnyObject> = StandardSchemaV1.InferOutput<T>;
 
 export type Input<T extends AnyObject> = StandardSchemaV1.InferInput<T>;
 
-export type CollectionConfig<T extends AnyObject, Id extends string = string> = {
-  schema: T;
-  getId: (data: Output<T>) => Id;
+/**
+ * A collection definition with document and ID types captured directly.
+ * Use the `collection()` helper to create instances with proper type inference.
+ *
+ * The `~docType` and `~idType` are phantom types used only for type inference.
+ * They are not accessed at runtime.
+ */
+export type CollectionDef<T extends object = object, Id extends string = string> = {
+  readonly "~docType": T; // Phantom - document shape
+  readonly "~idType": Id; // Phantom - ID type
+  schema: AnyObject; // Runtime only - used for validation
+  getId: (data: T) => Id; // Properly typed, no contravariance issue
 };
 
 /**
- * Extract the ID type from a CollectionConfig's getId function return type
+ * Helper function to create a collection definition with proper type inference.
+ * This captures the schema output type directly as the document type.
+ *
+ * @example
+ * ```ts
+ * const store = createStore({
+ *   users: collection(userSchema, (data) => data.id),
+ * });
+ * ```
  */
-export type CollectionId<T extends CollectionConfig<AnyObject>> = ReturnType<T["getId"]>;
+export function collection<S extends AnyObject, Id extends string = string>(
+  schema: S,
+  getId: (data: Output<S>) => Id,
+): CollectionDef<Output<S>, Id> {
+  return {
+    "~docType": undefined as unknown as Output<S>, // Phantom
+    "~idType": undefined as unknown as Id, // Phantom
+    schema,
+    getId,
+  };
+}
 
 /**
- * Configuration for all collections in a store
+ * Extract the document type from a CollectionDef
  */
-export type StoreConfig = Record<string, CollectionConfig<AnyObject>>;
+export type DocType<C extends CollectionDef> = C["~docType"];
+
+/**
+ * Extract the ID type from a CollectionDef
+ */
+export type IdType<C extends CollectionDef> = C["~idType"];
+
+/**
+ * Configuration for all collections in a store.
+ * All collection definitions must be created using the `collection()` helper.
+ *
+ * Uses `any` for type parameters to allow any CollectionDef to be stored,
+ * while still preserving specific types through inference in createStore.
+ */
+export type StoreConfig = Record<string, CollectionDef<any, any>>;
 
 /**
  * Valid collection name from a store config
