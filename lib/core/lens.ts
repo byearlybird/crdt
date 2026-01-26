@@ -4,6 +4,11 @@ import type { Document } from "./types";
 export function createReadLens<T extends object>(doc: Document<T>): T {
   const handler: ProxyHandler<Document<T>> = {
     get(target, prop, receiver) {
+      // Ignore prototype properties and symbols
+      if (typeof prop === "symbol" || !Object.prototype.hasOwnProperty.call(target, prop)) {
+        return undefined;
+      }
+
       const value = Reflect.get(target, prop, receiver);
 
       // 1. Missing Key

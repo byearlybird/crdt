@@ -11,10 +11,3 @@ export function createChangeEvent<T extends StoreConfig>(
 ): StoreChangeEvent<T> {
   return { [collectionName]: true } as StoreChangeEvent<T>;
 }
-
-export function notifyListeners<T extends StoreConfig>(
-  event: StoreChangeEvent<T>,
-  listeners: Set<(event: StoreChangeEvent<T>) => void>,
-): void {
-  listeners.forEach((listener) => listener(event));
-}

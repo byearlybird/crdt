@@ -111,24 +111,6 @@ describe("subscribe", () => {
     expect(callback).toHaveBeenCalledWith({ notes: true });
   });
 
-  test("subscribe works with transaction changes", () => {
-    const store = createProfileStore();
-
-    const callback = vi.fn();
-    store.subscribe(["users"], callback);
-
-    callback.mockClear();
-
-    store.transact(["users"], ({ users }) => {
-      users.add({ id: "1", name: "Alice", profile: {} });
-      users.add({ id: "2", name: "Bob", profile: {} });
-    });
-
-    // Transaction notifies once for all changes
-    expect(callback).toHaveBeenCalledTimes(1);
-    expect(callback).toHaveBeenCalledWith({ users: true });
-  });
-
   test("multiple subscriptions can coexist", () => {
     const store = createProfileStore();
 

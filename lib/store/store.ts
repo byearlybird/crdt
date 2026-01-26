@@ -1,32 +1,23 @@
 import {
   advanceClock,
   makeStamp,
-  mergeCollections,
   mergeTombstones,
+  type Collection,
   type StoreState,
 } from "../core";
-import type { AnyObject, CollectionConfig, CollectionName, StoreConfig } from "./schema";
-import { executeTransact, type TransactDependencies, type TransactHandle } from "./transact";
-import { createReadHandles, type ReadHandle, type ReadHandles } from "./read";
-import { createWriteHandles, type WriteHandle, type WriteHandles } from "./write";
+import { createEmitter } from "../emitter";
+import { createHandle, type Handle } from "../store-two/collection-handle";
+import type { CollectionName, Output, StoreConfig } from "./schema";
+import { validate } from "./schema";
 import {
   createMiddlewareManager,
   type MiddlewareContext,
   type StoreMiddleware,
 } from "./middleware";
-import { notifyListeners } from "./events";
 import type { StoreChangeEvent } from "./types";
-import { createBuildCallbacks } from "./callbacks";
-
-export type StoreCollectionHandles<T extends StoreConfig> = {
-  [N in CollectionName<T>]: ReadHandle<T[N]> & WriteHandle<T[N]>;
-};
+import { createChangeEvent } from "./events";
 
 export type StoreAPI<T extends StoreConfig> = {
-  transact<K extends (keyof T & string)[], R>(
-    collections: [...K],
-    callback: (handles: { [P in K[number]]: TransactHandle<T[P]> }) => R,
-  ): R;
   subscribe<K extends (keyof T & string)[]>(
     collections: [...K],
     callback: (event: StoreChangeEvent<T>) => void,
@@ -34,14 +25,14 @@ export type StoreAPI<T extends StoreConfig> = {
   use(middleware: StoreMiddleware<T>): StoreAPI<T>;
   init(): Promise<void>;
   dispose(): Promise<void>;
-} & ReadHandles<T> &
-  WriteHandles<T>;
+} & {
+  [N in CollectionName<T>]: Handle<Output<T[N]["schema"]>>;
+};
 
 export function createStore<T extends StoreConfig>(config: { collections: T }): StoreAPI<T> {
   let isInitialized = false;
 
-  const configs = new Map<string, CollectionConfig<AnyObject>>();
-  const listeners = new Set<(event: StoreChangeEvent<T>) => void>();
+  const emitter = createEmitter<StoreChangeEvent<T>>();
   const middlewareManager = createMiddlewareManager<T>();
 
   const state: StoreState = {
@@ -50,68 +41,63 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     collections: {},
   };
 
-  // Store collection names with type information for use in callbacks
   const collectionNames = Object.keys(config.collections) as CollectionName<T>[];
 
-  for (const [name, collectionConfig] of Object.entries(config.collections)) {
-    configs.set(name, collectionConfig);
+  for (const name of Object.keys(config.collections)) {
     state.collections[name] = {};
   }
-
-  const getTransactDeps = (): TransactDependencies => ({
-    configs,
-    documents: state.collections,
-    tombstones: state.tombstones,
-    tick,
-  });
-
-  const getMiddlewareContext = (): MiddlewareContext<T> => ({
-    subscribe: (listener) => {
-      listeners.add(listener);
-
-      return () => listeners.delete(listener);
-    },
-    notify: (event) => {
-      notifyListeners(event, listeners);
-    },
-    getState: () => ({ ...state }),
-    setState: (snapshot) => {
-      state.clock = advanceClock(state.clock, { ms: snapshot.clock.ms, seq: snapshot.clock.seq });
-      state.tombstones = snapshot.tombstones;
-
-      // Replace collections - ensure all collections from snapshot exist
-      for (const [name, collectionData] of Object.entries(snapshot.collections)) {
-        state.collections[name] = collectionData;
-      }
-    },
-  });
-
-  const readHandles = createReadHandles<T>({ configs, state });
 
   const tick = () => {
     state.clock = advanceClock(state.clock, { ms: Date.now(), seq: 0 });
     return makeStamp(state.clock.ms, state.clock.seq);
   };
 
-  const buildCallbacks = createBuildCallbacks<T>({ state, listeners });
+  const getMiddlewareContext = (): MiddlewareContext<T> => ({
+    subscribe: (listener) => {
+      return emitter.subscribe(listener);
+    },
+    notify: (event) => {
+      emitter.emit(event);
+    },
+    getState: () => ({ ...state }),
+    setState: (snapshot) => {
+      state.clock = advanceClock(state.clock, snapshot.clock);
+      state.tombstones = mergeTombstones(state.tombstones, snapshot.tombstones);
 
-  const writeHandles = createWriteHandles<T>({
-    configs,
-    state,
-    tick,
-    buildCallbacks,
+      // Replace collections from snapshot (filtered by tombstones)
+      for (const [name, collectionData] of Object.entries(snapshot.collections)) {
+        const filtered: typeof collectionData = {};
+        for (const [id, doc] of Object.entries(collectionData)) {
+          if (!state.tombstones[id]) {
+            filtered[id] = doc;
+          }
+        }
+        state.collections[name] = filtered;
+      }
+    },
   });
 
-  // Combine read + write handles per collection
-  // We can't just spread both because they have the same keys (collection names),
-  // which would cause writeHandles to overwrite readHandles.
-  // Instead, we need to merge them per collection.
-  const collectionHandles = {} as StoreCollectionHandles<T>;
+  // Create handles for each collection
+  const collectionHandles = {} as {
+    [N in CollectionName<T>]: Handle<Output<T[N]["schema"]>>;
+  };
+
   for (const collectionName of collectionNames) {
-    collectionHandles[collectionName] = {
-      ...readHandles[collectionName],
-      ...writeHandles[collectionName],
-    };
+    const collectionConfig = config.collections[collectionName];
+    if (!collectionConfig) {
+      throw new Error(`Collection config for "${collectionName}" not found`);
+    }
+    const cfg = collectionConfig; // Capture for closure
+
+    collectionHandles[collectionName] = createHandle({
+      getCollection: () =>
+        state.collections[collectionName] as Collection<Output<T[typeof collectionName]["schema"]>>,
+      getTombstones: () => state.tombstones,
+      getTimestamp: tick,
+      validate: (data) => validate(cfg.schema, data as Record<string, unknown>),
+      getId: (data) => data[cfg.keyPath] as string,
+      onMutate: () => emitter.emit(createChangeEvent<T>(collectionName)),
+    });
   }
 
   const api: StoreAPI<T> = {
@@ -119,17 +105,12 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     subscribe(collections, callback) {
       // Validate all collections exist
       for (const collectionName of collections) {
-        if (!configs.has(collectionName)) {
+        if (!(collectionName in config.collections)) {
           throw new Error(`Collection "${collectionName}" not found`);
         }
       }
 
-      const addListener = (listener: (event: StoreChangeEvent<T>) => void) => {
-        listeners.add(listener);
-        return () => listeners.delete(listener);
-      };
-
-      const unsubscribe = addListener((event) => {
+      const unsubscribe = emitter.subscribe((event) => {
         // Check if any of the subscribed collections changed
         const hasRelevantChange = collections.some((name) => event[name as keyof T]);
         if (hasRelevantChange) {
@@ -138,23 +119,6 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
       });
 
       return unsubscribe;
-    },
-    transact(collections, callback) {
-      const result = executeTransact(collections, callback, getTransactDeps());
-
-      if (result.changes) {
-        state.tombstones = mergeTombstones(state.tombstones, result.changes.tombstones);
-
-        for (const collectionName of Object.keys(result.changes.documents)) {
-          const current = state.collections[collectionName]!;
-          const updated = result.changes.documents[collectionName]!;
-          state.collections[collectionName] = mergeCollections(current, updated, state.tombstones);
-        }
-
-        notifyListeners(result.changes.event, listeners);
-      }
-
-      return result.value;
     },
     use(middleware) {
       if (isInitialized) {

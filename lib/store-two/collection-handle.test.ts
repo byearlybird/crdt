@@ -8,10 +8,13 @@ function setup() {
   const collection: Collection<Doc> = {} as Collection<Doc>;
   const tombstones: Tombstones = {};
   let ts = 0;
-  const getTimestamp = () => String(++ts);
-  const validate = (d: Doc) => d;
-  const getId = (d: Doc) => d.id;
-  const handle = createHandle<Doc>(collection, tombstones, getTimestamp, validate, getId);
+  const handle = createHandle<Doc>({
+    getCollection: () => collection,
+    getTombstones: () => tombstones,
+    getTimestamp: () => String(++ts),
+    validate: (d) => d as Doc,
+    getId: (d) => d.id,
+  });
   return { handle, collection, tombstones };
 }
 

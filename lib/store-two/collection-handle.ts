@@ -1,4 +1,5 @@
 import {
+  Atomizer,
   createReadLens,
   isDeleted,
   mergeDocs,
@@ -6,7 +7,6 @@ import {
   type DocumentId,
   type Tombstones,
 } from "../core";
-import { atomizeDocument } from "../store/write";
 
 export type Handle<T> = {
   get(id: DocumentId): T | undefined;
@@ -16,21 +16,31 @@ export type Handle<T> = {
   remove(id: DocumentId): void;
 };
 
+export type HandleDependencies<T extends object> = {
+  getCollection: () => Collection<T>;
+  getTombstones: () => Tombstones;
+  getTimestamp: () => string;
+  validate: (data: unknown) => T;
+  getId: (data: T) => string;
+  onMutate?: () => void;
+};
+
 export function createHandle<T extends Record<string, unknown>>(
-  collection: Collection<T>,
-  tombstones: Tombstones,
-  getTimestamp: () => string,
-  validate: (data: unknown) => T,
-  getId: (data: T) => string,
+  deps: HandleDependencies<T>,
 ): Handle<T> {
+  const { getCollection, getTombstones, getTimestamp, validate, getId, onMutate } = deps;
+
   return {
     get(id) {
+      const tombstones = getTombstones();
       if (isDeleted(id, tombstones)) return undefined;
-      const current = collection[id];
+      const current = getCollection()[id];
       if (!current) return undefined;
       return createReadLens<T>(current);
     },
     list() {
+      const collection = getCollection();
+      const tombstones = getTombstones();
       const results: T[] = [];
       for (const [id, document] of Object.entries(collection)) {
         if (!isDeleted(id, tombstones)) {
@@ -41,23 +51,26 @@ export function createHandle<T extends Record<string, unknown>>(
     },
     add(data) {
       const validated = validate(data);
-      const id = getId(data);
-      collection[id] = atomizeDocument<T>(validated, getTimestamp());
+      const id = getId(validated);
+      getCollection()[id] = Atomizer.atomize<T>(validated, getTimestamp());
+      onMutate?.();
     },
     update(id, data) {
+      const collection = getCollection();
       const current = collection[id];
       if (!current) return;
 
-      const changes = atomizeDocument<Partial<T>>(data, getTimestamp());
+      const changes = Atomizer.atomize<Partial<T>>(data, getTimestamp());
       const merged = mergeDocs(current, changes);
-      // Use createReadLens to get plain object for validation
       const plain = createReadLens(merged);
       validate(plain);
       collection[id] = merged;
+      onMutate?.();
     },
     remove(id) {
-      tombstones[id] = getTimestamp();
-      delete collection[id];
+      getTombstones()[id] = getTimestamp();
+      delete getCollection()[id];
+      onMutate?.();
     },
   };
 }
