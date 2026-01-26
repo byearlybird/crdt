@@ -32,7 +32,7 @@ export function createTimestampGenerator(start = 1000) {
 export function createUserStore() {
   return createStore({
     collections: {
-      users: { schema: userSchema, keyPath: "id" },
+      users: { schema: userSchema, getId: (data) => data.id },
     },
   });
 }
@@ -40,7 +40,7 @@ export function createUserStore() {
 export function createProfileStore() {
   return createStore({
     collections: {
-      users: { schema: profileSchema, keyPath: "id" },
+      users: { schema: profileSchema, getId: (data) => data.id },
     },
   });
 }
@@ -48,8 +48,8 @@ export function createProfileStore() {
 export function createMultiCollectionStore() {
   return createStore({
     collections: {
-      users: { schema: profileSchema, keyPath: "id" },
-      notes: { schema: noteSchema, keyPath: "id" },
+      users: { schema: profileSchema, getId: (data) => data.id },
+      notes: { schema: noteSchema, getId: (data) => data.id },
     },
   });
 }

@@ -1,7 +1,7 @@
 import { advanceClock, makeStamp, type Collection, type StoreState } from "../core";
 import { createEmitter } from "../emitter";
 import { createHandle, type Handle } from "../store-two/collection-handle";
-import type { CollectionName, Output, StoreConfig } from "./schema";
+import type { CollectionId, CollectionName, Output, StoreConfig } from "./schema";
 import { validate } from "./schema";
 import type { StoreChangeEvent } from "./types";
 import { mergeState, hasRelevantChange, validateCollectionNames } from "./store-utils";
@@ -22,7 +22,7 @@ export type StoreAPI<T extends StoreConfig> = {
     }) => void,
   ): void;
 } & {
-  [N in CollectionName<T>]: Handle<Output<T[N]["schema"]>>;
+  [N in CollectionName<T>]: Handle<Output<T[N]["schema"]>, CollectionId<T[N]>>;
 };
 
 export function createStore<T extends StoreConfig>(config: { collections: T }): StoreAPI<T> {
@@ -40,7 +40,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
   };
 
   const collectionHandles = {} as {
-    [N in CollectionName<T>]: Handle<Output<T[N]["schema"]>>;
+    [N in CollectionName<T>]: Handle<Output<T[N]["schema"]>, CollectionId<T[N]>>;
   };
 
   for (const collectionName of Object.keys(config.collections) as CollectionName<T>[]) {
@@ -57,7 +57,7 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
       validate: (data: unknown) =>
         validate(collectionConfig.schema, data as Record<string, unknown>),
       getId: (data: Output<T[typeof collectionName]["schema"]>) =>
-        data[collectionConfig.keyPath] as string,
+        collectionConfig.getId(data),
       onMutate: () => emitter.emit({ [collectionName]: true } as StoreChangeEvent<T>),
     });
   }

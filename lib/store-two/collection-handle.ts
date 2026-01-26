@@ -4,30 +4,29 @@ import {
   isDeleted,
   mergeDocs,
   type Collection,
-  type DocumentId,
   type Tombstones,
 } from "../core";
 
-export type Handle<T> = {
-  get(id: DocumentId): T | undefined;
+export type Handle<T, Id extends string = string> = {
+  get(id: Id): T | undefined;
   list(): T[];
   add(data: T): void;
-  update(id: DocumentId, data: Partial<T>): void;
-  remove(id: DocumentId): void;
+  update(id: Id, data: Partial<T>): void;
+  remove(id: Id): void;
 };
 
-export type HandleDependencies<T extends object> = {
+export type HandleDependencies<T extends object, Id extends string = string> = {
   getCollection: () => Collection<T>;
   getTombstones: () => Tombstones;
   getTimestamp: () => string;
   validate: (data: unknown) => T;
-  getId: (data: T) => string;
+  getId: (data: T) => Id;
   onMutate?: () => void;
 };
 
-export function createHandle<T extends Record<string, unknown>>(
-  deps: HandleDependencies<T>,
-): Handle<T> {
+export function createHandle<T extends Record<string, unknown>, Id extends string = string>(
+  deps: HandleDependencies<T, Id>,
+): Handle<T, Id> {
   const { getCollection, getTombstones, getTimestamp, validate, getId, onMutate } = deps;
 
   return {

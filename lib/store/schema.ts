@@ -25,10 +25,15 @@ export type Output<T extends AnyObject> = StandardSchemaV1.InferOutput<T>;
 
 export type Input<T extends AnyObject> = StandardSchemaV1.InferInput<T>;
 
-export type CollectionConfig<T extends AnyObject> = {
+export type CollectionConfig<T extends AnyObject, Id extends string = string> = {
   schema: T;
-  keyPath: keyof Output<T> & string;
+  getId: (data: Output<T>) => Id;
 };
+
+/**
+ * Extract the ID type from a CollectionConfig's getId function return type
+ */
+export type CollectionId<T extends CollectionConfig<AnyObject>> = ReturnType<T["getId"]>;
 
 /**
  * Configuration for all collections in a store

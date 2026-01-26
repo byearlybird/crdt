@@ -27,7 +27,7 @@ const userSchema = z.object({
 
 const store = createStore({
   collections: {
-    users: { schema: userSchema, keyPath: "id" },
+    users: { schema: userSchema, getId: (data) => data.id },
   },
 });
 
@@ -65,14 +65,14 @@ const store = createStore({
         name: z.string(),
         email: z.string().optional(),
       }),
-      keyPath: "id",
+      getId: (data) => data.id,
     },
     notes: {
       schema: z.object({
         id: z.string(),
         content: z.string(),
       }),
-      keyPath: "id",
+      getId: (data) => data.id,
     },
   },
 });
@@ -175,7 +175,7 @@ const syncMiddleware = ({ getState, merge, subscribe }) => {
 // Use the middleware
 const store = createStore({
   collections: {
-    users: { schema: userSchema, keyPath: "id" },
+    users: { schema: userSchema, getId: (data) => data.id },
   },
 }).use(syncMiddleware);
 
