@@ -1,5 +1,5 @@
 import type { StoreConfig } from "../store/schema";
-import type { MiddlewareContext, StoreMiddleware } from "../store/middleware";
+import type { StoreAPI } from "../store/store";
 import type { StoreState } from "../core";
 
 export type PersistenceOptions = {
@@ -93,102 +93,92 @@ async function saveState(key: string, state: StoreState): Promise<void> {
   }
 }
 
-export function createPersistenceMiddleware<T extends StoreConfig>(
+export async function createPersistence<T extends StoreConfig>(
+  store: StoreAPI<T>,
   options: PersistenceOptions,
-): StoreMiddleware<T> {
+): Promise<() => Promise<void>> {
   const { key, debounceMs = DEFAULT_DEBOUNCE_MS, channelName = `starling:${key}` } = options;
 
-  return async (context: MiddlewareContext<T>) => {
-    let debounceTimeout: ReturnType<typeof setTimeout> | null = null;
-    let unsubscribe: (() => void) | null = null;
-    let broadcastChannel: globalThis.BroadcastChannel | null = null;
-    let isInitialLoad = true;
+  let debounceTimeout: ReturnType<typeof setTimeout> | null = null;
+  let broadcastChannel: globalThis.BroadcastChannel | null = null;
 
-    // Load state from IndexedDB on init
-    try {
-      const savedState = await loadState(key);
-      if (savedState) {
-        context.setState(savedState);
-        isInitialLoad = false;
-      }
-    } catch (error) {
-      console.warn("[Starling Persistence] Failed to load state:", error);
+  // Load state from IndexedDB
+  try {
+    const savedState = await loadState(key);
+    if (savedState) {
+      store.setState(({ applyState }) => {
+        applyState(savedState);
+      });
     }
+  } catch (error) {
+    console.warn("[Starling Persistence] Failed to load state:", error);
+  }
 
-    // Set up BroadcastChannel for cross-tab sync
-    try {
-      broadcastChannel = new globalThis.BroadcastChannel(channelName);
+  // Set up BroadcastChannel for cross-tab sync
+  try {
+    broadcastChannel = new globalThis.BroadcastChannel(channelName);
 
-      broadcastChannel.onmessage = (event: MessageEvent) => {
-        if (event.data?.type === "state-update" && event.data?.state) {
-          try {
-            const incomingState = event.data.state as StoreState;
-            // Merge with current state using setState
-            context.setState(incomingState);
-          } catch (error) {
-            console.warn("[Starling Persistence] Failed to process broadcast message:", error);
-          }
+    broadcastChannel.onmessage = (event: MessageEvent) => {
+      if (event.data?.type === "state-update" && event.data?.state) {
+        try {
+          const incomingState = event.data.state as StoreState;
+          store.setState(({ applyState }) => {
+            applyState(incomingState);
+          });
+        } catch (error) {
+          console.warn("[Starling Persistence] Failed to process broadcast message:", error);
         }
-      };
-    } catch (error) {
-      // BroadcastChannel may not be available in some environments
-      console.warn("[Starling Persistence] BroadcastChannel not available:", error);
-    }
-
-    // Subscribe to store changes
-    unsubscribe = context.subscribe(() => {
-      // Skip persistence on initial load to avoid saving immediately after loading
-      if (isInitialLoad) {
-        isInitialLoad = false;
-        return;
-      }
-
-      // Debounce writes
-      if (debounceTimeout) {
-        clearTimeout(debounceTimeout);
-      }
-
-      debounceTimeout = setTimeout(async () => {
-        const state = context.getState();
-        await saveState(key, state);
-
-        // Broadcast to other tabs after successful save
-        if (broadcastChannel) {
-          try {
-            broadcastChannel.postMessage({
-              type: "state-update",
-              state,
-            });
-          } catch (error) {
-            console.warn("[Starling Persistence] Failed to broadcast state:", error);
-          }
-        }
-      }, debounceMs);
-    });
-
-    // Cleanup function
-    return async () => {
-      // Unsubscribe first to prevent new changes during cleanup
-      if (unsubscribe) {
-        unsubscribe();
-        unsubscribe = null;
-      }
-
-      // Cancel any pending debounced write
-      if (debounceTimeout) {
-        clearTimeout(debounceTimeout);
-        debounceTimeout = null;
-      }
-
-      // Persist the latest state before closing
-      const state = context.getState();
-      await saveState(key, state);
-
-      // Close BroadcastChannel
-      if (broadcastChannel) {
-        broadcastChannel.close();
-        broadcastChannel = null;
       }
     };
+  } catch (error) {
+    // BroadcastChannel may not be available in some environments
+    console.warn("[Starling Persistence] BroadcastChannel not available:", error);
+  }
+
+  // Subscribe to store changes
+  const unsubscribe = store.subscribe(() => {
+    // Debounce writes
+    if (debounceTimeout) {
+      clearTimeout(debounceTimeout);
+    }
+
+    debounceTimeout = setTimeout(async () => {
+      const state = store.getState();
+      await saveState(key, state);
+
+      // Broadcast to other tabs after successful save
+      if (broadcastChannel) {
+        try {
+          broadcastChannel.postMessage({
+            type: "state-update",
+            state,
+          });
+        } catch (error) {
+          console.warn("[Starling Persistence] Failed to broadcast state:", error);
+        }
+      }
+    }, debounceMs);
+  });
+
+  // Return cleanup function
+  return async () => {
+    // Unsubscribe first to prevent new changes during cleanup
+    unsubscribe();
+
+    // Cancel any pending debounced write
+    if (debounceTimeout) {
+      clearTimeout(debounceTimeout);
+      debounceTimeout = null;
+    }
+
+    // Persist the latest state before closing
+    const state = store.getState();
+    await saveState(key, state);
+
+    // Close BroadcastChannel
+    if (broadcastChannel) {
+      broadcastChannel.close();
+      broadcastChannel = null;
+    }
   };
 }

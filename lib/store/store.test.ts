@@ -113,18 +113,13 @@ describe("createStore", () => {
     });
   });
 
-  test("writes notify listeners", async () => {
+  test("writes notify listeners", () => {
     const store = createProfileStore();
 
     const changes: string[] = [];
-    const middleware = ({ subscribe }: any) => {
-      subscribe((event: any) => {
-        changes.push(...Object.keys(event));
-      });
-    };
-
-    store.use(middleware);
-    await store.init();
+    store.subscribe((event) => {
+      changes.push(...Object.keys(event));
+    });
 
     store.users.add({ id: "1", name: "Alice", profile: {} });
 
@@ -132,171 +127,21 @@ describe("createStore", () => {
   });
 });
 
-describe("middleware", () => {
-  test("can register and initialize middleware", async () => {
-    const initOrder: string[] = [];
-    const middleware = () => {
-      initOrder.push("middleware1");
-    };
-
+describe("getState and setState", () => {
+  test("getState returns current state", () => {
     const store = createProfileStore();
 
-    store.use(middleware);
-    await store.init();
-
-    expect(initOrder).toEqual(["middleware1"]);
+    const state = store.getState();
+    expect(state).toHaveProperty("clock");
+    expect(state).toHaveProperty("collections");
+    expect(state).toHaveProperty("tombstones");
   });
 
-  test("use() is chainable", async () => {
-    const initOrder: string[] = [];
-    const middleware1 = () => {
-      initOrder.push("middleware1");
-    };
-    const middleware2 = () => {
-      initOrder.push("middleware2");
-    };
-
-    const store = createProfileStore().use(middleware1).use(middleware2);
-
-    await store.init();
-
-    expect(initOrder).toEqual(["middleware1", "middleware2"]);
-  });
-
-  test("middleware can subscribe to changes", async () => {
-    const changes: string[] = [];
-    const middleware = ({ subscribe }: any) => {
-      subscribe((event: any) => {
-        changes.push(...Object.keys(event));
-      });
-    };
-
-    const store = createProfileStore().use(middleware);
-
-    await store.init();
+  test("setState applies state via applyState", () => {
+    const store = createProfileStore();
 
     store.users.add({ id: "1", name: "Alice", profile: {} });
 
-    expect(changes).toContain("users");
-  });
-
-  test("middleware can load data via setState", async () => {
-    const snapshot = {
-      clock: { ms: 1000, seq: 0 },
-      collections: {
-        users: {
-          "1": {
-            id: { "~val": "1", "~ts": "1000:0" },
-            name: { "~val": "Alice", "~ts": "1000:0" },
-            profile: { "~val": {}, "~ts": "1000:0" },
-          },
-        },
-      },
-      tombstones: {},
-    };
-
-    const middleware = ({ setState }: any) => {
-      setState(snapshot, { silent: true });
-    };
-
-    const store = createProfileStore().use(middleware);
-
-    await store.init();
-
-    const user = store.users.get("1");
-    expect(user).toEqual({
-      id: "1",
-      name: "Alice",
-      profile: {},
-    });
-  });
-
-  test("middleware can access getState", async () => {
-    let capturedSnapshot: any = null;
-    const middleware = ({ getState }: any) => {
-      capturedSnapshot = getState();
-    };
-
-    const store = createProfileStore().use(middleware);
-
-    await store.init();
-
-    expect(capturedSnapshot).toHaveProperty("clock");
-    expect(capturedSnapshot).toHaveProperty("collections");
-    expect(capturedSnapshot).toHaveProperty("tombstones");
-  });
-
-  test("throws error when adding middleware after init", async () => {
-    const store = createProfileStore();
-
-    await store.init();
-
-    expect(() => {
-      store.use(() => {});
-    }).toThrow("Cannot add middleware after initialization");
-  });
-
-  test("throws error when initializing twice", async () => {
-    const store = createProfileStore().use(() => {});
-
-    await store.init();
-
-    await expect(store.init()).rejects.toThrow("Store already initialized");
-  });
-
-  test("throws error when disposing uninitialized store", async () => {
-    const store = createProfileStore();
-
-    await expect(store.dispose()).rejects.toThrow("Store not initialized");
-  });
-
-  test("middleware cleanup is called on dispose", async () => {
-    const changes: string[] = [];
-    const middleware = ({ subscribe }: any) => {
-      const unsubscribe = subscribe((event: any) => {
-        changes.push(...Object.keys(event));
-      });
-
-      // Middleware returns cleanup function
-      return unsubscribe;
-    };
-
-    const store = createProfileStore().use(middleware);
-
-    await store.init();
-    await store.dispose();
-
-    // Clear previous changes
-    changes.length = 0;
-
-    // Make a change after dispose
-    store.users.add({ id: "1", name: "Alice", profile: {} });
-
-    // Middleware should not receive the change because cleanup was called
-    expect(changes).toHaveLength(0);
-  });
-
-  test("store works without middleware", () => {
-    const store = createProfileStore();
-
-    // Should be able to use store immediately without init
-    store.users.add({ id: "1", name: "Alice", profile: {} });
-
-    const user = store.users.get("1");
-    expect(user).toEqual({
-      id: "1",
-      name: "Alice",
-      profile: {},
-    });
-  });
-
-  test("setState replaces store state", async () => {
-    const store = createProfileStore();
-
-    // Add initial data
-    store.users.add({ id: "1", name: "Alice", profile: {} });
-
-    // Create a new snapshot with different data
     const newSnapshot = {
       clock: { ms: 2000, seq: 0 },
       collections: {
@@ -311,19 +156,10 @@ describe("middleware", () => {
       tombstones: {},
     };
 
-    // Use middleware to access setState
-    let setStateFn: any = null;
-    const middleware = ({ setState }: any) => {
-      setStateFn = setState;
-    };
+    store.setState(({ applyState }) => {
+      applyState(newSnapshot);
+    });
 
-    store.use(middleware);
-    await store.init();
-
-    // Apply new snapshot
-    setStateFn(newSnapshot, { silent: true });
-
-    // Verify old data is gone and new data is present
     expect(store.users.get("1")).toBeUndefined();
     expect(store.users.get("2")).toEqual({
       id: "2",
@@ -332,20 +168,10 @@ describe("middleware", () => {
     });
   });
 
-  test("setState advances clock", async () => {
+  test("setState advances clock", () => {
     const store = createProfileStore();
 
-    let setStateFn: any = null;
-    let getStateFn: any = null;
-    const middleware = ({ setState, getState }: any) => {
-      setStateFn = setState;
-      getStateFn = getState;
-    };
-
-    store.use(middleware);
-    await store.init();
-
-    const initial = getStateFn();
+    const initial = store.getState();
     const initialMs = initial.clock.ms;
 
     const newSnapshot = {
@@ -354,63 +180,91 @@ describe("middleware", () => {
       tombstones: {},
     };
 
-    setStateFn(newSnapshot, { silent: true });
+    store.setState(({ applyState }) => {
+      applyState(newSnapshot);
+    });
 
-    const after = getStateFn();
+    const after = store.getState();
     expect(after.clock.ms).toBe(initialMs + 1000);
     expect(after.clock.seq).toBeGreaterThanOrEqual(5);
   });
 
-  test("setState does not notify - middleware uses notify explicitly", async () => {
+  test("applyState without notify is silent", () => {
     const store = createProfileStore();
 
     let notified = false;
-    const unsubscribeFns: (() => void)[] = [];
-
-    let setStateFn: any = null;
-    let notifyFn: any = null;
-    const middleware = ({ setState, notify, subscribe }: any) => {
-      setStateFn = setState;
-      notifyFn = notify;
-      const unsubscribe = subscribe((event: any) => {
-        if (Object.keys(event).length > 0) {
-          notified = true;
-        }
-      });
-      unsubscribeFns.push(unsubscribe);
-      return () => {
-        unsubscribeFns.forEach((fn) => fn());
-        unsubscribeFns.length = 0;
-      };
-    };
-
-    store.use(middleware);
-    await store.init();
+    store.subscribe(() => {
+      notified = true;
+    });
 
     const snapshot = {
       clock: { ms: 1000, seq: 0 },
       collections: {
         users: {
           "1": {
-            id: { "~value": "1", "~stamp": "1000:0" },
-            name: { "~value": "Alice", "~stamp": "1000:0" },
-            profile: { "~value": {}, "~stamp": "1000:0" },
+            id: { "~val": "1", "~ts": "1000:0" },
+            name: { "~val": "Alice", "~ts": "1000:0" },
+            profile: { "~val": {}, "~ts": "1000:0" },
           },
         },
       },
       tombstones: {},
     };
 
-    // setState does not notify
-    notified = false;
-    setStateFn(snapshot);
+    store.setState(({ applyState }) => {
+      applyState(snapshot);
+    });
+
     expect(notified).toBe(false);
+  });
 
-    // Middleware uses notify explicitly
-    notified = false;
-    notifyFn({ users: true });
+  test("notify triggers subscribers", () => {
+    const store = createProfileStore();
+
+    let notified = false;
+    store.subscribe(() => {
+      notified = true;
+    });
+
+    store.setState(({ notify }) => {
+      notify({ users: true });
+    });
+
     expect(notified).toBe(true);
+  });
 
-    unsubscribeFns.forEach((fn) => fn());
+  test("applyState and notify together", () => {
+    const store = createProfileStore();
+
+    const events: any[] = [];
+    store.subscribe((event) => {
+      events.push(event);
+    });
+
+    const snapshot = {
+      clock: { ms: 1000, seq: 0 },
+      collections: {
+        users: {
+          "1": {
+            id: { "~val": "1", "~ts": "1000:0" },
+            name: { "~val": "Alice", "~ts": "1000:0" },
+            profile: { "~val": {}, "~ts": "1000:0" },
+          },
+        },
+      },
+      tombstones: {},
+    };
+
+    store.setState(({ applyState, notify }) => {
+      applyState(snapshot);
+      notify({ users: true });
+    });
+
+    expect(store.users.get("1")).toEqual({
+      id: "1",
+      name: "Alice",
+      profile: {},
+    });
+    expect(events).toEqual([{ users: true }]);
   });
 });

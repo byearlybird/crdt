@@ -3,11 +3,6 @@ import { createEmitter } from "../emitter";
 import { createHandle, type Handle } from "../store-two/collection-handle";
 import type { CollectionName, Output, StoreConfig } from "./schema";
 import { validate } from "./schema";
-import {
-  createMiddlewareManager,
-  type MiddlewareContext,
-  type StoreMiddleware,
-} from "./middleware";
 import type { StoreChangeEvent } from "./types";
 import {
   applyStateSnapshot,
@@ -16,21 +11,26 @@ import {
 } from "./store-utils";
 
 export type StoreAPI<T extends StoreConfig> = {
-  subscribe<K extends (keyof T & string)[]>(
-    collections: [...K],
-    callback: (event: StoreChangeEvent<T>) => void,
-  ): () => void;
-  use(middleware: StoreMiddleware<T>): StoreAPI<T>;
-  init(): Promise<void>;
-  dispose(): Promise<void>;
+  subscribe: {
+    (callback: (event: StoreChangeEvent<T>) => void): () => void;
+    <K extends (keyof T & string)[]>(
+      collections: [...K],
+      callback: (event: StoreChangeEvent<T>) => void,
+    ): () => void;
+  };
+  getState(): StoreState;
+  setState(
+    fn: (ctx: {
+      applyState: (snapshot: StoreState) => void;
+      notify: (event: StoreChangeEvent<T>) => void;
+    }) => void,
+  ): void;
 } & {
   [N in CollectionName<T>]: Handle<Output<T[N]["schema"]>>;
 };
 
 export function createStore<T extends StoreConfig>(config: { collections: T }): StoreAPI<T> {
-  let isInitialized = false;
   const emitter = createEmitter<StoreChangeEvent<T>>();
-  const middlewareManager = createMiddlewareManager<T>();
 
   const state: StoreState = {
     clock: { ms: Date.now(), seq: 0 },
@@ -41,13 +41,6 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
   const getNextStamp = () => {
     state.clock = advanceClock(state.clock, { ms: Date.now(), seq: 0 });
     return makeStamp(state.clock.ms, state.clock.seq);
-  };
-
-  const middlewareContext: MiddlewareContext<T> = {
-    subscribe: (listener) => emitter.subscribe(listener),
-    notify: (event) => emitter.emit(event),
-    getState: () => ({ ...state }),
-    setState: (snapshot) => applyStateSnapshot(state, snapshot),
   };
 
   const collectionHandles = {} as {
@@ -73,41 +66,34 @@ export function createStore<T extends StoreConfig>(config: { collections: T }): 
     });
   }
 
-  const api: StoreAPI<T> = {
+  return {
     ...collectionHandles,
-    subscribe(collections, callback) {
+    subscribe(
+      collectionsOrCallback: string[] | ((event: StoreChangeEvent<T>) => void),
+      maybeCallback?: (event: StoreChangeEvent<T>) => void,
+    ) {
+      if (typeof collectionsOrCallback === "function") {
+        return emitter.subscribe(collectionsOrCallback);
+      }
+
+      const collections = collectionsOrCallback as (keyof T & string)[];
+      const callback = maybeCallback!;
       validateCollectionNames(collections, config.collections);
 
-      const unsubscribe = emitter.subscribe((event) => {
+      return emitter.subscribe((event) => {
         if (hasRelevantChange(event, collections)) {
           callback(event);
         }
       });
-
-      return unsubscribe;
     },
-    use(middleware) {
-      if (isInitialized) {
-        throw new Error("Cannot add middleware after initialization");
-      }
-      middlewareManager.use(middleware);
-      return this;
+    getState() {
+      return { ...state };
     },
-    async init() {
-      if (isInitialized) {
-        throw new Error("Store already initialized");
-      }
-      await middlewareManager.runInit(middlewareContext);
-      isInitialized = true;
+    setState(fn) {
+      fn({
+        applyState: (snapshot) => applyStateSnapshot(state, snapshot),
+        notify: (event) => emitter.emit(event),
+      });
     },
-    async dispose() {
-      if (!isInitialized) {
-        throw new Error("Store not initialized");
-      }
-      await middlewareManager.runDispose();
-      isInitialized = false;
-    },
-  };
-
-  return api;
+  } as StoreAPI<T>;
 }

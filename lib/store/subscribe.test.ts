@@ -190,4 +190,32 @@ describe("subscribe", () => {
 
     expect(events).toEqual([{ users: true }, { users: true }, { users: true }]);
   });
+
+  test("global subscribe receives all collection events", () => {
+    const store = createMultiCollectionStore();
+
+    const events: any[] = [];
+    store.subscribe((event) => events.push(event));
+
+    store.users.add({ id: "1", name: "Alice", profile: {} });
+    store.notes.add({ id: "1", content: "Hello" });
+
+    expect(events).toHaveLength(2);
+    expect(events[0]).toEqual({ users: true });
+    expect(events[1]).toEqual({ notes: true });
+  });
+
+  test("global subscribe returns unsubscribe function", () => {
+    const store = createProfileStore();
+
+    const callback = vi.fn();
+    const unsubscribe = store.subscribe(callback);
+
+    store.users.add({ id: "1", name: "Alice", profile: {} });
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    store.users.add({ id: "2", name: "Bob", profile: {} });
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
 });
