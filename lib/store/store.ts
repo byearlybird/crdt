@@ -4,11 +4,7 @@ import { createHandle, type Handle } from "../store-two/collection-handle";
 import type { CollectionName, Output, StoreConfig } from "./schema";
 import { validate } from "./schema";
 import type { StoreChangeEvent } from "./types";
-import {
-  mergeState,
-  hasRelevantChange,
-  validateCollectionNames,
-} from "./store-utils";
+import { mergeState, hasRelevantChange, validateCollectionNames } from "./store-utils";
 
 export type StoreAPI<T extends StoreConfig> = {
   subscribe: {

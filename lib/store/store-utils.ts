@@ -2,10 +2,7 @@ import { advanceClock, mergeCollections, mergeTombstones, type StoreState } from
 import type { StoreConfig } from "./schema";
 import type { StoreChangeEvent } from "./types";
 
-export function mergeState(
-  currentState: StoreState,
-  snapshot: StoreState,
-): Record<string, true> {
+export function mergeState(currentState: StoreState, snapshot: StoreState): Record<string, true> {
   const diff: Record<string, true> = {};
 
   currentState.clock = advanceClock(currentState.clock, snapshot.clock);
