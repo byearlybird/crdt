@@ -137,7 +137,7 @@ describe("getState and setState", () => {
     expect(state).toHaveProperty("tombstones");
   });
 
-  test("setState merges state via applyState", () => {
+  test("setState merges state via mergeState", () => {
     const store = createProfileStore();
 
     store.users.add({ id: "1", name: "Alice", profile: {} });
@@ -156,8 +156,8 @@ describe("getState and setState", () => {
       tombstones: {},
     };
 
-    store.setState(({ applyState }) => {
-      applyState(newSnapshot);
+    store.setState(({ mergeState }) => {
+      mergeState(newSnapshot);
     });
 
     // Local doc "1" is preserved (merge, not replace)
@@ -185,8 +185,8 @@ describe("getState and setState", () => {
       tombstones: {},
     };
 
-    store.setState(({ applyState }) => {
-      applyState(newSnapshot);
+    store.setState(({ mergeState }) => {
+      mergeState(newSnapshot);
     });
 
     const after = store.getState();
@@ -194,7 +194,7 @@ describe("getState and setState", () => {
     expect(after.clock.seq).toBeGreaterThanOrEqual(5);
   });
 
-  test("applyState without notify is silent", () => {
+  test("mergeState without notify is silent", () => {
     const store = createProfileStore();
 
     let notified = false;
@@ -216,8 +216,8 @@ describe("getState and setState", () => {
       tombstones: {},
     };
 
-    store.setState(({ applyState }) => {
-      applyState(snapshot);
+    store.setState(({ mergeState }) => {
+      mergeState(snapshot);
     });
 
     expect(notified).toBe(false);
@@ -238,7 +238,7 @@ describe("getState and setState", () => {
     expect(notified).toBe(true);
   });
 
-  test("applyState returns diff for notify", () => {
+  test("mergeState returns diff for notify", () => {
     const store = createProfileStore();
 
     const events: any[] = [];
@@ -260,8 +260,8 @@ describe("getState and setState", () => {
       tombstones: {},
     };
 
-    store.setState(({ applyState, notify }) => {
-      const diff = applyState(snapshot);
+    store.setState(({ mergeState, notify }) => {
+      const diff = mergeState(snapshot);
       notify(diff);
     });
 

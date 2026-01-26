@@ -106,8 +106,8 @@ export async function createPersistence<T extends StoreConfig>(
   try {
     const savedState = await loadState(key);
     if (savedState) {
-      store.setState(({ applyState, notify }) => {
-        notify(applyState(savedState));
+      store.setState(({ mergeState, notify }) => {
+        notify(mergeState(savedState));
       });
     }
   } catch (error) {
@@ -122,8 +122,8 @@ export async function createPersistence<T extends StoreConfig>(
       if (event.data?.type === "state-update" && event.data?.state) {
         try {
           const incomingState = event.data.state as StoreState;
-          store.setState(({ applyState, notify }) => {
-            notify(applyState(incomingState));
+          store.setState(({ mergeState, notify }) => {
+            notify(mergeState(incomingState));
           });
         } catch (error) {
           console.warn("[Starling Persistence] Failed to process broadcast message:", error);
