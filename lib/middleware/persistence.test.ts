@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import "fake-indexeddb/auto";
-import { createPersistenceMiddleware } from "./persistence";
+import { createPersistence } from "./persistence";
 import { createProfileStore } from "../store/test-utils";
 import type { StoreState } from "../core";
 
@@ -70,7 +70,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("createPersistenceMiddleware", () => {
+describe("createPersistence", () => {
   test("loads state from IndexedDB on init", async () => {
     const store = createProfileStore();
     const savedState: StoreState = {
@@ -106,8 +106,7 @@ describe("createPersistenceMiddleware", () => {
     });
     db.close();
 
-    store.use(createPersistenceMiddleware({ key: "test-store" }));
-    await store.init();
+    await createPersistence(store, { key: "test-store" });
 
     const user = store.users.get("1");
     expect(user).toEqual({
@@ -120,8 +119,7 @@ describe("createPersistenceMiddleware", () => {
   test("persists state to IndexedDB on changes", async () => {
     const store = createProfileStore();
 
-    store.use(createPersistenceMiddleware({ key: "test-store", debounceMs: 50 }));
-    await store.init();
+    await createPersistence(store, { key: "test-store", debounceMs: 50 });
 
     store.users.add({ id: "1", name: "Alice", profile: {} });
 
@@ -161,8 +159,7 @@ describe("createPersistenceMiddleware", () => {
       return originalPut.call(this, value, key);
     };
 
-    store.use(createPersistenceMiddleware({ key: "test-store", debounceMs: 100 }));
-    await store.init();
+    await createPersistence(store, { key: "test-store", debounceMs: 100 });
 
     // Make multiple rapid changes
     store.users.add({ id: "1", name: "Alice", profile: {} });
@@ -185,11 +182,8 @@ describe("createPersistenceMiddleware", () => {
     const store1 = createProfileStore();
     const store2 = createProfileStore();
 
-    store1.use(createPersistenceMiddleware({ key: "test-store", debounceMs: 50 }));
-    store2.use(createPersistenceMiddleware({ key: "test-store", debounceMs: 50 }));
-
-    await store1.init();
-    await store2.init();
+    await createPersistence(store1, { key: "test-store", debounceMs: 50 });
+    await createPersistence(store2, { key: "test-store", debounceMs: 50 });
 
     // Make change in store1
     store1.users.add({ id: "1", name: "Alice", profile: {} });
@@ -224,10 +218,9 @@ describe("createPersistenceMiddleware", () => {
     };
 
     const store = createProfileStore();
-    store.use(createPersistenceMiddleware({ key: "test-store" }));
 
     // Should not throw
-    await expect(store.init()).resolves.not.toThrow();
+    await expect(createPersistence(store, { key: "test-store" })).resolves.not.toThrow();
 
     // Store should still work
     store.users.add({ id: "1", name: "Alice", profile: {} });
@@ -246,10 +239,9 @@ describe("createPersistenceMiddleware", () => {
     } as any;
 
     const store = createProfileStore();
-    store.use(createPersistenceMiddleware({ key: "test-store" }));
 
     // Should not throw
-    await expect(store.init()).resolves.not.toThrow();
+    await expect(createPersistence(store, { key: "test-store" })).resolves.not.toThrow();
 
     // Store should still work
     store.users.add({ id: "1", name: "Alice", profile: {} });
@@ -259,13 +251,12 @@ describe("createPersistenceMiddleware", () => {
   test("cleans up resources on dispose", async () => {
     const store = createProfileStore();
 
-    store.use(createPersistenceMiddleware({ key: "test-store", debounceMs: 100 }));
-    await store.init();
+    const cleanup = await createPersistence(store, { key: "test-store", debounceMs: 100 });
 
     store.users.add({ id: "1", name: "Alice", profile: {} });
 
     // Dispose before debounce completes
-    await store.dispose();
+    await cleanup();
 
     // Wait - should not save after dispose
     let saveCount = 0;
@@ -292,13 +283,12 @@ describe("createPersistenceMiddleware", () => {
       return originalPut.call(this, value, key);
     };
 
-    store.use(createPersistenceMiddleware({ key: "test-store", debounceMs: 100 }));
-    await store.init();
+    const cleanup = await createPersistence(store, { key: "test-store", debounceMs: 100 });
 
     store.users.add({ id: "1", name: "Alice", profile: {} });
 
     // Dispose before debounce completes - this should flush
-    await store.dispose();
+    await cleanup();
     // Wait for flush to complete
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -319,8 +309,7 @@ describe("createPersistenceMiddleware", () => {
       return originalPut.call(this, value, key);
     };
 
-    store.use(createPersistenceMiddleware({ key: "test-store-custom-debounce", debounceMs: 200 }));
-    await store.init();
+    await createPersistence(store, { key: "test-store-custom-debounce", debounceMs: 200 });
 
     // Clear any saves from init
     saveCount = 0;
@@ -347,11 +336,8 @@ describe("createPersistenceMiddleware", () => {
     const store1 = createProfileStore();
     const store2 = createProfileStore();
 
-    store1.use(createPersistenceMiddleware({ key: "test-store", channelName: "custom-channel" }));
-    store2.use(createPersistenceMiddleware({ key: "test-store", channelName: "custom-channel" }));
-
-    await store1.init();
-    await store2.init();
+    await createPersistence(store1, { key: "test-store", channelName: "custom-channel" });
+    await createPersistence(store2, { key: "test-store", channelName: "custom-channel" });
 
     // Verify they're using the same channel
     expect(MockBroadcastChannel.instances.has("custom-channel")).toBe(true);
@@ -399,8 +385,7 @@ describe("createPersistenceMiddleware", () => {
       return originalPut.call(this, value, key);
     };
 
-    store.use(createPersistenceMiddleware({ key: "test-store", debounceMs: 50 }));
-    await store.init();
+    await createPersistence(store, { key: "test-store", debounceMs: 50 });
 
     // Wait for any potential saves
     await new Promise((resolve) => setTimeout(resolve, 100));
