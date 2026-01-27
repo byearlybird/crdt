@@ -1,8 +1,13 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
+/**
+ * Validates input data against a schema.
+ * Accepts `unknown` input to allow safe validation of untyped data.
+ * The schema's runtime validation will ensure type safety.
+ */
 export function validate<T extends StandardSchemaV1>(
   schema: T,
-  input: StandardSchemaV1.InferInput<T>,
+  input: unknown,
 ): StandardSchemaV1.InferOutput<T> {
   const result = schema["~standard"].validate(input);
   if (result instanceof Promise) {
@@ -32,7 +37,9 @@ export type Input<T extends AnyObject> = StandardSchemaV1.InferInput<T>;
  * The `~docType` and `~idType` are phantom types used only for type inference.
  * They are not accessed at runtime.
  */
-export type CollectionDef<T extends object = object, Id extends string = string> = {
+import type { Document } from "../core";
+
+export type CollectionDef<T extends Document = Document, Id extends string = string> = {
   readonly "~docType": T; // Phantom - document shape
   readonly "~idType": Id; // Phantom - ID type
   schema: AnyObject; // Runtime only - used for validation

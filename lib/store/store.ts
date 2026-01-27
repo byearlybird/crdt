@@ -3,6 +3,7 @@ import {
   makeStamp,
   type CollectionState,
   type StoreState,
+  type Document,
 } from "../core";
 import { createEmitter } from "../emitter";
 import { createHandle, type Handle } from "./collection-handle";
@@ -59,8 +60,7 @@ export function createStore<T extends StoreConfig>(config: T): StoreAPI<T> {
       getCollection: () => state.collections[collectionName]?.documents ?? {},
       getTombstones: () => state.collections[collectionName]?.tombstones ?? {},
       getTimestamp: getNextStamp,
-      validate: (data: unknown) =>
-        validate(collectionConfig.schema, data as Record<string, unknown>),
+      validate: (data: unknown) => validate(collectionConfig.schema, data),
       getId: (data: DocType<T[typeof collectionName]>) => collectionConfig.getId(data),
       onMutate: () => emitter.emit({ [collectionName]: true } as StoreChangeEvent<T>),
     });
@@ -90,7 +90,7 @@ export function createStore<T extends StoreConfig>(config: T): StoreAPI<T> {
       return { ...state };
     },
     merge(snapshot) {
-      const diff = mergeState(state, snapshot) as StoreChangeEvent<T>;
+      const diff = mergeState(state, snapshot, config);
       emitter.emit(diff);
       return diff;
     },
@@ -104,7 +104,7 @@ export function createStore<T extends StoreConfig>(config: T): StoreAPI<T> {
       const event = {} as StoreChangeEvent<T>;
 
       // 2. Clone relevant collection states
-      const clonedStates: Record<string, CollectionState> = {};
+      const clonedStates: Record<string, CollectionState<Document>> = {};
       for (const name of collections) {
         const original = state.collections[name]!;
         clonedStates[name] = {
@@ -121,8 +121,7 @@ export function createStore<T extends StoreConfig>(config: T): StoreAPI<T> {
           getCollection: () => clonedStates[name]!.documents,
           getTombstones: () => clonedStates[name]!.tombstones,
           getTimestamp: getNextStamp,
-          validate: (data: unknown) =>
-            validate(collectionConfig.schema, data as Record<string, unknown>),
+          validate: (data: unknown) => validate(collectionConfig.schema, data),
           getId: (data: DocType<T[typeof name]>) => collectionConfig.getId(data),
           onMutate: () => {
             (event as Record<string, true>)[name] = true;

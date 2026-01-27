@@ -1,4 +1,6 @@
-export type Tombstones = Record<string, string>;
+import type { Stamp } from "./clock";
+
+export type Tombstones = Record<string, Stamp>;
 
 export function isDeleted(id: string, tombstones: Tombstones): boolean {
   return tombstones[id] !== undefined;

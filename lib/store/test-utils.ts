@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Atomizer, makeStamp, type Document } from "../core";
+import { Atomizer, makeStamp, type AtomizedDocument, type Stamp } from "../core";
 import { collection } from "./schema";
 import { createStore } from "./store";
 
@@ -57,7 +57,11 @@ export function createMultiCollectionStore() {
 }
 
 // Document creation helpers
-export function createUserDoc(id: string, name: string, stamp: string): Document {
+type UserDoc = { id: string; name: string };
+type ProfileDoc = { id: string; name: string; profile: { age?: number; email?: string } };
+type NoteDoc = { id: string; content: string };
+
+export function createUserDoc(id: string, name: string, stamp: Stamp): AtomizedDocument<UserDoc> {
   return Atomizer.atomize({ id, name }, stamp);
 }
 
@@ -65,11 +69,15 @@ export function createProfileDoc(
   id: string,
   name: string,
   profile: { age?: number; email?: string },
-  stamp: string,
-): Document {
+  stamp: Stamp,
+): AtomizedDocument<ProfileDoc> {
   return Atomizer.atomize({ id, name, profile }, stamp);
 }
 
-export function createNoteDoc(id: string, content: string, stamp: string): Document {
+export function createNoteDoc(
+  id: string,
+  content: string,
+  stamp: Stamp,
+): AtomizedDocument<NoteDoc> {
   return Atomizer.atomize({ id, content }, stamp);
 }

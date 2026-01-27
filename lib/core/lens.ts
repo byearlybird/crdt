@@ -1,8 +1,8 @@
 import { Atomizer } from "./atomizer";
-import type { Document } from "./types";
+import type { AtomizedDocument, Document } from "./types";
 
-export function createReadLens<T extends object>(doc: Document<T>): T {
-  const handler: ProxyHandler<Document<T>> = {
+export function createReadLens<T extends Document>(doc: AtomizedDocument<T>): T {
+  const handler: ProxyHandler<AtomizedDocument<T>> = {
     get(target, prop, receiver) {
       // Ignore prototype properties and symbols
       if (typeof prop === "symbol" || !Object.prototype.hasOwnProperty.call(target, prop)) {
@@ -22,7 +22,7 @@ export function createReadLens<T extends object>(doc: Document<T>): T {
 
       // 3. Non-atom (invalid); fail fast
       throw new Error(
-        `createReadLens: field "${String(prop)}" is not an atom. Expected Document<T> with atomized fields only.`,
+        `createReadLens: field "${String(prop)}" is not an atom. Expected AtomizedDocument<T> with atomized fields only.`,
       );
     },
 

@@ -1,9 +1,10 @@
-import type { Atom, Document } from "./types";
+import type { Stamp } from "./clock";
+import type { Atom, AtomizedDocument, Document } from "./types";
 import { KEYS } from "./types";
 
 export const Atomizer = {
-  // Create an atom (defaulting to now)
-  pack: <T>(value: T, timestamp: string): Atom<T> => ({
+  // Create an atom with a timestamp
+  pack: <T>(value: T, timestamp: Stamp): Atom<T> => ({
     [KEYS.VAL]: value,
     [KEYS.TS]: timestamp,
   }),
@@ -18,12 +19,12 @@ export const Atomizer = {
     return node !== null && typeof node === "object" && KEYS.VAL in node;
   },
 
-  // Converts a plain object into a Document by atomizing each field.
+  // Converts a plain object into an AtomizedDocument by atomizing each field.
   // Nested objects are stored as blob values (not flattened).
-  atomize: <T extends Record<string, any>>(data: T, timestamp: string): Document<T> => {
-    const document = {} as Document<T>;
-    for (const [key, value] of Object.entries(data)) {
-      document[key as keyof T] = Atomizer.pack(value, timestamp);
+  atomize: <T extends Document>(data: T, timestamp: Stamp): AtomizedDocument<T> => {
+    const document = {} as AtomizedDocument<T>;
+    for (const key of Object.keys(data) as (keyof T)[]) {
+      document[key] = Atomizer.pack(data[key], timestamp);
     }
     return document;
   },

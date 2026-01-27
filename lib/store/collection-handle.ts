@@ -5,9 +5,12 @@ import {
   mergeDocs,
   type Collection,
   type Tombstones,
+  type Document,
+  type AtomizedDocument,
+  type Stamp,
 } from "../core";
 
-export type Handle<T, Id extends string = string> = {
+export type Handle<T extends Document, Id extends string = string> = {
   get(id: Id): T | undefined;
   list(): T[];
   put(data: T): T;
@@ -15,16 +18,16 @@ export type Handle<T, Id extends string = string> = {
   remove(id: Id): void;
 };
 
-export type HandleDependencies<T extends object, Id extends string = string> = {
+export type HandleDependencies<T extends Document, Id extends string = string> = {
   getCollection: () => Collection<T>;
   getTombstones: () => Tombstones;
-  getTimestamp: () => string;
+  getTimestamp: () => Stamp;
   validate: (data: unknown) => T;
   getId: (data: T) => Id;
   onMutate?: () => void;
 };
 
-export function createHandle<T extends Record<string, unknown>, Id extends string = string>(
+export function createHandle<T extends Document, Id extends string = string>(
   deps: HandleDependencies<T, Id>,
 ): Handle<T, Id> {
   const { getCollection, getTombstones, getTimestamp, validate, getId, onMutate } = deps;
@@ -66,7 +69,9 @@ export function createHandle<T extends Record<string, unknown>, Id extends strin
         throw new Error(`Cannot patch non-existent document "${id}"`);
       }
 
-      const changes = Atomizer.atomize<Partial<T>>(data, getTimestamp());
+      const changes = Atomizer.atomize<Partial<T>>(data, getTimestamp()) as Partial<
+        AtomizedDocument<T>
+      >;
       const merged = mergeDocs(current, changes);
       const plain = createReadLens(merged);
       validate(plain);

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { advanceClock, makeStamp } from "./clock";
+import { advanceClock, asStamp, makeStamp } from "./clock";
 
 describe("advanceClock", () => {
   test("with greater ms updates ms and resets seq", () => {
@@ -52,5 +52,34 @@ describe("makeStamp", () => {
   test("encodes values in hex format", () => {
     const stamp = makeStamp(255, 15);
     expect(stamp).toMatch(/^[0-9a-f]{24}$/);
+  });
+});
+
+describe("asStamp", () => {
+  test("accepts valid 24-character hex string", () => {
+    const valid = "0000000003e8000000abcdef";
+    expect(() => asStamp(valid)).not.toThrow();
+    expect(asStamp(valid)).toBe(valid);
+  });
+
+  test("accepts stamps created by makeStamp", () => {
+    const stamp = makeStamp(1000, 0);
+    expect(() => asStamp(stamp)).not.toThrow();
+  });
+
+  test("throws on wrong length", () => {
+    expect(() => asStamp("abc")).toThrow("Invalid stamp: expected 24 hex characters");
+    expect(() => asStamp("0000000003e8000000abcdef00")).toThrow(
+      "Invalid stamp: expected 24 hex characters",
+    );
+  });
+
+  test("throws on non-hex characters", () => {
+    expect(() => asStamp("0000000003e8000000abcdeg")).toThrow(
+      "Invalid stamp: expected 24 hex characters",
+    );
+    expect(() => asStamp("0000000003e8000000abcde!")).toThrow(
+      "Invalid stamp: expected 24 hex characters",
+    );
   });
 });
