@@ -1,3 +1,4 @@
+import type { Document } from "../core";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 /**
@@ -29,15 +30,6 @@ export type AnyObject = StandardSchemaV1<Record<string, any>>;
 export type Output<T extends AnyObject> = StandardSchemaV1.InferOutput<T>;
 
 export type Input<T extends AnyObject> = StandardSchemaV1.InferInput<T>;
-
-/**
- * A collection definition with document and ID types captured directly.
- * Use the `collection()` helper to create instances with proper type inference.
- *
- * The `~docType` and `~idType` are phantom types used only for type inference.
- * They are not accessed at runtime.
- */
-import type { Document } from "../core";
 
 export type CollectionDef<T extends Document = Document, Id extends string = string> = {
   readonly "~docType": T; // Phantom - document shape

@@ -622,7 +622,10 @@ describe("IdbPersister", () => {
       return JSON.parse(serialized) as StoreState;
     };
 
-    await prepopulateIndexedDB("test-store-deserialize-only", `PREFIX:${JSON.stringify(savedState)}`);
+    await prepopulateIndexedDB(
+      "test-store-deserialize-only",
+      `PREFIX:${JSON.stringify(savedState)}`,
+    );
 
     const persister = new IdbPersister(store, {
       key: "test-store-deserialize-only",

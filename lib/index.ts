@@ -1,3 +1,3 @@
 export * from "./store";
 export * from "./core";
-export * from "./middleware";
+export * from "./persisters";
