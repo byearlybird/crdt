@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import "fake-indexeddb/auto";
-import { createPersistence } from "./persistence";
+import { IdbPersister } from "./idb-persister";
 import { createProfileStore } from "../store/test-utils";
 import type { StoreState } from "../core";
 import { makeStamp } from "../core";
@@ -61,6 +61,38 @@ class MockBroadcastChannel {
   }
 }
 
+/**
+ * Pre-populates IndexedDB with test data.
+ * @param dbName - The database name to open/create
+ * @param data - The serialized data to store
+ * @param storeName - The object store name (defaults to "state")
+ * @param storeKey - The key to store the data under (defaults to "store")
+ */
+async function prepopulateIndexedDB(
+  dbName: string,
+  data: string,
+  storeName: string = "state",
+  storeKey: string = "store",
+): Promise<void> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(dbName, 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(storeName);
+    };
+  });
+
+  const tx = db.transaction([storeName], "readwrite");
+  const storeObj = tx.objectStore(storeName);
+  await new Promise<void>((resolve, reject) => {
+    const putRequest = storeObj.put(data, storeKey);
+    putRequest.onsuccess = () => resolve();
+    putRequest.onerror = () => reject(putRequest.error);
+  });
+  db.close();
+}
+
 // Setup mocks
 beforeEach(() => {
   global.BroadcastChannel = MockBroadcastChannel as any;
@@ -71,7 +103,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("createPersistence", () => {
+describe("IdbPersister", () => {
   test("loads state from IndexedDB on init", async () => {
     const store = createProfileStore();
     const stamp = makeStamp(1000, 0);
@@ -91,26 +123,10 @@ describe("createPersistence", () => {
       },
     };
 
-    // Pre-populate IndexedDB
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("test-store", 1);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-      request.onupgradeneeded = () => {
-        request.result.createObjectStore("state");
-      };
-    });
+    await prepopulateIndexedDB("test-store", JSON.stringify(savedState));
 
-    const tx = db.transaction(["state"], "readwrite");
-    const storeObj = tx.objectStore("state");
-    await new Promise<void>((resolve, reject) => {
-      const putRequest = storeObj.put(JSON.stringify(savedState), "store");
-      putRequest.onsuccess = () => resolve();
-      putRequest.onerror = () => reject(putRequest.error);
-    });
-    db.close();
-
-    const cleanup = await createPersistence(store, { key: "test-store" });
+    const persister = new IdbPersister(store, { key: "test-store" });
+    await persister.init();
 
     const user = store.get("users", "1");
     expect(user).toEqual({
@@ -119,13 +135,14 @@ describe("createPersistence", () => {
       profile: {},
     });
 
-    await cleanup();
+    await persister.dispose();
   });
 
   test("persists state to IndexedDB on changes", async () => {
     const store = createProfileStore();
 
-    const cleanup = await createPersistence(store, { key: "test-store", debounceMs: 50 });
+    const persister = new IdbPersister(store, { key: "test-store", debounceMs: 50 });
+    await persister.init();
 
     store.put("users", { id: "1", name: "Alice", profile: {} });
 
@@ -154,7 +171,7 @@ describe("createPersistence", () => {
     const parsed = JSON.parse(saved);
     expect(parsed.collections.users.documents["1"]).toBeDefined();
 
-    await cleanup();
+    await persister.dispose();
   });
 
   test("debounces multiple rapid changes", async () => {
@@ -167,7 +184,8 @@ describe("createPersistence", () => {
       return originalPut.call(this, value, key);
     };
 
-    const cleanup = await createPersistence(store, { key: "test-store", debounceMs: 100 });
+    const persister = new IdbPersister(store, { key: "test-store", debounceMs: 100 });
+    await persister.init();
 
     // Make multiple rapid changes
     store.put("users", { id: "1", name: "Alice", profile: {} });
@@ -185,15 +203,17 @@ describe("createPersistence", () => {
     // Restore
     IDBObjectStore.prototype.put = originalPut;
 
-    await cleanup();
+    await persister.dispose();
   });
 
   test("syncs across tabs via BroadcastChannel", async () => {
     const store1 = createProfileStore();
     const store2 = createProfileStore();
 
-    const cleanup1 = await createPersistence(store1, { key: "test-store", debounceMs: 50 });
-    const cleanup2 = await createPersistence(store2, { key: "test-store", debounceMs: 50 });
+    const persister1 = new IdbPersister(store1, { key: "test-store", debounceMs: 50 });
+    const persister2 = new IdbPersister(store2, { key: "test-store", debounceMs: 50 });
+    await persister1.init();
+    await persister2.init();
 
     // Make change in store1
     store1.put("users", { id: "1", name: "Alice", profile: {} });
@@ -209,8 +229,8 @@ describe("createPersistence", () => {
       profile: {},
     });
 
-    await cleanup1();
-    await cleanup2();
+    await persister1.dispose();
+    await persister2.dispose();
   });
 
   test("handles missing IndexedDB gracefully", async () => {
@@ -233,9 +253,8 @@ describe("createPersistence", () => {
     const store = createProfileStore();
 
     // Should not throw
-    const cleanupPromise = createPersistence(store, { key: "test-store" });
-    await expect(cleanupPromise).resolves.not.toThrow();
-    const cleanup = await cleanupPromise;
+    const persister = new IdbPersister(store, { key: "test-store" });
+    await expect(persister.init()).resolves.not.toThrow();
 
     // Store should still work
     store.put("users", { id: "1", name: "Alice", profile: {} });
@@ -244,7 +263,7 @@ describe("createPersistence", () => {
     // Restore
     indexedDB.open = originalOpen;
 
-    await cleanup();
+    await persister.dispose();
   });
 
   test("handles BroadcastChannel unavailability", async () => {
@@ -258,26 +277,26 @@ describe("createPersistence", () => {
     const store = createProfileStore();
 
     // Should not throw
-    const cleanupPromise = createPersistence(store, { key: "test-store" });
-    await expect(cleanupPromise).resolves.not.toThrow();
-    const cleanup = await cleanupPromise;
+    const persister = new IdbPersister(store, { key: "test-store" });
+    await expect(persister.init()).resolves.not.toThrow();
 
     // Store should still work
     store.put("users", { id: "1", name: "Alice", profile: {} });
     expect(store.get("users", "1")).toBeDefined();
 
-    await cleanup();
+    await persister.dispose();
   });
 
   test("cleans up resources on dispose", async () => {
     const store = createProfileStore();
 
-    const cleanup = await createPersistence(store, { key: "test-store", debounceMs: 100 });
+    const persister = new IdbPersister(store, { key: "test-store", debounceMs: 100 });
+    await persister.init();
 
     store.put("users", { id: "1", name: "Alice", profile: {} });
 
     // Dispose before debounce completes
-    await cleanup();
+    await persister.dispose();
 
     // Wait - should not save after dispose
     let saveCount = 0;
@@ -304,12 +323,13 @@ describe("createPersistence", () => {
       return originalPut.call(this, value, key);
     };
 
-    const cleanup = await createPersistence(store, { key: "test-store", debounceMs: 100 });
+    const persister = new IdbPersister(store, { key: "test-store", debounceMs: 100 });
+    await persister.init();
 
     store.put("users", { id: "1", name: "Alice", profile: {} });
 
     // Dispose before debounce completes - this should flush
-    await cleanup();
+    await persister.dispose();
     // Wait for flush to complete
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -330,10 +350,11 @@ describe("createPersistence", () => {
       return originalPut.call(this, value, key);
     };
 
-    const cleanup = await createPersistence(store, {
+    const persister = new IdbPersister(store, {
       key: "test-store-custom-debounce",
       debounceMs: 200,
     });
+    await persister.init();
 
     // Clear any saves from init
     saveCount = 0;
@@ -355,27 +376,29 @@ describe("createPersistence", () => {
     // Restore
     IDBObjectStore.prototype.put = originalPut;
 
-    await cleanup();
+    await persister.dispose();
   });
 
   test("uses custom channel name", async () => {
     const store1 = createProfileStore();
     const store2 = createProfileStore();
 
-    const cleanup1 = await createPersistence(store1, {
+    const persister1 = new IdbPersister(store1, {
       key: "test-store",
       channelName: "custom-channel",
     });
-    const cleanup2 = await createPersistence(store2, {
+    const persister2 = new IdbPersister(store2, {
       key: "test-store",
       channelName: "custom-channel",
     });
+    await persister1.init();
+    await persister2.init();
 
     // Verify they're using the same channel
     expect(MockBroadcastChannel.instances.has("custom-channel")).toBe(true);
 
-    await cleanup1();
-    await cleanup2();
+    await persister1.dispose();
+    await persister2.dispose();
   });
 
   test("does not save on initial load", async () => {
@@ -397,24 +420,7 @@ describe("createPersistence", () => {
       },
     };
 
-    // Pre-populate IndexedDB
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("test-store", 1);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-      request.onupgradeneeded = () => {
-        request.result.createObjectStore("state");
-      };
-    });
-
-    const tx = db.transaction(["state"], "readwrite");
-    const storeObj = tx.objectStore("state");
-    await new Promise<void>((resolve, reject) => {
-      const putRequest = storeObj.put(JSON.stringify(savedState), "store");
-      putRequest.onsuccess = () => resolve();
-      putRequest.onerror = () => reject(putRequest.error);
-    });
-    db.close();
+    await prepopulateIndexedDB("test-store", JSON.stringify(savedState));
 
     let saveCount = 0;
     const originalPut = IDBObjectStore.prototype.put;
@@ -423,7 +429,8 @@ describe("createPersistence", () => {
       return originalPut.call(this, value, key);
     };
 
-    const cleanup = await createPersistence(store, { key: "test-store", debounceMs: 50 });
+    const persister = new IdbPersister(store, { key: "test-store", debounceMs: 50 });
+    await persister.init();
 
     // Wait for any potential saves
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -434,7 +441,7 @@ describe("createPersistence", () => {
     // Restore
     IDBObjectStore.prototype.put = originalPut;
 
-    await cleanup();
+    await persister.dispose();
   });
 
   test("uses custom serialize and deserialize methods", async () => {
@@ -469,32 +476,16 @@ describe("createPersistence", () => {
       return JSON.parse(serialized.slice(7)) as StoreState;
     };
 
-    // Pre-populate IndexedDB with custom serialization
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("test-store-custom", 1);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-      request.onupgradeneeded = () => {
-        request.result.createObjectStore("state");
-      };
-    });
-
-    const tx = db.transaction(["state"], "readwrite");
-    const storeObj = tx.objectStore("state");
-    await new Promise<void>((resolve, reject) => {
-      const putRequest = storeObj.put(customSerialize(savedState), "store");
-      putRequest.onsuccess = () => resolve();
-      putRequest.onerror = () => reject(putRequest.error);
-    });
-    db.close();
+    await prepopulateIndexedDB("test-store-custom", customSerialize(savedState));
 
     // Load with custom deserialize
-    const cleanup = await createPersistence(store, {
+    const persister = new IdbPersister(store, {
       key: "test-store-custom",
       debounceMs: 50,
       serialize: customSerialize,
       deserialize: customDeserialize,
     });
+    await persister.init();
 
     // Verify state was loaded correctly
     const user = store.get("users", "1");
@@ -532,7 +523,7 @@ describe("createPersistence", () => {
     expect(parsed.collections?.["users"]?.documents["1"]).toBeDefined();
     expect(parsed.collections?.["users"]?.documents["2"]).toBeDefined();
 
-    await cleanup();
+    await persister.dispose();
   });
 
   test("uses custom serialize with default deserialize", async () => {
@@ -554,35 +545,19 @@ describe("createPersistence", () => {
       },
     };
 
-    // Pre-populate IndexedDB with standard JSON (default deserialize will handle it)
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("test-store-serialize-only", 1);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-      request.onupgradeneeded = () => {
-        request.result.createObjectStore("state");
-      };
-    });
-
-    const tx = db.transaction(["state"], "readwrite");
-    const storeObj = tx.objectStore("state");
-    await new Promise<void>((resolve, reject) => {
-      const putRequest = storeObj.put(JSON.stringify(savedState), "store");
-      putRequest.onsuccess = () => resolve();
-      putRequest.onerror = () => reject(putRequest.error);
-    });
-    db.close();
+    await prepopulateIndexedDB("test-store-serialize-only", JSON.stringify(savedState));
 
     // Custom serialize that adds a prefix
     const customSerialize = (state: StoreState): string => {
       return `PREFIX:${JSON.stringify(state)}`;
     };
 
-    const cleanup = await createPersistence(store, {
+    const persister = new IdbPersister(store, {
       key: "test-store-serialize-only",
       debounceMs: 50,
       serialize: customSerialize,
     });
+    await persister.init();
 
     // Verify state was loaded correctly (using default deserialize)
     const user = store.get("users", "1");
@@ -617,7 +592,7 @@ describe("createPersistence", () => {
     // Verify custom serialization format was used
     expect(saved).toMatch(/^PREFIX:/);
 
-    await cleanup();
+    await persister.dispose();
   });
 
   test("uses custom deserialize with default serialize", async () => {
@@ -647,30 +622,15 @@ describe("createPersistence", () => {
       return JSON.parse(serialized) as StoreState;
     };
 
-    // Pre-populate IndexedDB with prefixed format
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("test-store-deserialize-only", 1);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-      request.onupgradeneeded = () => {
-        request.result.createObjectStore("state");
-      };
-    });
+    await prepopulateIndexedDB("test-store-deserialize-only", `PREFIX:${JSON.stringify(savedState)}`);
 
-    const tx = db.transaction(["state"], "readwrite");
-    const storeObj = tx.objectStore("state");
-    await new Promise<void>((resolve, reject) => {
-      const putRequest = storeObj.put(`PREFIX:${JSON.stringify(savedState)}`, "store");
-      putRequest.onsuccess = () => resolve();
-      putRequest.onerror = () => reject(putRequest.error);
-    });
-    db.close();
-
-    const cleanup = await createPersistence(store, {
+    const persister = new IdbPersister(store, {
       key: "test-store-deserialize-only",
       debounceMs: 50,
       deserialize: customDeserialize,
     });
+
+    await persister.init();
 
     // Verify state was loaded correctly using custom deserialize
     const user = store.get("users", "1");
@@ -707,7 +667,7 @@ describe("createPersistence", () => {
     const parsed = JSON.parse(saved);
     expect(parsed.collections.users.documents["2"]).toBeDefined();
 
-    await cleanup();
+    await persister.dispose();
   });
 
   test("handles deserialize errors gracefully", async () => {
@@ -721,51 +681,36 @@ describe("createPersistence", () => {
       return JSON.parse(serialized.slice(6)) as StoreState;
     };
 
-    // Pre-populate IndexedDB with invalid format
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("test-store-deserialize-error", 1);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-      request.onupgradeneeded = () => {
-        request.result.createObjectStore("state");
-      };
-    });
-
-    const tx = db.transaction(["state"], "readwrite");
-    const storeObj = tx.objectStore("state");
-    await new Promise<void>((resolve, reject) => {
-      const putRequest = storeObj.put("INVALID_FORMAT", "store");
-      putRequest.onsuccess = () => resolve();
-      putRequest.onerror = () => reject(putRequest.error);
-    });
-    db.close();
+    await prepopulateIndexedDB("test-store-deserialize-error", "INVALID_FORMAT");
 
     // Should not throw, should handle error gracefully
-    const cleanup = await createPersistence(store, {
+    const persister = new IdbPersister(store, {
       key: "test-store-deserialize-error",
       deserialize: customDeserialize,
     });
+    await persister.init();
 
     // Store should still work even though deserialize failed
     store.put("users", { id: "1", name: "Alice", profile: {} });
     expect(store.get("users", "1")).toBeDefined();
 
-    await cleanup();
+    await persister.dispose();
   });
 
   test("handles serialize errors gracefully", async () => {
     const store = createProfileStore();
 
     // Custom serialize that throws
-    const customSerialize = (state: StoreState): string => {
+    const customSerialize = (_state: StoreState): string => {
       throw new Error("Serialization failed");
     };
 
-    const cleanup = await createPersistence(store, {
+    const persister = new IdbPersister(store, {
       key: "test-store-serialize-error",
       debounceMs: 50,
       serialize: customSerialize,
     });
+    await persister.init();
 
     // Make a change - serialize will fail but shouldn't crash
     store.put("users", { id: "1", name: "Alice", profile: {} });
@@ -776,6 +721,76 @@ describe("createPersistence", () => {
     // Store should still work
     expect(store.get("users", "1")).toBeDefined();
 
-    await cleanup();
+    await persister.dispose();
+  });
+
+  test("subscribe fires events with serialized data on successful save", async () => {
+    const store = createProfileStore();
+
+    const persister = new IdbPersister(store, { key: "test-store", debounceMs: 50 });
+    await persister.init();
+
+    const savedData: string[] = [];
+    const unsubscribe = persister.subscribe((serialized) => {
+      savedData.push(serialized);
+    });
+
+    store.put("users", { id: "1", name: "Alice", profile: {} });
+
+    // Wait for debounce and save
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Should have received the serialized data
+    expect(savedData.length).toBe(1);
+    const parsed = JSON.parse(savedData[0]!);
+    expect(parsed.collections.users.documents["1"]).toBeDefined();
+
+    // Make another change
+    store.put("users", { id: "2", name: "Bob", profile: {} });
+
+    // Wait for debounce and save
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Should have received another event
+    expect(savedData.length).toBe(2);
+    const parsed2 = JSON.parse(savedData[1]!);
+    expect(parsed2.collections.users.documents["2"]).toBeDefined();
+
+    // Unsubscribe and make another change
+    unsubscribe();
+    store.put("users", { id: "3", name: "Charlie", profile: {} });
+
+    // Wait for debounce and save
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Should not have received another event
+    expect(savedData.length).toBe(2);
+
+    await persister.dispose();
+  });
+
+  test("subscribe receives serialized data on dispose flush", async () => {
+    const store = createProfileStore();
+
+    const persister = new IdbPersister(store, { key: "test-store", debounceMs: 100 });
+    await persister.init();
+
+    const savedData: string[] = [];
+    persister.subscribe((serialized) => {
+      savedData.push(serialized);
+    });
+
+    store.put("users", { id: "1", name: "Alice", profile: {} });
+
+    // Dispose before debounce completes - should flush and emit
+    await persister.dispose();
+
+    // Wait for flush to complete
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Should have received the serialized data from the flush
+    expect(savedData.length).toBe(1);
+    const parsed = JSON.parse(savedData[0]!);
+    expect(parsed.collections.users.documents["1"]).toBeDefined();
   });
 });
