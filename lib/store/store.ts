@@ -7,7 +7,7 @@ import {
   type Stamp,
 } from "../core";
 import { Emitter } from "../emitter";
-import type { CollectionName, DocType, IdType, StoreConfig } from "./schema";
+import type { CollectionName, DocType, IdType, InputType, StoreConfig } from "./schema";
 import { validate } from "./schema";
 import type { StoreChangeEvent } from "./types";
 import { mergeState } from "./store-utils";
@@ -16,7 +16,7 @@ import { doGet, doList, doPatch, doPut, doRemove } from "./operations";
 export type TransactionAPI<T extends StoreConfig> = {
   get<N extends CollectionName<T>>(collection: N, id: IdType<T[N]>): DocType<T[N]> | undefined;
   list<N extends CollectionName<T>>(collection: N): DocType<T[N]>[];
-  put<N extends CollectionName<T>>(collection: N, data: DocType<T[N]>): DocType<T[N]>;
+  put<N extends CollectionName<T>>(collection: N, data: InputType<T[N]>): DocType<T[N]>;
   patch<N extends CollectionName<T>>(
     collection: N,
     id: IdType<T[N]>,
@@ -69,7 +69,7 @@ export class Store<T extends StoreConfig> {
     return doList(col.documents, col.tombstones);
   }
 
-  put<N extends CollectionName<T>>(collection: N, data: DocType<T[N]>): DocType<T[N]> {
+  put<N extends CollectionName<T>>(collection: N, data: InputType<T[N]>): DocType<T[N]> {
     const col = this.#getCollection(collection);
     const collectionConfig = this.#config[collection]!;
     const result = doPut(

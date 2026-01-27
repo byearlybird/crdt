@@ -1,5 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
 import { createMultiCollectionStore, createProfileStore } from "./test-utils";
+import { createStore } from "./store";
+import { define } from "./schema";
+import z from "zod";
 
 describe("createStore", () => {
   test("can put documents to collections", () => {
@@ -572,5 +575,60 @@ describe("transact", () => {
     expect(store.get("users", "u1")).toBeDefined();
     expect(store.get("notes", "n2")).toBeDefined();
     expect(store.get("settings", "s1")).toBeDefined();
+  });
+});
+
+describe("input type inference with defaults", () => {
+  test("put accepts input type when schema has defaults", () => {
+    const schemaWithDefault = z.object({
+      id: z.string().default(() => "auto-generated"),
+      name: z.string(),
+      age: z.number().optional(),
+    });
+
+    const store = createStore({
+      users: define(schemaWithDefault, (data) => data.id),
+    });
+
+    // Should accept input without id (has default)
+    const result = store.put("users", {
+      name: "Alice",
+      age: 30,
+    });
+
+    // Result should have id filled in by default
+    expect(result.id).toBe("auto-generated");
+    expect(result.name).toBe("Alice");
+    expect(result.age).toBe(30);
+
+    // Should also accept id explicitly
+    const result2 = store.put("users", {
+      id: "custom-id",
+      name: "Bob",
+    });
+
+    expect(result2.id).toBe("custom-id");
+    expect(result2.name).toBe("Bob");
+  });
+
+  test("put accepts input type in transactions", () => {
+    const schemaWithDefault = z.object({
+      id: z.string().default(() => "auto-generated"),
+      name: z.string(),
+    });
+
+    const store = createStore({
+      users: define(schemaWithDefault, (data) => data.id),
+    });
+
+    store.transact((tx) => {
+      // Should accept input without id
+      const user = tx.put("users", {
+        name: "Alice",
+      });
+
+      expect(user.id).toBe("auto-generated");
+      expect(user.name).toBe("Alice");
+    });
   });
 });

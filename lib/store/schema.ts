@@ -31,9 +31,14 @@ export type Output<T extends AnyObject> = StandardSchemaV1.InferOutput<T>;
 
 export type Input<T extends AnyObject> = StandardSchemaV1.InferInput<T>;
 
-export type CollectionDef<T extends Document = Document, Id extends string = string> = {
+export type CollectionDef<
+  T extends Document = Document,
+  Id extends string = string,
+  S extends AnyObject = AnyObject,
+> = {
   readonly "~docType": T; // Phantom - document shape
   readonly "~idType": Id; // Phantom - ID type
+  readonly "~schemaType": S; // Phantom - schema type for input inference
   schema: AnyObject; // Runtime only - used for validation
   getId: (data: T) => Id; // Properly typed, no contravariance issue
 };
@@ -52,10 +57,11 @@ export type CollectionDef<T extends Document = Document, Id extends string = str
 export function define<S extends AnyObject, Id extends string = string>(
   schema: S,
   getId: (data: Output<S>) => Id,
-): CollectionDef<Output<S>, Id> {
+): CollectionDef<Output<S>, Id, S> {
   return {
     "~docType": undefined as unknown as Output<S>, // Phantom
     "~idType": undefined as unknown as Id, // Phantom
+    "~schemaType": undefined as unknown as S, // Phantom
     schema,
     getId,
   };
@@ -72,13 +78,20 @@ export type DocType<C extends CollectionDef> = C["~docType"];
 export type IdType<C extends CollectionDef> = C["~idType"];
 
 /**
+ * Extract the input type from a CollectionDef's schema
+ * This allows put() to accept partial data when schemas have defaults
+ */
+export type InputType<C extends CollectionDef> =
+  C extends CollectionDef<any, any, infer S> ? Input<S> : never;
+
+/**
  * Configuration for all collections in a store.
  * All collection definitions must be created using the `collection()` helper.
  *
  * Uses `any` for type parameters to allow any CollectionDef to be stored,
  * while still preserving specific types through inference in createStore.
  */
-export type StoreConfig = Record<string, CollectionDef<any, any>>;
+export type StoreConfig = Record<string, CollectionDef<any, any, any>>;
 
 /**
  * Valid collection name from a store config
