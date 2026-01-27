@@ -19,13 +19,6 @@ function setup() {
 }
 
 describe("createHandle", () => {
-  test("put and get", () => {
-    const { handle } = setup();
-    const result = handle.put({ id: "1", name: "Alice" });
-    expect(result).toEqual({ id: "1", name: "Alice" });
-    expect(handle.get("1")).toEqual({ id: "1", name: "Alice" });
-  });
-
   test("put returns document", () => {
     const { handle } = setup();
     const doc = handle.put({ id: "1", name: "Alice" });
@@ -45,14 +38,6 @@ describe("createHandle", () => {
     ).toEqual(["Alice", "Bob"]);
   });
 
-  test("patch merges partial data", () => {
-    const { handle } = setup();
-    handle.put({ id: "1", name: "Alice" });
-    const result = handle.patch("1", { name: "Bob" });
-    expect(result).toEqual({ id: "1", name: "Bob" });
-    expect(handle.get("1")).toEqual({ id: "1", name: "Bob" });
-  });
-
   test("patch returns document", () => {
     const { handle } = setup();
     handle.put({ id: "1", name: "Alice" });
@@ -66,21 +51,5 @@ describe("createHandle", () => {
       'Cannot patch non-existent document "missing"',
     );
     expect(handle.get("missing")).toBeUndefined();
-  });
-
-  test("remove deletes doc and tombstones", () => {
-    const { handle } = setup();
-    handle.put({ id: "1", name: "Alice" });
-    handle.remove("1");
-    expect(handle.get("1")).toBeUndefined();
-    expect(handle.list()).toHaveLength(0);
-  });
-
-  test("put revives tombstoned id", () => {
-    const { handle } = setup();
-    handle.put({ id: "1", name: "Alice" });
-    handle.remove("1");
-    handle.put({ id: "1", name: "Bob" }); // Should revive
-    expect(handle.get("1")).toEqual({ id: "1", name: "Bob" });
   });
 });

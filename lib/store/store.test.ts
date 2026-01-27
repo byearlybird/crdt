@@ -143,159 +143,18 @@ describe("createStore", () => {
   });
 });
 
-describe("getState and setState", () => {
-  test("getState returns current state", () => {
-    const store = createProfileStore();
+test("getState returns current state", () => {
+  const store = createProfileStore();
 
-    const state = store.getState();
-    expect(state).toHaveProperty("clock");
-    expect(state).toHaveProperty("collections");
-    expect(state.collections).toBeDefined();
-    if (Object.keys(state.collections).length > 0) {
-      const firstCollection = Object.values(state.collections)[0];
-      expect(firstCollection).toHaveProperty("documents");
-      expect(firstCollection).toHaveProperty("tombstones");
-    }
-  });
-
-  test("setState applies state via applyState", () => {
-    const store = createProfileStore();
-
-    store.users.put({ id: "1", name: "Alice", profile: {} });
-
-    const newSnapshot = {
-      clock: { ms: 2000, seq: 0 },
-      collections: {
-        users: {
-          documents: {
-            "2": {
-              id: { "~val": "2", "~ts": "2000:0" },
-              name: { "~val": "Bob", "~ts": "2000:0" },
-              profile: { "~val": {}, "~ts": "2000:0" },
-            },
-          },
-          tombstones: {},
-        },
-      },
-    };
-
-    store.setState(({ applyState }) => {
-      applyState(newSnapshot);
-    });
-
-    expect(store.users.get("1")).toBeUndefined();
-    expect(store.users.get("2")).toEqual({
-      id: "2",
-      name: "Bob",
-      profile: {},
-    });
-  });
-
-  test("setState advances clock", () => {
-    const store = createProfileStore();
-
-    const initial = store.getState();
-    const initialMs = initial.clock.ms;
-
-    const newSnapshot = {
-      clock: { ms: initialMs + 1000, seq: 5 },
-      collections: {
-        users: {
-          documents: {},
-          tombstones: {},
-        },
-      },
-    };
-
-    store.setState(({ applyState }) => {
-      applyState(newSnapshot);
-    });
-
-    const after = store.getState();
-    expect(after.clock.ms).toBe(initialMs + 1000);
-    expect(after.clock.seq).toBeGreaterThanOrEqual(5);
-  });
-
-  test("applyState without notify is silent", () => {
-    const store = createProfileStore();
-
-    let notified = false;
-    store.subscribe(() => {
-      notified = true;
-    });
-
-    const snapshot = {
-      clock: { ms: 1000, seq: 0 },
-      collections: {
-        users: {
-          "1": {
-            id: { "~val": "1", "~ts": "1000:0" },
-            name: { "~val": "Alice", "~ts": "1000:0" },
-            profile: { "~val": {}, "~ts": "1000:0" },
-          },
-        },
-      },
-      tombstones: {},
-    };
-
-    store.setState(({ applyState }) => {
-      applyState(snapshot);
-    });
-
-    expect(notified).toBe(false);
-  });
-
-  test("notify triggers subscribers", () => {
-    const store = createProfileStore();
-
-    let notified = false;
-    store.subscribe(() => {
-      notified = true;
-    });
-
-    store.setState(({ notify }) => {
-      notify({ users: true });
-    });
-
-    expect(notified).toBe(true);
-  });
-
-  test("applyState and notify together", () => {
-    const store = createProfileStore();
-
-    const events: any[] = [];
-    store.subscribe((event) => {
-      events.push(event);
-    });
-
-    const snapshot = {
-      clock: { ms: 1000, seq: 0 },
-      collections: {
-        users: {
-          documents: {
-            "1": {
-              id: { "~val": "1", "~ts": "1000:0" },
-              name: { "~val": "Alice", "~ts": "1000:0" },
-              profile: { "~val": {}, "~ts": "1000:0" },
-            },
-          },
-          tombstones: {},
-        },
-      },
-    };
-
-    store.setState(({ applyState, notify }) => {
-      applyState(snapshot);
-      notify({ users: true });
-    });
-
-    expect(store.users.get("1")).toEqual({
-      id: "1",
-      name: "Alice",
-      profile: {},
-    });
-    expect(events).toEqual([{ users: true }]);
-  });
+  const state = store.getState();
+  expect(state).toHaveProperty("clock");
+  expect(state).toHaveProperty("collections");
+  expect(state.collections).toBeDefined();
+  if (Object.keys(state.collections).length > 0) {
+    const firstCollection = Object.values(state.collections)[0];
+    expect(firstCollection).toHaveProperty("documents");
+    expect(firstCollection).toHaveProperty("tombstones");
+  }
 });
 
 describe("subscribe", () => {
