@@ -1,63 +1,17 @@
-import { describe, test, expect } from "vitest";
-import { z } from "zod";
-import { createStore } from "./store";
-
-const userSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  profile: z.object({
-    age: z.number().optional(),
-    email: z.string().optional(),
-  }),
-});
-
-const noteSchema = z.object({
-  id: z.string(),
-  content: z.string(),
-});
+import { describe, expect, test, vi } from "vitest";
+import { createMultiCollectionStore, createProfileStore } from "./test-utils";
 
 describe("createStore", () => {
-  test("creates store with collections", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-        notes: {
-          schema: noteSchema,
-          keyPath: "id",
-        },
-      },
-    });
+  test("can put documents to collections", () => {
+    const store = createProfileStore();
 
-    expect(store.add).toBeDefined();
-    expect(store.get).toBeDefined();
-    expect(store.getAll).toBeDefined();
-    expect(store.update).toBeDefined();
-    expect(store.remove).toBeDefined();
-    expect(store.getSnapshot).toBeDefined();
-    expect(store.merge).toBeDefined();
-    expect(store.onChange).toBeDefined();
-  });
-
-  test("can add documents to collections", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    store.add("users", {
+    store.users.put({
       id: "1",
       name: "Alice",
       profile: { age: 30 },
     });
 
-    const result = store.get("users", "1");
+    const result = store.users.get("1");
     expect(result).toEqual({
       id: "1",
       name: "Alice",
@@ -66,58 +20,44 @@ describe("createStore", () => {
   });
 
   test("can remove documents from collections", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-      },
-    });
+    const store = createProfileStore();
 
-    store.add("users", {
+    store.users.put({
       id: "1",
       name: "Alice",
       profile: {},
     });
 
-    store.add("users", {
+    store.users.put({
       id: "2",
       name: "Bob",
       profile: {},
     });
 
-    store.remove("users", "1");
+    store.users.remove("1");
 
-    expect(store.get("users", "1")).toBeUndefined();
-    expect(store.get("users", "2")).toEqual({
+    expect(store.users.get("1")).toBeUndefined();
+    expect(store.users.get("2")).toEqual({
       id: "2",
       name: "Bob",
       profile: {},
     });
   });
 
-  test("can update documents in collections", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-      },
-    });
+  test("can patch documents in collections", () => {
+    const store = createProfileStore();
 
-    store.add("users", {
+    store.users.put({
       id: "1",
       name: "Alice",
       profile: {},
     });
 
-    store.update("users", "1", {
+    store.users.patch("1", {
       profile: { age: 30 },
     });
 
-    const result = store.get("users", "1");
+    const result = store.users.get("1");
     expect(result).toEqual({
       id: "1",
       name: "Alice",
@@ -125,484 +65,615 @@ describe("createStore", () => {
     });
   });
 
-  test("getSnapshot returns store snapshot with clock and collections", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-        notes: {
-          schema: noteSchema,
-          keyPath: "id",
-        },
-      },
-    });
+  test("tombstones are collection-scoped", () => {
+    const store = createMultiCollectionStore();
 
-    const initialSnapshot = store.getSnapshot();
-    expect(initialSnapshot).toHaveProperty("clock");
-    expect(initialSnapshot).toHaveProperty("collections");
-    expect(initialSnapshot).toHaveProperty("tombstones");
-    expect(initialSnapshot.collections["users"]).toEqual({
-      documents: {},
-    });
-    expect(initialSnapshot.collections["notes"]).toEqual({
-      documents: {},
-    });
-    expect(initialSnapshot.tombstones).toEqual({});
-    expect(initialSnapshot.clock).toHaveProperty("ms");
-    expect(initialSnapshot.clock).toHaveProperty("seq");
+    store.users.put({ id: "123", name: "Alice", profile: {} });
+    store.users.remove("123");
 
-    store.add("users", {
-      id: "1",
-      name: "Alice",
-      profile: { age: 30 },
-    });
-    store.add("notes", {
-      id: "note-1",
-      content: "Hello world",
-    });
+    // Should be undefined (tombstoned in users collection)
+    expect(store.users.get("123")).toBeUndefined();
 
-    const updatedSnapshot = store.getSnapshot();
-    expect(updatedSnapshot.collections["users"]?.documents).toHaveProperty("1");
-    expect(updatedSnapshot.collections["notes"]?.documents).toHaveProperty("note-1");
-    expect(updatedSnapshot.tombstones).toEqual({});
+    // Same ID in different collection should work
+    store.settings.put({ id: "123", key: "theme", value: "dark" });
+    expect(store.settings.get("123")).toEqual({ id: "123", key: "theme", value: "dark" });
   });
 
-  test("creates store with empty collections", () => {
-    const store = createStore({
-      collections: {},
-    });
+  test("put revives tombstoned id", () => {
+    const store = createProfileStore();
 
-    expect(store).toBeDefined();
-    expect(store.getSnapshot).toBeDefined();
-    expect(store.getSnapshot().collections).toEqual({});
-    expect(store.getSnapshot().clock).toBeDefined();
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+    store.users.remove("1");
+    expect(store.users.get("1")).toBeUndefined();
+
+    // Put should revive the tombstoned ID
+    store.users.put({ id: "1", name: "Bob", profile: {} });
+    expect(store.users.get("1")).toEqual({ id: "1", name: "Bob", profile: {} });
   });
 
-  test("getSnapshot updates when collections change", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-        notes: {
-          schema: noteSchema,
-          keyPath: "id",
-        },
-      },
-    });
+  test("removed documents don't appear in list", () => {
+    const store = createProfileStore();
 
-    const initialSnapshot = store.getSnapshot();
-    expect(initialSnapshot.collections["users"]?.documents).toEqual({});
-    expect(initialSnapshot.collections["notes"]?.documents).toEqual({});
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+    store.users.put({ id: "2", name: "Bob", profile: {} });
+    store.users.put({ id: "3", name: "Charlie", profile: {} });
 
-    store.add("users", { id: "1", name: "Alice", profile: {} });
-    const snapshotAfterUsers = store.getSnapshot();
-    expect(snapshotAfterUsers.collections["users"]?.documents).toHaveProperty("1");
-    expect(snapshotAfterUsers.collections["notes"]?.documents).toEqual({});
+    expect(store.users.list()).toHaveLength(3);
 
-    store.add("notes", { id: "1", content: "Note" });
-    const snapshotAfterNotes = store.getSnapshot();
-    expect(snapshotAfterNotes.collections["users"]?.documents).toHaveProperty("1");
-    expect(snapshotAfterNotes.collections["notes"]?.documents).toHaveProperty("1");
-  });
+    store.users.remove("2");
 
-  test("merge updates clock and collections", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    const snapshot = store.getSnapshot();
-    const futureSnapshot = {
-      clock: { ms: snapshot.clock.ms + 1000, seq: 5 },
-      collections: snapshot.collections,
-      tombstones: {},
-    };
-
-    store.merge(futureSnapshot);
-
-    const updated = store.getSnapshot();
-    expect(updated.clock.ms).toBe(futureSnapshot.clock.ms);
-    expect(updated.clock.seq).toBe(futureSnapshot.clock.seq);
-  });
-
-  test("onChange is called when store changes", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-        notes: {
-          schema: noteSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    const events: any[] = [];
-    const unsubscribe = store.onChange((event) => {
-      events.push(event);
-    });
-
-    // Add a user - should trigger onChange
-    store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
-    expect(events).toHaveLength(1);
-    expect(events[0]).toEqual({
-      type: "add",
-      collection: "users",
-      id: "1",
-      data: { id: "1", name: "Alice", profile: { age: 30 } },
-    });
-
-    // Add a note - should trigger onChange
-    store.add("notes", { id: "note-1", content: "First note" });
-    expect(events).toHaveLength(2);
-    expect(events[1]).toEqual({
-      type: "add",
-      collection: "notes",
-      id: "note-1",
-      data: { id: "note-1", content: "First note" },
-    });
-
-    // Update a user - should trigger onChange
-    store.update("users", "1", { profile: { age: 31 } });
-    expect(events).toHaveLength(3);
-    expect(events[2]?.type).toBe("update");
-    expect(events[2]?.collection).toBe("users");
-    expect(events[2]?.id).toBe("1");
-
-    // Remove a user - should trigger onChange
-    store.remove("users", "1");
-    expect(events).toHaveLength(4);
-    expect(events[3]).toEqual({
-      type: "remove",
-      collection: "users",
-      id: "1",
-    });
-
-    unsubscribe();
-  });
-
-  test("tombstones are store-level and globally unique", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-        notes: {
-          schema: noteSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    store.add("users", { id: "123", name: "Alice", profile: {} });
-    store.remove("users", "123");
-
-    // Should be undefined (tombstoned)
-    expect(store.get("users", "123")).toBeUndefined();
-
-    // Snapshot should have store-level tombstones
-    const snapshot = store.getSnapshot();
-    expect(snapshot.tombstones).toHaveProperty("123");
-    expect(snapshot.tombstones["123"]).toBeDefined();
-
-    // Collections should not have tombstones field
-    expect(snapshot.collections["users"]).not.toHaveProperty("tombstones");
-    expect(snapshot.collections["notes"]).not.toHaveProperty("tombstones");
-  });
-
-  test("removed documents don't appear in getAll", () => {
-    const store = createStore({
-      collections: {
-        users: {
-          schema: userSchema,
-          keyPath: "id",
-        },
-      },
-    });
-
-    store.add("users", { id: "1", name: "Alice", profile: {} });
-    store.add("users", { id: "2", name: "Bob", profile: {} });
-    store.add("users", { id: "3", name: "Charlie", profile: {} });
-
-    expect(store.getAll("users")).toHaveLength(3);
-
-    store.remove("users", "2");
-
-    const allUsers = store.getAll("users");
+    const allUsers = store.users.list();
     expect(allUsers).toHaveLength(2);
     expect(allUsers.find((u) => u.id === "2")).toBeUndefined();
     expect(allUsers.find((u) => u.id === "1")).toBeDefined();
     expect(allUsers.find((u) => u.id === "3")).toBeDefined();
   });
 
-  test("tombstones persist across merge", () => {
-    const store1 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
+  test("direct handle access returns current results", () => {
+    const store = createProfileStore();
+
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+
+    expect(store.users.get("1")).toEqual({
+      id: "1",
+      name: "Alice",
+      profile: {},
     });
 
-    const store2 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
+    store.users.patch("1", { name: "Alice Updated" });
+
+    expect(store.users.get("1")).toEqual({
+      id: "1",
+      name: "Alice Updated",
+      profile: {},
     });
-
-    // Store1: Add and remove a user
-    store1.add("users", { id: "1", name: "Alice", profile: {} });
-    store1.remove("users", "1");
-
-    // Store2: Add the same user
-    store2.add("users", { id: "1", name: "Alice", profile: {} });
-
-    // Merge store1 into store2
-    const snapshot1 = store1.getSnapshot();
-    store2.merge(snapshot1);
-
-    // User should still be tombstoned after merge
-    expect(store2.get("users", "1")).toBeUndefined();
-    expect(store2.getAll("users")).toHaveLength(0);
-
-    const snapshot2 = store2.getSnapshot();
-    expect(snapshot2.tombstones).toHaveProperty("1");
   });
 
-  test("getAll with where predicate filters items", () => {
-    const store = createStore({
+  test("writes notify listeners", () => {
+    const store = createProfileStore();
+
+    const changes: string[] = [];
+    store.subscribe((event) => {
+      changes.push(...Object.keys(event));
+    });
+
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+
+    expect(changes).toContain("users");
+  });
+});
+
+describe("getState and setState", () => {
+  test("getState returns current state", () => {
+    const store = createProfileStore();
+
+    const state = store.getState();
+    expect(state).toHaveProperty("clock");
+    expect(state).toHaveProperty("collections");
+    expect(state.collections).toBeDefined();
+    if (Object.keys(state.collections).length > 0) {
+      const firstCollection = Object.values(state.collections)[0];
+      expect(firstCollection).toHaveProperty("documents");
+      expect(firstCollection).toHaveProperty("tombstones");
+    }
+  });
+
+  test("setState applies state via applyState", () => {
+    const store = createProfileStore();
+
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+
+    const newSnapshot = {
+      clock: { ms: 2000, seq: 0 },
       collections: {
         users: {
-          schema: userSchema,
-          keyPath: "id",
+          documents: {
+            "2": {
+              id: { "~val": "2", "~ts": "2000:0" },
+              name: { "~val": "Bob", "~ts": "2000:0" },
+              profile: { "~val": {}, "~ts": "2000:0" },
+            },
+          },
+          tombstones: {},
         },
-        notes: {
-          schema: noteSchema,
-          keyPath: "id",
-        },
       },
+    };
+
+    store.setState(({ applyState }) => {
+      applyState(newSnapshot);
     });
 
-    // Test filtering with users collection
-    store.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
-    store.add("users", { id: "2", name: "Bob", profile: { age: 25 } });
-    store.add("users", { id: "3", name: "Charlie", profile: { age: 35 } });
-
-    const adults = store.getAll("users", {
-      where: (user) => (user.profile?.age ?? 0) >= 30,
-    });
-
-    expect(adults).toHaveLength(2);
-    expect(adults.find((u) => u.name === "Alice")).toBeDefined();
-    expect(adults.find((u) => u.name === "Charlie")).toBeDefined();
-    expect(adults.find((u) => u.name === "Bob")).toBeUndefined();
-
-    // Test filtering with notes collection (different schema)
-    store.add("notes", { id: "1", content: "First note" });
-    store.add("notes", { id: "2", content: "Second note" });
-    store.add("notes", { id: "3", content: "Third note" });
-
-    const filtered = store.getAll("notes", {
-      where: (note) => note.content.includes("Second"),
-    });
-
-    expect(filtered).toHaveLength(1);
-    expect(filtered[0]?.id).toBe("2");
-    expect(filtered[0]?.content).toBe("Second note");
-
-    // Test empty results
-    const noMatches = store.getAll("users", {
-      where: (user) => user.name === "Nonexistent",
-    });
-    expect(noMatches).toHaveLength(0);
-
-    // Test that where predicate is applied after tombstone filtering
-    store.remove("users", "2");
-    const adultsAfterRemoval = store.getAll("users", {
-      where: (user) => (user.profile?.age ?? 0) >= 30,
-    });
-
-    expect(adultsAfterRemoval).toHaveLength(2);
-    expect(adultsAfterRemoval.find((u) => u.id === "1")).toBeDefined();
-    expect(adultsAfterRemoval.find((u) => u.id === "3")).toBeDefined();
-    expect(adultsAfterRemoval.find((u) => u.id === "2")).toBeUndefined();
-  });
-
-  test("merge with silent: true does not emit events", () => {
-    const store1 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
-    });
-
-    const store2 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
-    });
-
-    // Add data to store1
-    store1.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
-    store1.add("users", { id: "2", name: "Bob", profile: { age: 25 } });
-
-    // Listen for events on store2
-    const events: any[] = [];
-    store2.onChange((event) => {
-      events.push(event);
-    });
-
-    // Merge with silent: true
-    const snapshot = store1.getSnapshot();
-    store2.merge(snapshot, { silent: true });
-
-    // No events should have been emitted
-    expect(events).toHaveLength(0);
-
-    // But the data should still be merged
-    expect(store2.get("users", "1")).toEqual({
-      id: "1",
-      name: "Alice",
-      profile: { age: 30 },
-    });
-    expect(store2.get("users", "2")).toEqual({
+    expect(store.users.get("1")).toBeUndefined();
+    expect(store.users.get("2")).toEqual({
       id: "2",
       name: "Bob",
-      profile: { age: 25 },
+      profile: {},
     });
   });
 
-  test("merge without silent option emits merge events", () => {
-    const store1 = createStore({
+  test("setState advances clock", () => {
+    const store = createProfileStore();
+
+    const initial = store.getState();
+    const initialMs = initial.clock.ms;
+
+    const newSnapshot = {
+      clock: { ms: initialMs + 1000, seq: 5 },
       collections: {
-        users: { schema: userSchema, keyPath: "id" },
+        users: {
+          documents: {},
+          tombstones: {},
+        },
       },
+    };
+
+    store.setState(({ applyState }) => {
+      applyState(newSnapshot);
     });
 
-    const store2 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
+    const after = store.getState();
+    expect(after.clock.ms).toBe(initialMs + 1000);
+    expect(after.clock.seq).toBeGreaterThanOrEqual(5);
+  });
+
+  test("applyState without notify is silent", () => {
+    const store = createProfileStore();
+
+    let notified = false;
+    store.subscribe(() => {
+      notified = true;
     });
 
-    // Add data to store1
-    store1.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
+    const snapshot = {
+      clock: { ms: 1000, seq: 0 },
+      collections: {
+        users: {
+          "1": {
+            id: { "~val": "1", "~ts": "1000:0" },
+            name: { "~val": "Alice", "~ts": "1000:0" },
+            profile: { "~val": {}, "~ts": "1000:0" },
+          },
+        },
+      },
+      tombstones: {},
+    };
 
-    // Listen for events on store2
+    store.setState(({ applyState }) => {
+      applyState(snapshot);
+    });
+
+    expect(notified).toBe(false);
+  });
+
+  test("notify triggers subscribers", () => {
+    const store = createProfileStore();
+
+    let notified = false;
+    store.subscribe(() => {
+      notified = true;
+    });
+
+    store.setState(({ notify }) => {
+      notify({ users: true });
+    });
+
+    expect(notified).toBe(true);
+  });
+
+  test("applyState and notify together", () => {
+    const store = createProfileStore();
+
     const events: any[] = [];
-    store2.onChange((event) => {
+    store.subscribe((event) => {
       events.push(event);
     });
 
-    // Merge without silent option (default behavior)
-    const snapshot = store1.getSnapshot();
-    store2.merge(snapshot);
+    const snapshot = {
+      clock: { ms: 1000, seq: 0 },
+      collections: {
+        users: {
+          documents: {
+            "1": {
+              id: { "~val": "1", "~ts": "1000:0" },
+              name: { "~val": "Alice", "~ts": "1000:0" },
+              profile: { "~val": {}, "~ts": "1000:0" },
+            },
+          },
+          tombstones: {},
+        },
+      },
+    };
 
-    // Should emit a merge event
-    expect(events).toHaveLength(1);
-    expect(events[0]).toEqual({
-      type: "merge",
-      collection: "users",
+    store.setState(({ applyState, notify }) => {
+      applyState(snapshot);
+      notify({ users: true });
     });
 
-    // Data should be merged
-    expect(store2.get("users", "1")).toEqual({
+    expect(store.users.get("1")).toEqual({
       id: "1",
       name: "Alice",
-      profile: { age: 30 },
+      profile: {},
     });
+    expect(events).toEqual([{ users: true }]);
+  });
+});
+
+describe("subscribe", () => {
+  test("returns unsubscribe function", () => {
+    const store = createProfileStore();
+
+    const callback = vi.fn();
+    const unsubscribe = store.subscribe(["users"], callback);
+
+    expect(typeof unsubscribe).toBe("function");
   });
 
-  test("merge with silent: false emits merge events", () => {
-    const store1 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
-    });
+  test("callback fires when subscribed collection changes", () => {
+    const store = createProfileStore();
 
-    const store2 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-      },
-    });
+    const callback = vi.fn();
+    store.subscribe(["users"], callback);
 
-    // Add data to store1
-    store1.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
+    // Trigger a change
+    store.users.put({ id: "1", name: "Alice", profile: {} });
 
-    // Listen for events on store2
-    const events: any[] = [];
-    store2.onChange((event) => {
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith({ users: true });
+  });
+
+  test("callback fires on patch", () => {
+    const store = createProfileStore();
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+
+    const callback = vi.fn();
+    store.subscribe(["users"], callback);
+
+    callback.mockClear();
+
+    store.users.patch("1", { name: "Alice Updated" });
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith({ users: true });
+  });
+
+  test("callback fires on remove", () => {
+    const store = createProfileStore();
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+
+    const callback = vi.fn();
+    store.subscribe(["users"], callback);
+
+    callback.mockClear();
+
+    store.users.remove("1");
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith({ users: true });
+  });
+
+  test("unsubscribe stops callback execution", () => {
+    const store = createProfileStore();
+
+    const callback = vi.fn();
+    const unsubscribe = store.subscribe(["users"], callback);
+
+    callback.mockClear();
+    unsubscribe();
+
+    // This should NOT trigger the callback
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  test("callback does NOT fire for unsubscribed collections", () => {
+    const store = createMultiCollectionStore();
+
+    const callback = vi.fn();
+    // Only subscribe to users, not notes
+    store.subscribe(["users"], callback);
+
+    callback.mockClear();
+
+    // Change notes - should NOT trigger callback
+    store.notes.put({ id: "1", content: "Hello" });
+
+    expect(callback).not.toHaveBeenCalled();
+
+    // Change users - should trigger callback
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith({ users: true });
+  });
+
+  test("multi-collection subscriptions track all subscribed collections", () => {
+    const store = createMultiCollectionStore();
+
+    const callback = vi.fn();
+    store.subscribe(["users", "notes"], callback);
+
+    callback.mockClear();
+
+    // Change users - should trigger
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith({ users: true });
+
+    callback.mockClear();
+
+    // Change notes - should also trigger
+    store.notes.put({ id: "1", content: "Hello" });
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith({ notes: true });
+  });
+
+  test("multiple subscriptions can coexist", () => {
+    const store = createProfileStore();
+
+    const callback1 = vi.fn();
+    const callback2 = vi.fn();
+
+    store.subscribe(["users"], callback1);
+    store.subscribe(["users"], callback2);
+
+    callback1.mockClear();
+    callback2.mockClear();
+
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+
+    expect(callback1).toHaveBeenCalledTimes(1);
+    expect(callback1).toHaveBeenCalledWith({ users: true });
+    expect(callback2).toHaveBeenCalledTimes(1);
+    expect(callback2).toHaveBeenCalledWith({ users: true });
+  });
+
+  test("unsubscribing one subscription does not affect others", () => {
+    const store = createProfileStore();
+
+    const callback1 = vi.fn();
+    const callback2 = vi.fn();
+
+    const unsub1 = store.subscribe(["users"], callback1);
+    store.subscribe(["users"], callback2);
+
+    callback1.mockClear();
+    callback2.mockClear();
+
+    unsub1();
+
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+
+    expect(callback1).not.toHaveBeenCalled();
+    expect(callback2).toHaveBeenCalledTimes(1);
+    expect(callback2).toHaveBeenCalledWith({ users: true });
+  });
+
+  test("throws error for non-existent collection", () => {
+    const store = createProfileStore();
+
+    expect(() => {
+      store.subscribe(["nonexistent" as any], vi.fn());
+    }).toThrow('Collection "nonexistent" not found');
+  });
+
+  test("event only includes changed collections", () => {
+    const store = createMultiCollectionStore();
+
+    const callback = vi.fn();
+    store.subscribe(["users", "notes"], callback);
+
+    callback.mockClear();
+
+    // Only change users
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith({ users: true });
+    expect(callback).not.toHaveBeenCalledWith(expect.objectContaining({ notes: true }));
+  });
+
+  test("subscription receives all relevant changes", () => {
+    const store = createProfileStore();
+
+    const events: Array<{ users?: true }> = [];
+    store.subscribe(["users"], (event) => {
       events.push(event);
     });
 
-    // Merge with explicit silent: false
-    const snapshot = store1.getSnapshot();
-    store2.merge(snapshot, { silent: false });
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+    store.users.put({ id: "2", name: "Bob", profile: {} });
+    store.users.remove("1");
 
-    // Should emit a merge event
+    expect(events).toEqual([{ users: true }, { users: true }, { users: true }]);
+  });
+
+  test("global subscribe receives all collection events", () => {
+    const store = createMultiCollectionStore();
+
+    const events: any[] = [];
+    store.subscribe((event) => events.push(event));
+
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+    store.notes.put({ id: "1", content: "Hello" });
+
+    expect(events).toHaveLength(2);
+    expect(events[0]).toEqual({ users: true });
+    expect(events[1]).toEqual({ notes: true });
+  });
+
+  test("global subscribe returns unsubscribe function", () => {
+    const store = createProfileStore();
+
+    const callback = vi.fn();
+    const unsubscribe = store.subscribe(callback);
+
+    store.users.put({ id: "1", name: "Alice", profile: {} });
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    store.users.put({ id: "2", name: "Bob", profile: {} });
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("transact", () => {
+  test("transaction throws error for non-existent collection", () => {
+    const store = createMultiCollectionStore();
+
+    expect(() => {
+      store.transact(["users", "orders" as any], (_tx) => {
+        // This should never execute
+      });
+    }).toThrow('Collection "orders" not found');
+  });
+
+  test("transaction with multiple collections commits atomically", () => {
+    const store = createMultiCollectionStore();
+
+    store.transact(["users", "notes"], (tx) => {
+      const user = tx.users.put({ id: "u1", name: "Alice", profile: {} });
+      tx.notes.put({ id: "n1", content: `Note for ${user.name}` });
+    });
+
+    expect(store.users.get("u1")).toEqual({ id: "u1", name: "Alice", profile: {} });
+    expect(store.notes.get("n1")).toEqual({ id: "n1", content: "Note for Alice" });
+  });
+
+  test("transaction rollback on error", () => {
+    const store = createMultiCollectionStore();
+
+    store.users.put({ id: "u1", name: "Alice", profile: {} });
+
+    expect(() => {
+      store.transact(["users", "notes"], (tx) => {
+        tx.users.put({ id: "u2", name: "Bob", profile: {} });
+        tx.notes.put({ id: "n1", content: "Hello" });
+        throw new Error("Transaction failed");
+      });
+    }).toThrow("Transaction failed");
+
+    // Original state should be preserved
+    expect(store.users.get("u1")).toEqual({ id: "u1", name: "Alice", profile: {} });
+    expect(store.users.get("u2")).toBeUndefined();
+    expect(store.notes.get("n1")).toBeUndefined();
+  });
+
+  test("transaction emits single event on commit", () => {
+    const store = createMultiCollectionStore();
+
+    const events: any[] = [];
+    store.subscribe((event) => {
+      events.push(event);
+    });
+
+    store.transact(["users", "notes"], (tx) => {
+      tx.users.put({ id: "u1", name: "Alice", profile: {} });
+      tx.notes.put({ id: "n1", content: "Hello" });
+    });
+
+    // Should emit only one event with both collections
     expect(events).toHaveLength(1);
-    expect(events[0]).toEqual({
-      type: "merge",
-      collection: "users",
-    });
-
-    // Data should be merged
-    expect(store2.get("users", "1")).toEqual({
-      id: "1",
-      name: "Alice",
-      profile: { age: 30 },
-    });
+    expect(events[0]).toEqual({ users: true, notes: true });
   });
 
-  test("merge with silent: true emits no events for multiple collections", () => {
-    const store1 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-        notes: { schema: noteSchema, keyPath: "id" },
-      },
+  test("transaction return value is passed through", () => {
+    const store = createMultiCollectionStore();
+
+    const result = store.transact(["users"], (tx) => {
+      const user = tx.users.put({ id: "u1", name: "Alice", profile: {} });
+      return user;
     });
 
-    const store2 = createStore({
-      collections: {
-        users: { schema: userSchema, keyPath: "id" },
-        notes: { schema: noteSchema, keyPath: "id" },
-      },
+    expect(result).toEqual({ id: "u1", name: "Alice", profile: {} });
+  });
+
+  test("transaction with cross-collection references", () => {
+    const store = createMultiCollectionStore();
+
+    store.transact(["users", "notes"], (tx) => {
+      const user = tx.users.put({ id: "u1", name: "Alice", profile: {} });
+      tx.notes.put({ id: "n1", content: `Note for user ${user.id}` });
     });
 
-    // Add data to store1
-    store1.add("users", { id: "1", name: "Alice", profile: { age: 30 } });
-    store1.add("notes", { id: "note-1", content: "First note" });
+    const note = store.notes.get("n1");
+    expect(note).toEqual({ id: "n1", content: "Note for user u1" });
+  });
 
-    // Listen for events on store2
+  test("transaction only emits event for mutated collections", () => {
+    const store = createMultiCollectionStore();
+
     const events: any[] = [];
-    store2.onChange((event) => {
+    store.subscribe((event) => {
       events.push(event);
     });
 
-    // Merge with silent: true
-    const snapshot = store1.getSnapshot();
-    store2.merge(snapshot, { silent: true });
+    store.transact(["users", "notes"], (tx) => {
+      // Only mutate users, not notes
+      tx.users.put({ id: "u1", name: "Alice", profile: {} });
+    });
 
-    // No events should have been emitted for either collection
+    // Should only include users in the event
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({ users: true });
+    expect(events[0]).not.toHaveProperty("notes");
+  });
+
+  test("transaction with no mutations emits no event", () => {
+    const store = createMultiCollectionStore();
+
+    store.users.put({ id: "u1", name: "Alice", profile: {} });
+
+    const events: any[] = [];
+    store.subscribe((event) => {
+      events.push(event);
+    });
+
+    store.transact(["users", "notes"], (tx) => {
+      // Just read, don't mutate
+      const user = tx.users.get("u1");
+      expect(user).toEqual({ id: "u1", name: "Alice", profile: {} });
+    });
+
+    // Should not emit any event
     expect(events).toHaveLength(0);
+  });
 
-    // But the data should still be merged for both collections
-    expect(store2.get("users", "1")).toEqual({
-      id: "1",
-      name: "Alice",
-      profile: { age: 30 },
+  test("transaction can use returned documents from put", () => {
+    const store = createMultiCollectionStore();
+
+    store.transact(["users", "notes"], (tx) => {
+      const user = tx.users.put({ id: "u1", name: "Alice", profile: {} });
+      expect(user.id).toBe("u1");
+      expect(user.name).toBe("Alice");
+      tx.notes.put({ id: "n1", content: `Created by ${user.name}` });
     });
-    expect(store2.get("notes", "note-1")).toEqual({
-      id: "note-1",
-      content: "First note",
+
+    expect(store.notes.get("n1")).toEqual({ id: "n1", content: "Created by Alice" });
+  });
+
+  test("transaction can use returned documents from patch", () => {
+    const store = createMultiCollectionStore();
+
+    store.users.put({ id: "u1", name: "Alice", profile: {} });
+
+    store.transact(["users", "notes"], (tx) => {
+      const updated = tx.users.patch("u1", { name: "Alice Updated" });
+      expect(updated.name).toBe("Alice Updated");
+      tx.notes.put({ id: "n1", content: `Updated by ${updated.name}` });
     });
+
+    expect(store.users.get("u1")).toEqual({ id: "u1", name: "Alice Updated", profile: {} });
+    expect(store.notes.get("n1")).toEqual({ id: "n1", content: "Updated by Alice Updated" });
+  });
+
+  test("transaction throws error for non-existent collection", () => {
+    const store = createProfileStore();
+
+    expect(() => {
+      store.transact(["nonexistent" as any], (_tx) => {
+        // This should never execute
+      });
+    }).toThrow('Collection "nonexistent" not found');
   });
 });

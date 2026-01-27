@@ -1,3 +1,6 @@
 export { createStore } from "./store";
-export type { StoreAPI, StoreSnapshot, StoreChangeEvent, CollectionConfig } from "./store";
-export type { AnyObject } from "./schema";
+export { collection } from "./schema";
+export type { StoreAPI } from "./store";
+export type { StoreChangeEvent } from "./types";
+export type { StoreState } from "../core";
+export type { AnyObject, CollectionDef, DocType, IdType, StoreConfig } from "./schema";
