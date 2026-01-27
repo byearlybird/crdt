@@ -1,1 +1,1 @@
-export { createEmitter, type Emitter } from "./emitter";
+export * from "./emitter";

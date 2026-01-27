@@ -1,9 +1,9 @@
 import { describe, expect, test, vi } from "vitest";
-import { createEmitter } from "./emitter";
+import { Emitter } from "./emitter";
 
-describe("createEmitter", () => {
+describe("new Emitter", () => {
   test("returns an emitter with subscribe and emit methods", () => {
-    const emitter = createEmitter<string>();
+    const emitter = new Emitter<string>();
 
     expect(emitter).toHaveProperty("subscribe");
     expect(emitter).toHaveProperty("emit");
@@ -12,7 +12,7 @@ describe("createEmitter", () => {
   });
 
   test("subscribe returns an unsubscribe function", () => {
-    const emitter = createEmitter<string>();
+    const emitter = new Emitter<string>();
     const listener = vi.fn();
     const unsubscribe = emitter.subscribe(listener);
 
@@ -20,7 +20,7 @@ describe("createEmitter", () => {
   });
 
   test("emit calls all subscribed listeners", () => {
-    const emitter = createEmitter<string>();
+    const emitter = new Emitter<string>();
 
     const listener1 = vi.fn();
     const listener2 = vi.fn();
@@ -37,7 +37,7 @@ describe("createEmitter", () => {
   });
 
   test("unsubscribe stops listener from receiving events", () => {
-    const emitter = createEmitter<string>();
+    const emitter = new Emitter<string>();
 
     const listener1 = vi.fn();
     const listener2 = vi.fn();
@@ -54,7 +54,7 @@ describe("createEmitter", () => {
   });
 
   test("multiple emits call listeners multiple times", () => {
-    const emitter = createEmitter<number>();
+    const emitter = new Emitter<number>();
 
     const listener = vi.fn();
     emitter.subscribe(listener);
@@ -71,7 +71,7 @@ describe("createEmitter", () => {
 
   test("works with object events", () => {
     type Event = { type: string; data: unknown };
-    const emitter = createEmitter<Event>();
+    const emitter = new Emitter<Event>();
 
     const listener = vi.fn();
     emitter.subscribe(listener);
@@ -85,7 +85,7 @@ describe("createEmitter", () => {
   });
 
   test("unsubscribing multiple times is safe", () => {
-    const emitter = createEmitter<string>();
+    const emitter = new Emitter<string>();
 
     const listener = vi.fn();
     const unsubscribe = emitter.subscribe(listener);
@@ -100,7 +100,7 @@ describe("createEmitter", () => {
   });
 
   test("listeners added during emit are not called for that emit", () => {
-    const emitter = createEmitter<string>();
+    const emitter = new Emitter<string>();
 
     const listener1 = vi.fn(() => {
       emitter.subscribe(listener2);
@@ -122,7 +122,7 @@ describe("createEmitter", () => {
   });
 
   test("listeners removed during emit are still called for that emit", () => {
-    const emitter = createEmitter<string>();
+    const emitter = new Emitter<string>();
 
     let unsubscribe: (() => void) | undefined;
     const listener1 = vi.fn(() => {

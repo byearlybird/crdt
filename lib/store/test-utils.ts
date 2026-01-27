@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { Atomizer, makeStamp, type AtomizedDocument, type Stamp } from "../core";
 import { collection } from "./schema";
-import { createStore } from "./store";
+import { createStore, Store } from "./store";
 
 // Shared test schemas
 export const userSchema = z.object({
@@ -43,7 +43,7 @@ export function createUserStore() {
 }
 
 export function createProfileStore() {
-  return createStore({
+  return new Store({
     users: collection(profileSchema, (data) => data.id),
   });
 }
