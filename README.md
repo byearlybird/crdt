@@ -26,13 +26,13 @@ const userSchema = z.object({
 });
 
 const store = createStore({
-  collections: {
-    users: { schema: userSchema },
-  },
+  users: { schema: userSchema, getId: (data) => data.id },
 });
 
-store.add("users", { id: "1", name: "Alice" });
-const user = store.get("users", "1"); // { id: "1", name: "Alice" }
+store.batch(({ users }) => {
+  users.put({ id: "1", name: "Alice" });
+});
+const user = store.users.get("1"); // { id: "1", name: "Alice" }
 ```
 
 ## Features
@@ -56,64 +56,70 @@ import { createStore } from "@byearlybird/starling";
 import { z } from "zod";
 
 const store = createStore({
-  collections: {
-    users: {
-      schema: z.object({
-        id: z.string(),
-        name: z.string(),
-        email: z.string().optional(),
-      }),
-    },
-    notes: {
-      schema: z.object({
-        id: z.string(),
-        content: z.string(),
-      }),
-    },
+  users: {
+    schema: z.object({
+      id: z.string(),
+      name: z.string(),
+      email: z.string().optional(),
+    }),
+    getId: (data) => data.id,
+  },
+  notes: {
+    schema: z.object({
+      id: z.string(),
+      content: z.string(),
+    }),
+    getId: (data) => data.id,
   },
 });
 ```
 
 ### Adding Documents
 
-Add new items to a collection with `add()`:
+Add new items to a collection using `batch()`:
 
 ```typescript
-store.add("users", {
-  id: "1",
-  name: "Alice",
-  email: "alice@example.com",
+store.batch(({ users }) => {
+  users.put({
+    id: "1",
+    name: "Alice",
+    email: "alice@example.com",
+  });
 });
 ```
 
 ### Updating Documents
 
-Update existing items with `update()`:
+Update existing items using `batch()`:
 
 ```typescript
-store.update("users", "1", {
-  email: "newemail@example.com",
+store.batch(({ users }) => {
+  users.patch("1", {
+    email: "newemail@example.com",
+  });
 });
 ```
 
 ### Removing Documents
 
-Remove items with `remove()`:
+Remove items using `batch()`:
 
 ```typescript
-store.remove("users", "1");
+store.batch(({ users }) => {
+  users.remove("1");
+});
 ```
 
 ### Reading Data
 
-The store provides simple getter methods:
+Read data directly from collection handles:
 
 ```typescript
 // Get a single item
-const user = store.get("users", "1");
+const user = store.users.get("1");
 
 // Get all items as an array
-const allUsers = store.getAll("users");
+const allUsers = store.users.list();
 
 // You can easily derive other operations:
 const userIds = allUsers.map((u) => u.id);
@@ -122,75 +128,60 @@ const hasUser = allUsers.some((u) => u.id === "1");
 
 ### Listening to Changes
 
-Subscribe to changes with `onChange()`:
+Subscribe to changes with `subscribe()`:
 
 ```typescript
-// Listen to all store changes
-store.onChange((event) => {
-  console.log(`${event.collection} changed:`, event.event.type);
-  // Invalidate queries, update UI, etc.
-});
+// Subscribe to a query and get updates when dependencies change
+const unsubscribe = store.subscribe(
+  ({ users }) => users.list(),
+  (allUsers) => {
+    console.log("Users updated:", allUsers);
+    // Update UI, invalidate queries, etc.
+  },
+);
 
-// Filter for specific collection changes
-store.onChange((event) => {
-  if (event.collection === "users") {
-    console.log("User change:", event.event.type, event.event.id);
-    if (event.event.type === "add") {
-      console.log("New user:", event.event.data);
-    }
-  }
-});
+// Later, unsubscribe
+unsubscribe();
 ```
 
 ## Merging Data
 
 Starling's core feature is conflict-free merging. When data changes in multiple places, Starling automatically resolves conflicts using timestamps.
 
-### Getting a Snapshot
-
-Get the current state of your store:
+Snapshots and merging are available through middleware. Here's an example using middleware to sync data:
 
 ```typescript
-const snapshot = store.getSnapshot();
-// { clock: { ms: ..., seq: ... }, collections: { ... } }
-```
+// Create a sync middleware
+const syncMiddleware = ({ getState, merge, subscribe }) => {
+  // Subscribe to changes and send snapshots to server
+  subscribe((event) => {
+    if (Object.keys(event).length > 0) {
+      const snapshot = getState();
+      sendToServer(snapshot);
+    }
+  });
 
-### Merging a Snapshot
+  // Periodically fetch and merge snapshots from server
+  setInterval(async () => {
+    const snapshot = await fetchFromServer();
+    merge(snapshot, { silent: true });
+  }, 1000);
+};
 
-Merge a snapshot from another device or user:
+// Use the middleware
+const store = createStore({
+  users: { schema: userSchema, getId: (data) => data.id },
+}).use(syncMiddleware);
 
-```typescript
-// Get snapshot from another device
-const otherSnapshot = await fetchFromServer();
-
-// Merge it into your store
-store.merge(otherSnapshot);
+// Initialize the store (this runs middleware)
+await store.init();
 ```
 
 Starling automatically resolves conflicts. If the same field was changed in both places, it keeps the change with the newer timestamp (Last-Write-Wins).
 
-### Syncing Between Two Stores
-
-Here's a simple example of syncing between two stores:
-
-```typescript
-const store1 = createStore({ collections: { users: { schema: userSchema } } });
-const store2 = createStore({ collections: { users: { schema: userSchema } } });
-
-// Add data to store1
-store1.add("users", { id: "1", name: "Alice" });
-
-// Sync to store2
-const snapshot = store1.getSnapshot();
-store2.merge(snapshot);
-
-// Now store2 has the same data
-console.log(store2.get("users", "1")); // { id: "1", name: "Alice" }
-```
-
 ## Reactivity Integration
 
-Starling is framework-agnostic. Use `onChange()` to integrate with your reactive system:
+Starling is framework-agnostic. Use `subscribe()` to integrate with your reactive system:
 
 ### React with TanStack Query
 
@@ -201,16 +192,17 @@ function useUsers() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    return store.onChange((event) => {
-      if (event.collection === "users") {
+    return store.subscribe(
+      ({ users }) => users.list(),
+      () => {
         queryClient.invalidateQueries({ queryKey: ["users"] });
-      }
-    });
+      },
+    );
   }, []);
 
   return useQuery({
     queryKey: ["users"],
-    queryFn: () => store.getAll("users"),
+    queryFn: () => store.users.list(),
   });
 }
 ```
@@ -223,10 +215,11 @@ import { useSyncExternalStore } from "react";
 function useUsers() {
   return useSyncExternalStore(
     (callback) =>
-      store.onChange((event) => {
-        if (event.collection === "users") callback();
-      }),
-    () => store.getAll("users"),
+      store.subscribe(
+        ({ users }) => users.list(),
+        () => callback(),
+      ),
+    () => store.users.list(),
   );
 }
 ```
@@ -236,12 +229,13 @@ function useUsers() {
 ```typescript
 import { writable } from "svelte/store";
 
-const users = writable(store.getAll("users"));
-store.onChange((event) => {
-  if (event.collection === "users") {
-    users.set(store.getAll("users"));
-  }
-});
+const users = writable(store.users.list());
+store.subscribe(
+  ({ users }) => users.list(),
+  (allUsers) => {
+    users.set(allUsers);
+  },
+);
 ```
 
 ### Vue
@@ -249,12 +243,13 @@ store.onChange((event) => {
 ```typescript
 import { ref } from "vue";
 
-const users = ref(store.getAll("users"));
-store.onChange((event) => {
-  if (event.collection === "users") {
-    users.value = store.getAll("users");
-  }
-});
+const users = ref(store.users.list());
+store.subscribe(
+  ({ users }) => users.list(),
+  (allUsers) => {
+    users.value = allUsers;
+  },
+);
 ```
 
 ## Schema Support
@@ -290,16 +285,29 @@ const schema = type({ id: "string", name: "string" });
 
 ### Store Methods
 
-- `add(collection, data)` - Add a new document to a collection
-- `get(collection, id)` - Get a document by ID from a collection
-- `getAll(collection)` - Get all documents from a collection as an array
-- `update(collection, id, data)` - Update an existing document in a collection
-- `remove(collection, id)` - Remove a document from a collection
-- `getSnapshot()` - Get the full store snapshot for syncing
-- `merge(snapshot)` - Merge a store snapshot
-- `onChange(listener)` - Subscribe to all collection changes
+- `batch(callback)` - Execute mutations within a batch. The callback receives handles for each collection with `add()`, `update()`, and `remove()` methods.
+- `subscribe(query, subscriber)` - Subscribe to a query. The subscriber is called whenever the query's dependencies change.
+- `use(middleware)` - Add middleware to the store (chainable). Middleware can access `getState()`, `merge()`, and `subscribe()`.
+- `init()` - Initialize the store and run middleware (async).
+- `dispose()` - Clean up middleware subscriptions (async).
+
+### Collection Handles
+
+The store exposes collection handles directly. Each collection name becomes a property on the store with read-only methods. Within `batch()` callbacks, you receive batch handles for each collection:
+
+- `handle.get(id)` - Get a document by ID
+- `handle.list()` - Get all documents as an array
+- `handle.put(data)` - Insert or replace a document (upsert, revives tombstoned IDs)
+- `handle.patch(id, data)` - Partially update an existing document (throws if ID missing)
+- `handle.remove(id)` - Remove a document (batch handles only)
 
 For full type definitions, see the TypeScript types exported from the package.
+
+## Package structure
+
+- **`lib/core/`** – CRDT primitives: hybrid logical clock, per-field atoms (LWW), tombstones, and document/collection merging.
+- **`lib/store/`** – Store API with collections, batching, queries, and change subscriptions.
+- **`lib/middleware/`** – Optional middleware (e.g. persistence).
 
 ## Development
 

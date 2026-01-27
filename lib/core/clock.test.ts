@@ -1,5 +1,5 @@
-import { describe, test, expect } from "vitest";
-import { advanceClock, makeStamp, parseStamp } from "./clock";
+import { describe, expect, test } from "vitest";
+import { advanceClock, asStamp, makeStamp } from "./clock";
 
 describe("advanceClock", () => {
   test("with greater ms updates ms and resets seq", () => {
@@ -55,41 +55,31 @@ describe("makeStamp", () => {
   });
 });
 
-describe("parseStamp", () => {
-  test("extracts ms and seq from stamp", () => {
-    const stamp = "0000000f424000002aabc123";
-    const result = parseStamp(stamp);
-
-    expect(result.ms).toBe(1000000);
-    expect(result.seq).toBe(42);
+describe("asStamp", () => {
+  test("accepts valid 24-character hex string", () => {
+    const valid = "0000000003e8000000abcdef";
+    expect(() => asStamp(valid)).not.toThrow();
+    expect(asStamp(valid)).toBe(valid);
   });
 
-  test("handles zero values", () => {
-    const stamp = "000000000000000000abc123";
-    const result = parseStamp(stamp);
-
-    expect(result.ms).toBe(0);
-    expect(result.seq).toBe(0);
+  test("accepts stamps created by makeStamp", () => {
+    const stamp = makeStamp(1000, 0);
+    expect(() => asStamp(stamp)).not.toThrow();
   });
 
-  test("handles max values", () => {
-    const stamp = "ffffffffffffffffffabc123";
-    const result = parseStamp(stamp);
-
-    expect(result.ms).toBe(281474976710655);
-    expect(result.seq).toBe(16777215);
+  test("throws on wrong length", () => {
+    expect(() => asStamp("abc")).toThrow("Invalid stamp: expected 24 hex characters");
+    expect(() => asStamp("0000000003e8000000abcdef00")).toThrow(
+      "Invalid stamp: expected 24 hex characters",
+    );
   });
-});
 
-describe("makeStamp + parseStamp round-trip", () => {
-  test("round-trip preserves ms and seq values", () => {
-    const ms = 1703203200000;
-    const seq = 42;
-
-    const stamp = makeStamp(ms, seq);
-    const parsed = parseStamp(stamp);
-
-    expect(parsed.ms).toBe(ms);
-    expect(parsed.seq).toBe(seq);
+  test("throws on non-hex characters", () => {
+    expect(() => asStamp("0000000003e8000000abcdeg")).toThrow(
+      "Invalid stamp: expected 24 hex characters",
+    );
+    expect(() => asStamp("0000000003e8000000abcde!")).toThrow(
+      "Invalid stamp: expected 24 hex characters",
+    );
   });
 });
