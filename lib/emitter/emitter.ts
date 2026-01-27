@@ -7,6 +7,10 @@ export class Emitter<T> {
   }
 
   emit(event: T) {
-    this.#listeners.forEach((listener) => listener(event));
+    // Copy the listeners to avoid calling listeners that are added during the emit.
+    const listeners = Array.from(this.#listeners);
+    for (const listener of listeners) {
+      listener(event);
+    }
   }
 }

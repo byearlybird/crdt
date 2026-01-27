@@ -1,7 +1,7 @@
-import { Atomizer } from "./atomizer";
 import { KEYS } from "./types";
 import type { Atom, AtomizedDocument, Document, CollectionState } from "./types";
 import { mergeTombstones } from "./tombstone";
+import { isAtom } from "./atomizer";
 
 /** Merges incoming doc fields into local. Adds new keys from incoming; LWW on conflicts. */
 export function mergeDocs<T extends Document>(
@@ -17,14 +17,14 @@ export function mergeDocs<T extends Document>(
     if (incomingAtom === undefined) continue;
 
     if (!localAtom) {
-      if (Atomizer.isAtom(incomingAtom)) {
+      if (isAtom(incomingAtom)) {
         merged[key] = incomingAtom;
         hasChanges = true;
       }
       continue;
     }
 
-    if (Atomizer.isAtom(localAtom) && Atomizer.isAtom(incomingAtom)) {
+    if (isAtom(localAtom) && isAtom(incomingAtom)) {
       if (incomingAtom[KEYS.TS] > localAtom[KEYS.TS]) {
         merged[key] = incomingAtom;
         hasChanges = true;

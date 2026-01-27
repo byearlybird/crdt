@@ -1,5 +1,4 @@
 import {
-  Atomizer,
   createReadLens,
   isDeleted,
   mergeDocs,
@@ -8,6 +7,7 @@ import {
   type Collection,
   type Stamp,
   type Tombstones,
+  atomize,
 } from "../core";
 
 export function doGet<T extends Document>(
@@ -44,7 +44,7 @@ export function doPut<T extends Document>(
   if (tombstones[id]) {
     delete tombstones[id]; // Revive
   }
-  docs[id] = Atomizer.atomize<T>(validated, stamp);
+  docs[id] = atomize<T>(validated, stamp);
   return createReadLens<T>(docs[id]!);
 }
 
@@ -60,7 +60,7 @@ export function doPatch<T extends Document>(
     throw new Error(`Cannot patch non-existent document "${id}"`);
   }
 
-  const changes = Atomizer.atomize<Partial<T>>(data, stamp) as Partial<AtomizedDocument<T>>;
+  const changes = atomize<Partial<T>>(data, stamp) as Partial<AtomizedDocument<T>>;
   const merged = mergeDocs(current, changes);
   const plain = createReadLens<T>(merged);
   validateFn(plain);

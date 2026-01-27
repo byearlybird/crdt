@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { Atomizer, makeStamp, type AtomizedDocument, type Stamp } from "../core";
-import { collection } from "./schema";
+import { atomize, makeStamp, type AtomizedDocument, type Stamp } from "../core";
+import { define } from "./schema";
 import { createStore, Store } from "./store";
 
 // Shared test schemas
@@ -38,21 +38,21 @@ export function createTimestampGenerator(start = 1000) {
 // Store creation helpers
 export function createUserStore() {
   return createStore({
-    users: collection(userSchema, (data) => data.id),
+    users: define(userSchema, (data) => data.id),
   });
 }
 
 export function createProfileStore() {
   return new Store({
-    users: collection(profileSchema, (data) => data.id),
+    users: define(profileSchema, (data) => data.id),
   });
 }
 
 export function createMultiCollectionStore() {
   return createStore({
-    users: collection(profileSchema, (data) => data.id),
-    notes: collection(noteSchema, (data) => data.id),
-    settings: collection(settingsSchema, (data) => data.id),
+    users: define(profileSchema, (data) => data.id),
+    notes: define(noteSchema, (data) => data.id),
+    settings: define(settingsSchema, (data) => data.id),
   });
 }
 
@@ -62,7 +62,7 @@ type ProfileDoc = { id: string; name: string; profile: { age?: number; email?: s
 type NoteDoc = { id: string; content: string };
 
 export function createUserDoc(id: string, name: string, stamp: Stamp): AtomizedDocument<UserDoc> {
-  return Atomizer.atomize({ id, name }, stamp);
+  return atomize({ id, name }, stamp);
 }
 
 export function createProfileDoc(
@@ -71,7 +71,7 @@ export function createProfileDoc(
   profile: { age?: number; email?: string },
   stamp: Stamp,
 ): AtomizedDocument<ProfileDoc> {
-  return Atomizer.atomize({ id, name, profile }, stamp);
+  return atomize({ id, name, profile }, stamp);
 }
 
 export function createNoteDoc(
@@ -79,5 +79,5 @@ export function createNoteDoc(
   content: string,
   stamp: Stamp,
 ): AtomizedDocument<NoteDoc> {
-  return Atomizer.atomize({ id, content }, stamp);
+  return atomize({ id, content }, stamp);
 }

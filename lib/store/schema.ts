@@ -53,11 +53,11 @@ export type CollectionDef<T extends Document = Document, Id extends string = str
  * @example
  * ```ts
  * const store = createStore({
- *   users: collection(userSchema, (data) => data.id),
+ *   users: define(userSchema, (data) => data.id),
  * });
  * ```
  */
-export function collection<S extends AnyObject, Id extends string = string>(
+export function define<S extends AnyObject, Id extends string = string>(
   schema: S,
   getId: (data: Output<S>) => Id,
 ): CollectionDef<Output<S>, Id> {

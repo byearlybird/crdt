@@ -1,4 +1,4 @@
-import { Atomizer } from "./atomizer";
+import { isAtom, unpack } from "./atomizer";
 import type { AtomizedDocument, Document } from "./types";
 
 export function createReadLens<T extends Document>(doc: AtomizedDocument<T>): T {
@@ -16,8 +16,8 @@ export function createReadLens<T extends Document>(doc: AtomizedDocument<T>): T 
 
       // 2. Atom Detected (The Field) -> Unpack and return
       // We STOP here. We do not proxy deeper.
-      if (Atomizer.isAtom(value)) {
-        return Atomizer.unpack(value);
+      if (isAtom(value)) {
+        return unpack(value);
       }
 
       // 3. Non-atom (invalid); fail fast

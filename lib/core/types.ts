@@ -1,6 +1,6 @@
+import { isAtom } from "./atomizer";
 import type { Clock, Stamp } from "./clock";
 import type { Tombstones } from "./tombstone";
-import { Atomizer } from "./atomizer";
 
 // CONSTANTS
 export const KEYS = { VAL: "~val", TS: "~ts" } as const;
@@ -54,7 +54,7 @@ export function isAtomizedDocument<T extends Document>(
   // Check that all values are atoms
   for (const key in obj) {
     if (Object.prototype.hasOwnProperty.call(obj, key)) {
-      if (!Atomizer.isAtom(obj[key])) {
+      if (!isAtom(obj[key])) {
         return false;
       }
     }
