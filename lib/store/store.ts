@@ -1,234 +1,152 @@
-import { validate } from "./schema";
 import {
-  makeDocument,
-  parseDocument,
-  mergeDocuments,
-  mergeCollections,
-  type Collection,
-  type DocumentId,
+  advanceClock,
+  makeStamp,
+  type CollectionState,
+  type StoreState,
+  type Document,
 } from "../core";
-import type { Clock } from "../core/clock";
-import { advanceClock, makeStamp } from "../core/clock";
-import type { Input, Output, AnyObject } from "./schema";
-import type { Tombstones } from "../core/tombstone";
-import { mergeTombstones } from "../core/tombstone";
-import type { Document } from "../core/document";
+import { createEmitter } from "../emitter";
+import { createHandle, type Handle } from "./collection-handle";
+import type { CollectionName, DocType, IdType, StoreConfig } from "./schema";
+import { validate } from "./schema";
+import type { StoreChangeEvent } from "./types";
+import {
+  mergeState,
+  hasRelevantChange,
+  validateCollectionNames,
+} from "./store-utils";
 
-export type CollectionConfig<T extends AnyObject> = {
-  schema: T;
-  keyPath: keyof Output<T> & string;
+export type StoreAPI<T extends StoreConfig> = {
+  subscribe: {
+    (callback: (event: StoreChangeEvent<T>) => void): () => void;
+    <K extends (keyof T & string)[]>(
+      collections: [...K],
+      callback: (event: StoreChangeEvent<T>) => void,
+    ): () => void;
+  };
+  getState(): StoreState;
+  merge(snapshot: StoreState): StoreChangeEvent<T>;
+  transact<K extends (keyof T & string)[], R>(
+    collections: [...K],
+    callback: (tx: Pick<StoreAPI<T>, K[number]>) => R,
+  ): R;
+} & {
+  [N in CollectionName<T>]: Handle<DocType<T[N]>, IdType<T[N]>>;
 };
 
-export type StoreSnapshot = {
-  clock: Clock;
-  collections: Record<string, Collection>;
-  tombstones: Tombstones;
-};
+export function createStore<T extends StoreConfig>(config: T): StoreAPI<T> {
+  const emitter = createEmitter<StoreChangeEvent<T>>();
 
-export type StoreChangeEvent<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  [K in keyof T]:
-    | { type: "add"; collection: K; id: DocumentId; data: Output<T[K]["schema"]> }
-    | { type: "update"; collection: K; id: DocumentId; data: Output<T[K]["schema"]> }
-    | { type: "remove"; collection: K; id: DocumentId }
-    | { type: "merge"; collection: K };
-}[keyof T];
-
-export type StoreAPI<T extends Record<string, CollectionConfig<AnyObject>>> = {
-  add<K extends keyof T & string>(collection: K, data: Input<T[K]["schema"]>): void;
-
-  get<K extends keyof T & string>(
-    collection: K,
-    id: DocumentId,
-  ): Output<T[K]["schema"]> | undefined;
-
-  getAll<K extends keyof T & string>(
-    collection: K,
-    options?: { where?: (item: Output<T[K]["schema"]>) => boolean },
-  ): Output<T[K]["schema"]>[];
-
-  update<K extends keyof T & string>(
-    collection: K,
-    id: DocumentId,
-    data: Partial<Input<T[K]["schema"]>>,
-  ): void;
-
-  remove<K extends keyof T & string>(collection: K, id: DocumentId): void;
-
-  getSnapshot(): StoreSnapshot;
-  merge(snapshot: StoreSnapshot, options?: { silent?: boolean }): void;
-  onChange(listener: (event: StoreChangeEvent<T>) => void): () => void;
-};
-
-export function createStore<T extends Record<string, CollectionConfig<AnyObject>>>(config: {
-  collections: T;
-}): StoreAPI<T> {
-  let clock: Clock = { ms: Date.now(), seq: 0 };
-  let tombstones: Tombstones = {};
-  const documents: Record<string, Record<DocumentId, Document>> = {};
-  const configs = new Map<string, CollectionConfig<AnyObject>>();
-  const listeners = new Set<(event: StoreChangeEvent<T>) => void>();
-
-  const tick = (): string => {
-    advance(Date.now(), 0);
-    return makeStamp(clock.ms, clock.seq);
+  const state: StoreState = {
+    clock: { ms: Date.now(), seq: 0 },
+    collections: {},
   };
 
-  const advance = (ms: number, seq: number): void => {
-    clock = advanceClock(clock, { ms, seq });
+  const getNextStamp = () => {
+    state.clock = advanceClock(state.clock, { ms: Date.now(), seq: 0 });
+    return makeStamp(state.clock.ms, state.clock.seq);
   };
 
-  const notify = (collectionName: string, event: { type: string; id?: DocumentId; data?: any }) => {
-    listeners.forEach((listener) =>
-      listener({ collection: collectionName, ...event } as StoreChangeEvent<T>),
-    );
+  const collectionHandles = {} as {
+    [N in CollectionName<T>]: Handle<DocType<T[N]>, IdType<T[N]>>;
   };
 
-  const getConfig = <K extends keyof T & string>(
-    collectionName: K,
-  ): CollectionConfig<AnyObject> => {
-    const config = configs.get(collectionName);
-
-    if (!config) {
-      throw new Error(`Collection "${collectionName}" not found`);
+  for (const collectionName of Object.keys(config) as CollectionName<T>[]) {
+    state.collections[collectionName] = {
+      documents: {},
+      tombstones: {},
+    };
+    const collectionConfig = config[collectionName];
+    if (!collectionConfig) {
+      throw new Error(`Collection config not found for "${collectionName}"`);
     }
-
-    return config;
-  };
-
-  const getDocs = <K extends keyof T & string>(collectionName: K): Record<DocumentId, Document> => {
-    const docs = documents[collectionName];
-    if (!docs) {
-      throw new Error(`Collection "${collectionName}" not found`);
-    }
-    return docs;
-  };
-
-  // Initialize collections
-  for (const [name, collectionConfig] of Object.entries(config.collections)) {
-    configs.set(name, collectionConfig);
-    documents[name] = {};
+    collectionHandles[collectionName] = createHandle({
+      getCollection: () => state.collections[collectionName]?.documents ?? {},
+      getTombstones: () => state.collections[collectionName]?.tombstones ?? {},
+      getTimestamp: getNextStamp,
+      validate: (data: unknown) => validate(collectionConfig.schema, data),
+      getId: (data: DocType<T[typeof collectionName]>) => collectionConfig.getId(data),
+      onMutate: () => emitter.emit({ [collectionName]: true } as StoreChangeEvent<T>),
+    });
   }
 
   return {
-    add(collectionName, data) {
-      const collectionConfig = getConfig(collectionName);
-      const valid = validate(collectionConfig.schema, data);
-      const id = valid[collectionConfig.keyPath] as DocumentId;
-      const doc = makeDocument(valid, tick());
-
-      documents[collectionName] = {
-        ...documents[collectionName],
-        [id]: doc,
-      };
-
-      notify(collectionName, { type: "add", id, data: valid });
-    },
-
-    get(collectionName, id) {
-      if (tombstones[id]) return undefined;
-      const collectionDocs = getDocs(collectionName);
-      const doc = collectionDocs[id];
-
-      if (!doc) return undefined;
-
-      return parseDocument(doc) as Output<T[typeof collectionName]["schema"]>;
-    },
-
-    getAll(collectionName, options) {
-      const collectionDocs = getDocs(collectionName);
-      const resultDocs: Output<T[typeof collectionName]["schema"]>[] = [];
-
-      for (const [id, doc] of Object.entries(collectionDocs)) {
-        if (doc && !tombstones[id]) {
-          const parsed = parseDocument(doc) as Output<T[typeof collectionName]["schema"]>;
-          if (!options?.where || options?.where(parsed)) {
-            resultDocs.push(parsed);
-          }
-        }
+    ...collectionHandles,
+    subscribe(
+      collectionsOrCallback: string[] | ((event: StoreChangeEvent<T>) => void),
+      maybeCallback?: (event: StoreChangeEvent<T>) => void,
+    ) {
+      if (typeof collectionsOrCallback === "function") {
+        return emitter.subscribe(collectionsOrCallback);
       }
 
-      return resultDocs;
-    },
+      const collections = collectionsOrCallback as (keyof T & string)[];
+      const callback = maybeCallback!;
+      validateCollectionNames(collections, config);
 
-    update(collectionName, id, data) {
-      const collectionDocs = getDocs(collectionName);
-      const currentDoc = collectionDocs[id];
-
-      if (!currentDoc) return;
-
-      const collectionConfig = getConfig(collectionName);
-      const newAttrs = makeDocument(data, tick());
-      const mergedDoc = mergeDocuments(currentDoc, newAttrs);
-
-      const parsed = parseDocument(mergedDoc);
-      validate(collectionConfig.schema, parsed);
-
-      documents[collectionName] = { ...collectionDocs, [id]: mergedDoc };
-
-      notify(collectionName, { type: "update", id, data: parsed });
-    },
-
-    remove(collectionName, id) {
-      const collectionDocs = getDocs(collectionName);
-      tombstones = { ...tombstones, [id]: tick() };
-      const { [id]: _removed, ...remainingDocs } = collectionDocs;
-      documents[collectionName] = remainingDocs;
-      notify(collectionName, { type: "remove", id });
-    },
-
-    getSnapshot(): StoreSnapshot {
-      const collectionsSnapshot: Record<string, Collection> = {};
-      for (const [name, collectionDocs] of Object.entries(documents)) {
-        collectionsSnapshot[name] = { documents: collectionDocs };
-      }
-      return {
-        clock,
-        collections: collectionsSnapshot,
-        tombstones,
-      };
-    },
-
-    merge(snapshot: StoreSnapshot, options?: { silent?: boolean }): void {
-      advance(snapshot.clock.ms, snapshot.clock.seq);
-
-      tombstones = mergeTombstones(tombstones, snapshot.tombstones);
-
-      for (const [name, collectionData] of Object.entries(snapshot.collections)) {
-        // Initialize collection if it doesn't exist
-        if (!documents[name]) {
-          documents[name] = {};
+      return emitter.subscribe((event) => {
+        if (hasRelevantChange(event, collections)) {
+          callback(event);
         }
+      });
+    },
+    getState() {
+      return { ...state };
+    },
+    merge(snapshot) {
+      const diff = mergeState(state, snapshot, config);
+      emitter.emit(diff);
+      return diff;
+    },
+    transact<K extends (keyof T & string)[], R>(
+      collections: [...K],
+      callback: (tx: Pick<StoreAPI<T>, K[number]>) => R,
+    ): R {
+      validateCollectionNames(collections, config);
 
-        // Filter out tombstoned documents before merging
-        const filteredDocs: Record<DocumentId, Document> = {};
-        for (const [id, doc] of Object.entries(collectionData.documents)) {
-          if (!tombstones[id]) {
-            filteredDocs[id] = doc;
-          }
-        }
+      // 1. Create event object upfront (will be populated by onMutate)
+      const event = {} as StoreChangeEvent<T>;
 
-        // Merge collections using core mergeCollections function
-        const currentCollection: Collection = {
-          documents: documents[name],
+      // 2. Clone relevant collection states
+      const clonedStates: Record<string, CollectionState<Document>> = {};
+      for (const name of collections) {
+        const original = state.collections[name]!;
+        clonedStates[name] = {
+          documents: structuredClone(original.documents),
+          tombstones: structuredClone(original.tombstones),
         };
-
-        const sourceCollection: Collection = {
-          documents: filteredDocs,
-        };
-
-        const merged = mergeCollections(currentCollection, sourceCollection, tombstones);
-        documents[name] = merged.documents;
-
-        // Notify merge event only if not silent
-        if (!options?.silent) {
-          notify(name, { type: "merge" });
-        }
       }
-    },
 
-    onChange(listener: (event: StoreChangeEvent<T>) => void): () => void {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
+      // 3. Create transaction-scoped handles
+      const txHandles: Record<string, Handle<any, any>> = {};
+      for (const name of collections) {
+        const collectionConfig = config[name]!;
+        txHandles[name] = createHandle({
+          getCollection: () => clonedStates[name]!.documents,
+          getTombstones: () => clonedStates[name]!.tombstones,
+          getTimestamp: getNextStamp,
+          validate: (data: unknown) => validate(collectionConfig.schema, data),
+          getId: (data: DocType<T[typeof name]>) => collectionConfig.getId(data),
+          onMutate: () => {
+            (event as Record<string, true>)[name] = true;
+          },
+        });
+      }
+
+      // 4. Execute callback
+      const result = callback(txHandles as Pick<StoreAPI<T>, K[number]>);
+
+      // 5. Commit: swap cloned state back into real state
+      for (const name of collections) {
+        state.collections[name] = clonedStates[name]!;
+      }
+
+      // 6. Emit event (only includes collections that were actually mutated)
+      if (Object.keys(event).length > 0) {
+        emitter.emit(event);
+      }
+
+      return result;
     },
-  };
+  } as StoreAPI<T>;
 }
