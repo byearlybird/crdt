@@ -60,7 +60,7 @@ Starling is a conflict-free replicated data type (CRDT) library for JavaScript. 
 
 3. **Change Events**: Collections and stores emit change events. Users integrate with their own reactive systems (TanStack Query, useSyncExternalStore, Svelte stores, etc.).
 
-4. **Schema Flexibility**: Collections accept any StandardSchema-compatible validator (Zod, etc.). Schemas must have an `id` field or provide a custom `getId` function.
+4. **Schema Flexibility**: Collections accept any StandardSchema-compatible validator (Zod, etc.). Each collection configuration requires an `getId` function that extracts the document ID from the validated data.
 
 5. **Merge Semantics**:
    - Store.merge() syncs entire store state from remote snapshot

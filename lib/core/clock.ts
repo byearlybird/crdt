@@ -3,11 +3,19 @@ import { nonce, toHex } from "./hex";
 const MS_LENGTH = 12;
 const SEQ_LENGTH = 6;
 const NONCE_LENGTH = 6;
+const STAMP_LENGTH = MS_LENGTH + SEQ_LENGTH + NONCE_LENGTH;
+const HEX_PATTERN = /^[0-9a-f]+$/i;
 
 export type Clock = {
   ms: number;
   seq: number;
 };
+
+/**
+ * Branded type for HLC timestamps.
+ * Stamps are lexicographically sortable hex strings encoding (ms, seq, nonce).
+ */
+export type Stamp = string & { readonly __brand: "Stamp" };
 
 export function advanceClock(current: Clock, next: Clock): Clock {
   if (next.ms > current.ms) {
@@ -19,13 +27,17 @@ export function advanceClock(current: Clock, next: Clock): Clock {
   }
 }
 
-export function makeStamp(ms: number, seq: number): string {
-  return `${toHex(ms, MS_LENGTH)}${toHex(seq, SEQ_LENGTH)}${nonce(NONCE_LENGTH)}`;
+export function makeStamp(ms: number, seq: number): Stamp {
+  return `${toHex(ms, MS_LENGTH)}${toHex(seq, SEQ_LENGTH)}${nonce(NONCE_LENGTH)}` as Stamp;
 }
 
-export function parseStamp(stamp: string): { ms: number; seq: number } {
-  return {
-    ms: parseInt(stamp.slice(0, MS_LENGTH), 16),
-    seq: parseInt(stamp.slice(MS_LENGTH, MS_LENGTH + SEQ_LENGTH), 16),
-  };
+/**
+ * Parse and validate a string as a Stamp. Use when deserializing stored state.
+ * Throws if the value is not a valid 24-character hex string.
+ */
+export function asStamp(value: string): Stamp {
+  if (value.length !== STAMP_LENGTH || !HEX_PATTERN.test(value)) {
+    throw new Error(`Invalid stamp: expected ${STAMP_LENGTH} hex characters, got "${value}"`);
+  }
+  return value as Stamp;
 }

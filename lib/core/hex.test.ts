@@ -1,5 +1,5 @@
-import { describe, test, expect } from "vitest";
-import { toHex, nonce } from "./hex";
+import { describe, expect, test } from "vitest";
+import { nonce, toHex } from "./hex";
 
 describe("toHex", () => {
   test("converts number to hex string", () => {

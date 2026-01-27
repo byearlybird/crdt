@@ -1,5 +1,21 @@
-import { describe, test, expect } from "vitest";
-import { mergeTombstones, type Tombstones } from "./tombstone";
+import { describe, expect, test } from "vitest";
+import { isDeleted, mergeTombstones, type Tombstones } from "./tombstone";
+
+describe("isDeleted", () => {
+  test("returns true when id is present in tombstones", () => {
+    const tombstones: Tombstones = { "1": "000000000000000001000000" };
+    expect(isDeleted("1", tombstones)).toBe(true);
+  });
+
+  test("returns false when id is absent from tombstones", () => {
+    const tombstones: Tombstones = { "1": "000000000000000001000000" };
+    expect(isDeleted("2", tombstones)).toBe(false);
+  });
+
+  test("returns false when tombstones is empty", () => {
+    expect(isDeleted("1", {})).toBe(false);
+  });
+});
 
 describe("mergeTombstones", () => {
   test("chooses target when both have key and target stamp is higher", () => {
