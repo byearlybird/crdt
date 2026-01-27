@@ -3,6 +3,7 @@ import "fake-indexeddb/auto";
 import { createPersistence } from "./persistence";
 import { createProfileStore } from "../store/test-utils";
 import type { StoreState } from "../core";
+import { makeStamp } from "../core";
 
 // Mock BroadcastChannel
 class MockBroadcastChannel {
@@ -73,15 +74,16 @@ afterEach(() => {
 describe("createPersistence", () => {
   test("loads state from IndexedDB on init", async () => {
     const store = createProfileStore();
+    const stamp = makeStamp(1000, 0);
     const savedState: StoreState = {
       clock: { ms: 1000, seq: 0 },
       collections: {
         users: {
           documents: {
             "1": {
-              id: { "~val": "1", "~ts": "1000:0" },
-              name: { "~val": "Alice", "~ts": "1000:0" },
-              profile: { "~val": {}, "~ts": "1000:0" },
+              id: { "~val": "1", "~ts": stamp },
+              name: { "~val": "Alice", "~ts": stamp },
+              profile: { "~val": {}, "~ts": stamp },
             },
           },
           tombstones: {},
@@ -108,7 +110,7 @@ describe("createPersistence", () => {
     });
     db.close();
 
-    await createPersistence(store, { key: "test-store" });
+    const cleanup = await createPersistence(store, { key: "test-store" });
 
     const user = store.users.get("1");
     expect(user).toEqual({
@@ -116,12 +118,14 @@ describe("createPersistence", () => {
       name: "Alice",
       profile: {},
     });
+
+    await cleanup();
   });
 
   test("persists state to IndexedDB on changes", async () => {
     const store = createProfileStore();
 
-    await createPersistence(store, { key: "test-store", debounceMs: 50 });
+    const cleanup = await createPersistence(store, { key: "test-store", debounceMs: 50 });
 
     store.users.put({ id: "1", name: "Alice", profile: {} });
 
@@ -149,6 +153,8 @@ describe("createPersistence", () => {
 
     const parsed = JSON.parse(saved);
     expect(parsed.collections.users.documents["1"]).toBeDefined();
+
+    await cleanup();
   });
 
   test("debounces multiple rapid changes", async () => {
@@ -161,7 +167,7 @@ describe("createPersistence", () => {
       return originalPut.call(this, value, key);
     };
 
-    await createPersistence(store, { key: "test-store", debounceMs: 100 });
+    const cleanup = await createPersistence(store, { key: "test-store", debounceMs: 100 });
 
     // Make multiple rapid changes
     store.users.put({ id: "1", name: "Alice", profile: {} });
@@ -178,14 +184,16 @@ describe("createPersistence", () => {
 
     // Restore
     IDBObjectStore.prototype.put = originalPut;
+
+    await cleanup();
   });
 
   test("syncs across tabs via BroadcastChannel", async () => {
     const store1 = createProfileStore();
     const store2 = createProfileStore();
 
-    await createPersistence(store1, { key: "test-store", debounceMs: 50 });
-    await createPersistence(store2, { key: "test-store", debounceMs: 50 });
+    const cleanup1 = await createPersistence(store1, { key: "test-store", debounceMs: 50 });
+    const cleanup2 = await createPersistence(store2, { key: "test-store", debounceMs: 50 });
 
     // Make change in store1
     store1.users.put({ id: "1", name: "Alice", profile: {} });
@@ -200,6 +208,9 @@ describe("createPersistence", () => {
       name: "Alice",
       profile: {},
     });
+
+    await cleanup1();
+    await cleanup2();
   });
 
   test("handles missing IndexedDB gracefully", async () => {
@@ -222,7 +233,9 @@ describe("createPersistence", () => {
     const store = createProfileStore();
 
     // Should not throw
-    await expect(createPersistence(store, { key: "test-store" })).resolves.not.toThrow();
+    const cleanupPromise = createPersistence(store, { key: "test-store" });
+    await expect(cleanupPromise).resolves.not.toThrow();
+    const cleanup = await cleanupPromise;
 
     // Store should still work
     store.users.put({ id: "1", name: "Alice", profile: {} });
@@ -230,6 +243,8 @@ describe("createPersistence", () => {
 
     // Restore
     indexedDB.open = originalOpen;
+
+    await cleanup();
   });
 
   test("handles BroadcastChannel unavailability", async () => {
@@ -243,11 +258,15 @@ describe("createPersistence", () => {
     const store = createProfileStore();
 
     // Should not throw
-    await expect(createPersistence(store, { key: "test-store" })).resolves.not.toThrow();
+    const cleanupPromise = createPersistence(store, { key: "test-store" });
+    await expect(cleanupPromise).resolves.not.toThrow();
+    const cleanup = await cleanupPromise;
 
     // Store should still work
     store.users.put({ id: "1", name: "Alice", profile: {} });
     expect(store.users.get("1")).toBeDefined();
+
+    await cleanup();
   });
 
   test("cleans up resources on dispose", async () => {
@@ -311,7 +330,10 @@ describe("createPersistence", () => {
       return originalPut.call(this, value, key);
     };
 
-    await createPersistence(store, { key: "test-store-custom-debounce", debounceMs: 200 });
+    const cleanup = await createPersistence(store, {
+      key: "test-store-custom-debounce",
+      debounceMs: 200,
+    });
 
     // Clear any saves from init
     saveCount = 0;
@@ -332,30 +354,42 @@ describe("createPersistence", () => {
 
     // Restore
     IDBObjectStore.prototype.put = originalPut;
+
+    await cleanup();
   });
 
   test("uses custom channel name", async () => {
     const store1 = createProfileStore();
     const store2 = createProfileStore();
 
-    await createPersistence(store1, { key: "test-store", channelName: "custom-channel" });
-    await createPersistence(store2, { key: "test-store", channelName: "custom-channel" });
+    const cleanup1 = await createPersistence(store1, {
+      key: "test-store",
+      channelName: "custom-channel",
+    });
+    const cleanup2 = await createPersistence(store2, {
+      key: "test-store",
+      channelName: "custom-channel",
+    });
 
     // Verify they're using the same channel
     expect(MockBroadcastChannel.instances.has("custom-channel")).toBe(true);
+
+    await cleanup1();
+    await cleanup2();
   });
 
   test("does not save on initial load", async () => {
     const store = createProfileStore();
+    const stamp = makeStamp(1000, 0);
     const savedState: StoreState = {
       clock: { ms: 1000, seq: 0 },
       collections: {
         users: {
           documents: {
             "1": {
-              id: { "~val": "1", "~ts": "1000:0" },
-              name: { "~val": "Alice", "~ts": "1000:0" },
-              profile: { "~val": {}, "~ts": "1000:0" },
+              id: { "~val": "1", "~ts": stamp },
+              name: { "~val": "Alice", "~ts": stamp },
+              profile: { "~val": {}, "~ts": stamp },
             },
           },
           tombstones: {},
@@ -389,7 +423,7 @@ describe("createPersistence", () => {
       return originalPut.call(this, value, key);
     };
 
-    await createPersistence(store, { key: "test-store", debounceMs: 50 });
+    const cleanup = await createPersistence(store, { key: "test-store", debounceMs: 50 });
 
     // Wait for any potential saves
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -399,5 +433,7 @@ describe("createPersistence", () => {
 
     // Restore
     IDBObjectStore.prototype.put = originalPut;
+
+    await cleanup();
   });
 });
