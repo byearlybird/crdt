@@ -1,10 +1,14 @@
 import {
   advanceClock,
   makeStamp,
+  atomize,
+  createReadLens,
+  mergeDocs,
   type CollectionState,
   type StoreState,
   type Document,
   type Stamp,
+  type AtomizedDocument,
 } from "../core";
 import { Emitter } from "../emitter";
 import type { CollectionName, DocType, IdType, InputType, StoreConfig } from "./schema";
@@ -118,78 +122,173 @@ export class Store<T extends StoreConfig> {
   }
 
   transact<R>(callback: (tx: TransactionAPI<T>) => R): R {
-    // 1. Create event object upfront (will be populated on mutations)
+    // Track document-level modifications per collection
+    type CollectionModifications = {
+      modifiedDocs: Record<string, AtomizedDocument<Document>>;
+      modifiedTombstones: Set<string>;
+      revivedDocs: Set<string>;
+    };
+
+    const modifications: Record<string, CollectionModifications> = {};
     const event = {} as StoreChangeEvent<T>;
 
-    // 2. Lazy cloning map - collections cloned on first access
-    const clonedStates: Record<string, CollectionState<Document>> = {};
-
-    // 3. Helper to ensure a collection is cloned
-    const ensureCloned = (name: string): CollectionState<Document> => {
+    // Helper to initialize modification tracking for a collection
+    const ensureModifications = (name: string): CollectionModifications => {
       if (!(name in this.#config)) {
         throw new Error(`Collection "${name}" not found`);
       }
-      if (!clonedStates[name]) {
-        const original = this.#state.collections[name]!;
-        clonedStates[name] = {
-          documents: structuredClone(original.documents),
-          tombstones: structuredClone(original.tombstones),
+      if (!modifications[name]) {
+        modifications[name] = {
+          modifiedDocs: {},
+          modifiedTombstones: new Set(),
+          revivedDocs: new Set(),
         };
       }
-      return clonedStates[name]!;
+      return modifications[name]!;
     };
 
-    // 4. Create transaction API object
+    // Create transaction API
     const tx: TransactionAPI<T> = {
       get: (collection, id) => {
-        const cloned = ensureCloned(collection);
-        return doGet(cloned.documents, cloned.tombstones, id);
+        // Validate collection exists
+        if (!(collection in this.#config)) {
+          throw new Error(`Collection "${collection}" not found`);
+        }
+
+        // Check modifications first for uncommitted writes
+        const mods = modifications[collection];
+        if (mods) {
+          if (mods.modifiedDocs[id]) {
+            return createReadLens(mods.modifiedDocs[id]!);
+          }
+          if (mods.modifiedTombstones.has(id)) {
+            return undefined; // Deleted in transaction
+          }
+        }
+        // Fallback to main state
+        const col = this.#state.collections[collection]!;
+        return doGet(col.documents, col.tombstones, id);
       },
+
       list: (collection) => {
-        const cloned = ensureCloned(collection);
-        return doList(cloned.documents, cloned.tombstones);
+        // Validate collection exists
+        if (!(collection in this.#config)) {
+          throw new Error(`Collection "${collection}" not found`);
+        }
+
+        const col = this.#state.collections[collection]!;
+        const mods = modifications[collection];
+        const results: DocType<T[typeof collection]>[] = [];
+
+        // Collect all IDs to process
+        const allIds = new Set<string>();
+        for (const id in col.documents) allIds.add(id);
+        if (mods) {
+          for (const id in mods.modifiedDocs) allIds.add(id);
+        }
+
+        // Build result list
+        for (const id of allIds) {
+          // Skip if tombstoned
+          if (mods?.modifiedTombstones.has(id)) continue;
+          if (!mods?.revivedDocs.has(id) && col.tombstones[id]) continue;
+
+          // Use modified doc if available, otherwise main state
+          const doc = mods?.modifiedDocs[id] ?? col.documents[id];
+          if (doc) {
+            results.push(createReadLens(doc));
+          }
+        }
+
+        return results;
       },
+
       put: (collection, data) => {
-        const cloned = ensureCloned(collection);
+        const mods = ensureModifications(collection);
         const collectionConfig = this.#config[collection]!;
+        const col = this.#state.collections[collection]!;
         event[collection] = true;
-        return doPut(
-          cloned.documents,
-          cloned.tombstones,
-          data,
-          this.#getNextStamp(),
-          (d: unknown) => validate(collectionConfig.schema, d),
-          (d: DocType<T[typeof collection]>) => collectionConfig.getId(d),
-        );
+
+        // Validate and extract ID
+        const validated = validate(collectionConfig.schema, data);
+        const id = collectionConfig.getId(validated);
+
+        // Handle tombstone revival
+        if (col.tombstones[id]) {
+          mods.revivedDocs.add(id);
+          mods.modifiedTombstones.delete(id);
+        }
+
+        // Create new atomized document
+        mods.modifiedDocs[id] = atomize(validated, this.#getNextStamp());
+        return createReadLens(mods.modifiedDocs[id]!);
       },
+
       patch: (collection, id, data) => {
-        const cloned = ensureCloned(collection);
+        const mods = ensureModifications(collection);
         const collectionConfig = this.#config[collection]!;
+        const col = this.#state.collections[collection]!;
         event[collection] = true;
-        return doPatch(
-          cloned.documents,
-          id,
-          data as Partial<Document>,
-          this.#getNextStamp(),
-          (d: unknown) => validate(collectionConfig.schema, d),
-        );
+
+        // Get current document (from modifications or main state)
+        let current = mods.modifiedDocs[id];
+        if (!current) {
+          current = col.documents[id];
+          if (!current) {
+            throw new Error(`Cannot patch non-existent document "${id}"`);
+          }
+          // Clone document into modifications
+          mods.modifiedDocs[id] = structuredClone(current);
+        }
+
+        // Apply patch using field-level merge
+        const changes = atomize(data, this.#getNextStamp()) as Partial<
+          AtomizedDocument<DocType<T[typeof collection]>>
+        >;
+        const merged = mergeDocs(mods.modifiedDocs[id]!, changes);
+
+        // Validate merged result
+        const plain = createReadLens(merged);
+        validate(collectionConfig.schema, plain);
+
+        mods.modifiedDocs[id] = merged;
+        return plain;
       },
+
       remove: (collection, id) => {
-        const cloned = ensureCloned(collection);
+        const mods = ensureModifications(collection);
         event[collection] = true;
-        doRemove(cloned.documents, cloned.tombstones, id, this.#getNextStamp());
+
+        mods.modifiedTombstones.add(id);
+        delete mods.modifiedDocs[id]; // Remove if was newly created
       },
     };
 
-    // 5. Execute callback
+    // Execute callback
     const result = callback(tx);
 
-    // 6. Commit: swap cloned state back into real state (only for collections that were cloned)
-    for (const name of Object.keys(clonedStates)) {
-      this.#state.collections[name] = clonedStates[name]!;
+    // Commit: merge modifications into main state
+    for (const [name, mods] of Object.entries(modifications)) {
+      const col = this.#state.collections[name]!;
+
+      // Merge modified documents
+      for (const [id, doc] of Object.entries(mods.modifiedDocs)) {
+        col.documents[id] = doc;
+      }
+
+      // Apply tombstones
+      for (const id of mods.modifiedTombstones) {
+        col.tombstones[id] = this.#getNextStamp();
+        delete col.documents[id];
+      }
+
+      // Revive documents (remove tombstones)
+      for (const id of mods.revivedDocs) {
+        delete col.tombstones[id];
+      }
     }
 
-    // 7. Emit event (only includes collections that were actually mutated)
+    // Emit event (only for mutated collections)
     if (Object.keys(event).length > 0) {
       this.#emitter.emit(event);
     }
