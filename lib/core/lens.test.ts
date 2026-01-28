@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test, spyOn } from "bun:test";
 import { pack, unpack } from "./atomizer";
 import { makeStamp } from "./clock";
 import { createReadLens } from "./lens";
@@ -44,7 +44,7 @@ describe("createReadLens", () => {
   });
 
   test("blocks writes via set", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
     const internal = { x: pack(1, stamp) };
     const lens = createReadLens<{ x: number }>(internal);
 

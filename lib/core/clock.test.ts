@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import { advanceClock, asStamp, makeStamp } from "./clock";
 
 describe("advanceClock", () => {

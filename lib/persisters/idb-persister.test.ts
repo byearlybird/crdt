@@ -1,65 +1,9 @@
-import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, test, expect, afterEach } from "bun:test";
 import "fake-indexeddb/auto";
 import { IdbPersister } from "./idb-persister";
 import { createProfileStore } from "../store/test-utils";
 import type { StoreState } from "../core";
 import { makeStamp } from "../core";
-
-// Mock BroadcastChannel
-class MockBroadcastChannel {
-  name: string;
-  private listeners: Set<(event: MessageEvent) => void> = new Set();
-  static instances: Map<string, MockBroadcastChannel> = new Map();
-
-  constructor(name: string) {
-    this.name = name;
-    MockBroadcastChannel.instances.set(name, this);
-  }
-
-  postMessage(message: any) {
-    // Broadcast to all instances with the same name
-    const instances = Array.from(MockBroadcastChannel.instances.values()).filter(
-      (instance) => instance.name === this.name && instance !== this,
-    );
-    instances.forEach((instance) => {
-      instance.listeners.forEach((listener) => {
-        queueMicrotask(() => {
-          listener(new MessageEvent("message", { data: message }) as any);
-        });
-      });
-    });
-  }
-
-  addEventListener(type: string, listener: (event: MessageEvent) => void) {
-    if (type === "message") {
-      this.listeners.add(listener);
-    }
-  }
-
-  removeEventListener(type: string, listener: (event: MessageEvent) => void) {
-    if (type === "message") {
-      this.listeners.delete(listener);
-    }
-  }
-
-  get onmessage() {
-    return Array.from(this.listeners)[0] ?? null;
-  }
-
-  set onmessage(listener: ((event: MessageEvent) => void) | null) {
-    if (listener) {
-      this.listeners.clear();
-      this.listeners.add(listener);
-    } else {
-      this.listeners.clear();
-    }
-  }
-
-  close() {
-    this.listeners.clear();
-    MockBroadcastChannel.instances.delete(this.name);
-  }
-}
 
 /**
  * Pre-populates IndexedDB with test data.
@@ -93,14 +37,8 @@ async function prepopulateIndexedDB(
   db.close();
 }
 
-// Setup mocks
-beforeEach(() => {
-  global.BroadcastChannel = MockBroadcastChannel as any;
-  MockBroadcastChannel.instances.clear();
-});
-
 afterEach(() => {
-  vi.useRealTimers();
+  // No timer controls needed for Bun test runner
 });
 
 describe("IdbPersister", () => {
@@ -252,9 +190,9 @@ describe("IdbPersister", () => {
 
     const store = createProfileStore();
 
-    // Should not throw
     const persister = new IdbPersister(store, { key: "test-store" });
-    await expect(persister.init()).resolves.not.toThrow();
+    // Should resolve without throwing
+    await expect(persister.init()).resolves.toBeUndefined();
 
     // Store should still work
     store.put("users", { id: "1", name: "Alice", profile: {} });
@@ -268,6 +206,7 @@ describe("IdbPersister", () => {
 
   test("handles BroadcastChannel unavailability", async () => {
     // Mock BroadcastChannel to throw
+    const originalBroadcastChannel = global.BroadcastChannel;
     global.BroadcastChannel = class {
       constructor() {
         throw new Error("BroadcastChannel not available");
@@ -276,15 +215,18 @@ describe("IdbPersister", () => {
 
     const store = createProfileStore();
 
-    // Should not throw
     const persister = new IdbPersister(store, { key: "test-store" });
-    await expect(persister.init()).resolves.not.toThrow();
+    // Should resolve without throwing
+    await expect(persister.init()).resolves.toBeUndefined();
 
     // Store should still work
     store.put("users", { id: "1", name: "Alice", profile: {} });
     expect(store.get("users", "1")).toBeDefined();
 
     await persister.dispose();
+
+    // Restore global
+    global.BroadcastChannel = originalBroadcastChannel;
   });
 
   test("cleans up resources on dispose", async () => {
@@ -394,8 +336,19 @@ describe("IdbPersister", () => {
     await persister1.init();
     await persister2.init();
 
-    // Verify they're using the same channel
-    expect(MockBroadcastChannel.instances.has("custom-channel")).toBe(true);
+    // Make change in store1
+    store1.put("users", { id: "1", name: "Alice", profile: {} });
+
+    // Wait for debounce, broadcast, and message propagation
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Verify store2 received the update via the custom channel
+    const user = store2.get("users", "1");
+    expect(user).toEqual({
+      id: "1",
+      name: "Alice",
+      profile: {},
+    });
 
     await persister1.dispose();
     await persister2.dispose();

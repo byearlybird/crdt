@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test, mock } from "bun:test";
 import { Emitter } from "./emitter";
 
 describe("new Emitter", () => {
@@ -13,7 +13,7 @@ describe("new Emitter", () => {
 
   test("subscribe returns an unsubscribe function", () => {
     const emitter = new Emitter<string>();
-    const listener = vi.fn();
+    const listener = mock(() => {});
     const unsubscribe = emitter.subscribe(listener);
 
     expect(typeof unsubscribe).toBe("function");
@@ -22,8 +22,8 @@ describe("new Emitter", () => {
   test("emit calls all subscribed listeners", () => {
     const emitter = new Emitter<string>();
 
-    const listener1 = vi.fn();
-    const listener2 = vi.fn();
+    const listener1 = mock(() => {});
+    const listener2 = mock(() => {});
 
     emitter.subscribe(listener1);
     emitter.subscribe(listener2);
@@ -39,8 +39,8 @@ describe("new Emitter", () => {
   test("unsubscribe stops listener from receiving events", () => {
     const emitter = new Emitter<string>();
 
-    const listener1 = vi.fn();
-    const listener2 = vi.fn();
+    const listener1 = mock(() => {});
+    const listener2 = mock(() => {});
 
     const unsubscribe1 = emitter.subscribe(listener1);
     emitter.subscribe(listener2);
@@ -56,7 +56,7 @@ describe("new Emitter", () => {
   test("multiple emits call listeners multiple times", () => {
     const emitter = new Emitter<number>();
 
-    const listener = vi.fn();
+    const listener = mock(() => {});
     emitter.subscribe(listener);
 
     emitter.emit(1);
@@ -73,7 +73,7 @@ describe("new Emitter", () => {
     type Event = { type: string; data: unknown };
     const emitter = new Emitter<Event>();
 
-    const listener = vi.fn();
+    const listener = mock(() => {});
     emitter.subscribe(listener);
 
     emitter.emit({ type: "add", data: { id: "1" } });
@@ -87,7 +87,7 @@ describe("new Emitter", () => {
   test("unsubscribing multiple times is safe", () => {
     const emitter = new Emitter<string>();
 
-    const listener = vi.fn();
+    const listener = mock(() => {});
     const unsubscribe = emitter.subscribe(listener);
 
     unsubscribe();
@@ -102,10 +102,10 @@ describe("new Emitter", () => {
   test("listeners added during emit are not called for that emit", () => {
     const emitter = new Emitter<string>();
 
-    const listener1 = vi.fn(() => {
+    const listener1 = mock(() => {
       emitter.subscribe(listener2);
     });
-    const listener2 = vi.fn();
+    const listener2 = mock(() => {});
 
     emitter.subscribe(listener1);
     emitter.emit("test");
@@ -125,10 +125,10 @@ describe("new Emitter", () => {
     const emitter = new Emitter<string>();
 
     let unsubscribe: (() => void) | undefined;
-    const listener1 = vi.fn(() => {
+    const listener1 = mock(() => {
       unsubscribe?.();
     });
-    const listener2 = vi.fn();
+    const listener2 = mock(() => {});
 
     unsubscribe = emitter.subscribe(listener1);
     emitter.subscribe(listener2);

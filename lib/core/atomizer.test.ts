@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import { makeStamp } from "./clock";
 import { KEYS } from "./types";
 import { isAtom, pack, unpack } from "./atomizer";

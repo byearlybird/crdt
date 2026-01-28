@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import { pack } from "./atomizer";
 import { mergeDocs, mergeCollections } from "./merge";
 import { makeStamp } from "./clock";

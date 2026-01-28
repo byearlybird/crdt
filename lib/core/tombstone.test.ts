@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import { makeStamp } from "./clock";
 import { isDeleted, mergeTombstones, type Tombstones } from "./tombstone";
 

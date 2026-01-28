@@ -17,19 +17,19 @@ Starling is a conflict-free replicated data type (CRDT) library for JavaScript. 
 
 ### Build and Development
 
-- `pnpm run build` - Build the library using tsdown
-- `pnpm run dev` - Build in watch mode
+- `bun run build` - Build the library using tsdown
+- `bun run dev` - Build in watch mode
 
 ### Testing
 
-- `pnpm test` - Run all tests
-- `pnpm test <file>` - Run specific test file
+- `bun test` - Run all tests
+- `bun test lib/core/document.test.ts` - Run specific test file
 - Test files use pattern: `*.test.ts`
 
 ### Code Quality
 
-- `pnpm run fmt` - Format code with oxfmt
-- `pnpm run fmt:check` - Check formatting without changes
+- `bun run fmt` - Format code with oxfmt
+- `bun run fmt:check` - Check formatting without changes
 
 ## Architecture
 
@@ -76,25 +76,10 @@ Starling is a conflict-free replicated data type (CRDT) library for JavaScript. 
 
 ## Testing Patterns
 
-Tests use Vitest framework with describe/test/expect:
-
-```ts
-import { describe, test, expect } from "vitest";
-
-test("documents merge with LWW semantics", () => {
-  const stamp1 = makeStamp(1000, 1);
-  const stamp2 = makeStamp(2000, 1);
-  const doc1 = makeDocument({ name: "Alice" }, stamp1);
-  const doc2 = makeDocument({ name: "Bob" }, stamp2);
-  const merged = mergeDocuments(doc1, doc2);
-  expect(parseDocument(merged)).toEqual({ name: "Bob" });
-});
-```
-
-See `lib/core/integration.test.ts` for comprehensive CRDT behavior tests and `lib/store/store.test.ts` for store API usage examples.
+Tests use Bun's built-in Jest-compatible test runner (`bun test`) with `describe`/`test`/`expect`. See the `lib/**/**.test.ts` files for examples of typical patterns and `lib/store/store.test.ts` for store API usage examples.
 
 ## Publishing
 
 - Package published as `@byearlybird/starling` on npm
-- `pnpm run prepublishOnly` runs build automatically before publishing
+- `bun run prepublishOnly` runs build automatically before publishing
 - Only `dist/` directory is published (see package.json files array)

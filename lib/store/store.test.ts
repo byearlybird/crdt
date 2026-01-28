@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test, mock } from "bun:test";
 import { createMultiCollectionStore, createProfileStore } from "./test-utils";
 import { createStore } from "./store";
 import { define } from "./schema";
@@ -164,7 +164,7 @@ describe("subscribe", () => {
   test("returns unsubscribe function", () => {
     const store = createProfileStore();
 
-    const callback = vi.fn();
+    const callback = mock(() => {});
     const unsubscribe = store.subscribe(callback);
 
     expect(typeof unsubscribe).toBe("function");
@@ -173,7 +173,7 @@ describe("subscribe", () => {
   test("callback fires when subscribed collection changes", () => {
     const store = createProfileStore();
 
-    const callback = vi.fn();
+    const callback = mock(() => {});
     store.subscribe(callback);
 
     // Trigger a change
@@ -187,7 +187,7 @@ describe("subscribe", () => {
     const store = createProfileStore();
     store.put("users", { id: "1", name: "Alice", profile: {} });
 
-    const callback = vi.fn();
+    const callback = mock(() => {});
     store.subscribe(callback);
 
     callback.mockClear();
@@ -202,7 +202,7 @@ describe("subscribe", () => {
     const store = createProfileStore();
     store.put("users", { id: "1", name: "Alice", profile: {} });
 
-    const callback = vi.fn();
+    const callback = mock(() => {});
     store.subscribe(callback);
 
     callback.mockClear();
@@ -216,7 +216,7 @@ describe("subscribe", () => {
   test("unsubscribe stops callback execution", () => {
     const store = createProfileStore();
 
-    const callback = vi.fn();
+    const callback = mock(() => {});
     const unsubscribe = store.subscribe(callback);
 
     callback.mockClear();
@@ -231,7 +231,7 @@ describe("subscribe", () => {
   test("callback does NOT fire for unsubscribed collections", () => {
     const store = createMultiCollectionStore();
 
-    const callback = vi.fn();
+    const callback = mock((_e: unknown) => {});
     // Only subscribe to users, not notes - filter in callback
     store.subscribe((event) => {
       if ("users" in event) {
@@ -256,7 +256,7 @@ describe("subscribe", () => {
   test("multi-collection subscriptions track all subscribed collections", () => {
     const store = createMultiCollectionStore();
 
-    const callback = vi.fn();
+    const callback = mock((_e: unknown) => {});
     store.subscribe((event) => {
       if ("users" in event || "notes" in event) {
         callback(event);
@@ -281,8 +281,8 @@ describe("subscribe", () => {
   test("multiple subscriptions can coexist", () => {
     const store = createProfileStore();
 
-    const callback1 = vi.fn();
-    const callback2 = vi.fn();
+    const callback1 = mock(() => {});
+    const callback2 = mock(() => {});
 
     store.subscribe(callback1);
     store.subscribe(callback2);
@@ -301,8 +301,8 @@ describe("subscribe", () => {
   test("unsubscribing one subscription does not affect others", () => {
     const store = createProfileStore();
 
-    const callback1 = vi.fn();
-    const callback2 = vi.fn();
+    const callback1 = mock(() => {});
+    const callback2 = mock(() => {});
 
     const unsub1 = store.subscribe(callback1);
     store.subscribe(callback2);
@@ -322,7 +322,7 @@ describe("subscribe", () => {
   test("subscribe accepts callback function", () => {
     const store = createProfileStore();
 
-    const callback = vi.fn();
+    const callback = mock(() => {});
     expect(() => {
       store.subscribe(callback);
     }).not.toThrow();
@@ -331,7 +331,7 @@ describe("subscribe", () => {
   test("event only includes changed collections", () => {
     const store = createMultiCollectionStore();
 
-    const callback = vi.fn();
+    const callback = mock((_e: unknown) => {});
     store.subscribe((event) => {
       if ("users" in event || "notes" in event) {
         callback(event);
@@ -382,7 +382,7 @@ describe("subscribe", () => {
   test("global subscribe returns unsubscribe function", () => {
     const store = createProfileStore();
 
-    const callback = vi.fn();
+    const callback = mock(() => {});
     const unsubscribe = store.subscribe(callback);
 
     store.put("users", { id: "1", name: "Alice", profile: {} });

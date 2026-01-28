@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import { define, validate, type StoreConfig } from "./schema";
 import type { StoreState } from "../core";
 import { makeStamp } from "../core/clock";
