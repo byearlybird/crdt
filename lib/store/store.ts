@@ -10,8 +10,7 @@ import { Emitter } from "../emitter";
 import type { CollectionName, DocType, IdType, InputType, StoreConfig } from "./schema";
 import { validate } from "./schema";
 import type { StoreChangeEvent } from "./types";
-import { mergeState } from "./store-utils";
-import { doGet, doList, doPatch, doPut, doRemove } from "./operations";
+import { doGet, doList, doPatch, doPut, doRemove, mergeState } from "./operations";
 
 export type TransactionAPI<T extends StoreConfig> = {
   get<N extends CollectionName<T>>(collection: N, id: IdType<T[N]>): DocType<T[N]> | undefined;

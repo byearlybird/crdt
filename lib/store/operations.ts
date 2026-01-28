@@ -8,7 +8,12 @@ import {
   type Stamp,
   type Tombstones,
   atomize,
+  advanceClock,
+  type StoreState,
+  mergeCollections,
 } from "../core";
+import type { StoreConfig } from "./schema";
+import type { StoreChangeEvent } from "./types";
 
 export function doGet<T extends Document>(
   docs: Collection<T>,
@@ -76,4 +81,30 @@ export function doRemove(
 ): void {
   tombstones[id] = stamp;
   delete docs[id];
+}
+
+export function mergeState<T extends StoreConfig>(
+  currentState: StoreState,
+  snapshot: StoreState,
+  config: T,
+): StoreChangeEvent<T> {
+  const diff = {} as StoreChangeEvent<T>;
+  currentState.clock = advanceClock(currentState.clock, snapshot.clock);
+
+  for (const [name, incomingCollectionState] of Object.entries(snapshot.collections)) {
+    const localCollectionState = currentState.collections[name] ?? {
+      documents: {},
+      tombstones: {},
+    };
+    currentState.collections[name] = mergeCollections(
+      localCollectionState,
+      incomingCollectionState,
+    );
+    // Only mark collections that exist in the config
+    if (name in config) {
+      (diff as Record<string, true>)[name] = true;
+    }
+  }
+
+  return diff;
 }
