@@ -1,6 +1,8 @@
 import {
   advanceClock,
   makeStamp,
+  mergeCollections,
+  createReadLens,
   type CollectionState,
   type StoreState,
   type Document,
@@ -122,41 +124,77 @@ export class Store<T extends StoreConfig> {
     // 1. Create event object upfront (will be populated on mutations)
     const event = {} as StoreChangeEvent<T>;
 
-    // 2. Lazy cloning map - collections cloned on first access
-    const clonedStates: Record<string, CollectionState<Document>> = {};
+    // 2. Partial overlay - only documents/tombstones modified in this transaction
+    const txStates: Record<string, CollectionState<Document>> = {};
 
-    // 3. Helper to ensure a collection is cloned
-    const ensureCloned = (name: string): CollectionState<Document> => {
+    const ensureTxState = (name: string): CollectionState<Document> => {
+      if (!txStates[name]) {
+        txStates[name] = { documents: {}, tombstones: {} };
+      }
+      return txStates[name]!;
+    };
+
+    const assertCollection = (name: string): void => {
       if (!(name in this.#config)) {
         throw new Error(`Collection "${name}" not found`);
       }
-      if (!clonedStates[name]) {
-        const original = this.#state.collections[name]!;
-        clonedStates[name] = {
-          documents: structuredClone(original.documents),
-          tombstones: structuredClone(original.tombstones),
-        };
-      }
-      return clonedStates[name]!;
     };
 
-    // 4. Create transaction API object
+    // 3. Create transaction API object
     const tx: TransactionAPI<T> = {
       get: (collection, id) => {
-        const cloned = ensureCloned(collection);
-        return doGet(cloned.documents, cloned.tombstones, id);
+        assertCollection(collection);
+        // Check transaction overlay first
+        const txState = txStates[collection];
+        if (txState) {
+          if (txState.tombstones[id]) return undefined;
+          const txDoc = txState.documents[id];
+          if (txDoc) return createReadLens(txDoc) as DocType<T[typeof collection]>;
+        }
+        // Fall through to main store
+        const main = this.#state.collections[collection]!;
+        return doGet(main.documents, main.tombstones, id);
       },
       list: (collection) => {
-        const cloned = ensureCloned(collection);
-        return doList(cloned.documents, cloned.tombstones);
+        assertCollection(collection);
+        const main = this.#state.collections[collection]!;
+        const txState = txStates[collection];
+
+        // No transaction modifications for this collection, read main directly
+        if (!txState) {
+          return doList(main.documents, main.tombstones);
+        }
+
+        // Merge overlay with main store view
+        const results: DocType<T[typeof collection]>[] = [];
+        const seen = new Set<string>();
+
+        // Transaction documents take priority
+        for (const [id, doc] of Object.entries(txState.documents)) {
+          if (!txState.tombstones[id]) {
+            seen.add(id);
+            results.push(createReadLens(doc) as DocType<T[typeof collection]>);
+          }
+        }
+
+        // Include main store documents not overridden or tombstoned
+        for (const [id, doc] of Object.entries(main.documents)) {
+          if (seen.has(id)) continue;
+          if (txState.tombstones[id]) continue;
+          if (main.tombstones[id]) continue;
+          results.push(createReadLens(doc) as DocType<T[typeof collection]>);
+        }
+
+        return results;
       },
       put: (collection, data) => {
-        const cloned = ensureCloned(collection);
+        assertCollection(collection);
+        const txState = ensureTxState(collection);
         const collectionConfig = this.#config[collection]!;
         event[collection] = true;
         return doPut(
-          cloned.documents,
-          cloned.tombstones,
+          txState.documents,
+          txState.tombstones,
           data,
           this.#getNextStamp(),
           (d: unknown) => validate(collectionConfig.schema, d),
@@ -164,11 +202,23 @@ export class Store<T extends StoreConfig> {
         );
       },
       patch: (collection, id, data) => {
-        const cloned = ensureCloned(collection);
+        assertCollection(collection);
+        const txState = ensureTxState(collection);
         const collectionConfig = this.#config[collection]!;
         event[collection] = true;
+
+        // Copy the individual document into the overlay if not already there
+        if (!txState.documents[id]) {
+          const main = this.#state.collections[collection]!;
+          const mainDoc = main.documents[id];
+          if (!mainDoc) {
+            throw new Error(`Cannot patch non-existent document "${id}"`);
+          }
+          txState.documents[id] = structuredClone(mainDoc);
+        }
+
         return doPatch(
-          cloned.documents,
+          txState.documents,
           id,
           data as Partial<Document>,
           this.#getNextStamp(),
@@ -176,21 +226,25 @@ export class Store<T extends StoreConfig> {
         );
       },
       remove: (collection, id) => {
-        const cloned = ensureCloned(collection);
+        assertCollection(collection);
+        const txState = ensureTxState(collection);
         event[collection] = true;
-        doRemove(cloned.documents, cloned.tombstones, id, this.#getNextStamp());
+        doRemove(txState.documents, txState.tombstones, id, this.#getNextStamp());
       },
     };
 
-    // 5. Execute callback
+    // 4. Execute callback
     const result = callback(tx);
 
-    // 6. Commit: swap cloned state back into real state (only for collections that were cloned)
-    for (const name of Object.keys(clonedStates)) {
-      this.#state.collections[name] = clonedStates[name]!;
+    // 5. Commit: merge partial overlay into main store
+    for (const name of Object.keys(txStates)) {
+      this.#state.collections[name] = mergeCollections(
+        this.#state.collections[name]!,
+        txStates[name]!,
+      );
     }
 
-    // 7. Emit event (only includes collections that were actually mutated)
+    // 6. Emit event (only includes collections that were actually mutated)
     if (Object.keys(event).length > 0) {
       this.#emitter.emit(event);
     }
