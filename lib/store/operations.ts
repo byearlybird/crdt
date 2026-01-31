@@ -26,11 +26,18 @@ export function doGet<T extends Document>(
   return createReadLens<T>(current);
 }
 
-export function doList<T extends Document>(docs: Collection<T>, tombstones: Tombstones): T[] {
+export function doList<T extends Document>(
+  docs: Collection<T>,
+  tombstones: Tombstones,
+  where?: (doc: T) => boolean,
+): T[] {
   const results: T[] = [];
   for (const [id, document] of Object.entries(docs)) {
     if (!isDeleted(id, tombstones)) {
-      results.push(createReadLens<T>(document));
+      const doc = createReadLens<T>(document);
+      if (!where || where(doc)) {
+        results.push(doc);
+      }
     }
   }
   return results;

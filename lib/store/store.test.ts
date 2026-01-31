@@ -112,6 +112,33 @@ describe("createStore", () => {
     expect(allUsers.find((u) => u.id === "3")).toBeDefined();
   });
 
+  test("list with where clause filters documents", () => {
+    const store = createProfileStore();
+
+    store.put("users", { id: "1", name: "Alice", profile: { age: 25 } });
+    store.put("users", { id: "2", name: "Bob", profile: { age: 35 } });
+    store.put("users", { id: "3", name: "Charlie", profile: { age: 30 } });
+    store.put("users", { id: "4", name: "David", profile: {} });
+
+    // Filter by age
+    const over30 = store.list("users", {
+      where: (u) => u.profile.age !== undefined && u.profile.age > 30,
+    });
+    expect(over30).toHaveLength(1);
+    expect(over30[0]?.name).toBe("Bob");
+
+    // Filter by name
+    const nameWithC = store.list("users", {
+      where: (u) => u.name.startsWith("C"),
+    });
+    expect(nameWithC).toHaveLength(1);
+    expect(nameWithC[0]?.name).toBe("Charlie");
+
+    // List all (no where clause)
+    const all = store.list("users");
+    expect(all).toHaveLength(4);
+  });
+
   test("direct handle access returns current results", () => {
     const store = createProfileStore();
 
@@ -575,6 +602,41 @@ describe("transact", () => {
     expect(store.get("users", "u1")).toBeDefined();
     expect(store.get("notes", "n2")).toBeDefined();
     expect(store.get("settings", "s1")).toBeDefined();
+  });
+
+  test("transaction list with where clause filters documents", () => {
+    const store = createProfileStore();
+
+    store.put("users", { id: "1", name: "Alice", profile: { age: 25 } });
+    store.put("users", { id: "2", name: "Bob", profile: { age: 35 } });
+    store.put("users", { id: "3", name: "Charlie", profile: {} });
+
+    store.transact((tx) => {
+      // Create a new user in transaction
+      tx.put("users", { id: "4", name: "David", profile: { age: 40 } });
+
+      // Filter should include uncommitted changes
+      const over30 = tx.list("users", {
+        where: (u) => u.profile.age !== undefined && u.profile.age > 30,
+      });
+      expect(over30).toHaveLength(2);
+      expect(over30.map((u) => u.name).sort()).toEqual(["Bob", "David"]);
+
+      // Remove one and verify filter updates
+      tx.remove("users", "2");
+      const stillOver30 = tx.list("users", {
+        where: (u) => u.profile.age !== undefined && u.profile.age > 30,
+      });
+      expect(stillOver30).toHaveLength(1);
+      expect(stillOver30[0]?.name).toBe("David");
+    });
+
+    // Verify committed state
+    const finalOver30 = store.list("users", {
+      where: (u) => u.profile.age !== undefined && u.profile.age > 30,
+    });
+    expect(finalOver30).toHaveLength(1);
+    expect(finalOver30[0]?.name).toBe("David");
   });
 });
 

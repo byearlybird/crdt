@@ -31,6 +31,13 @@ Starling is a conflict-free replicated data type (CRDT) library for JavaScript. 
 - `bun run fmt` - Format code with oxfmt
 - `bun run fmt:check` - Check formatting without changes
 
+### Benchmarks
+
+- `bun run bench` - Run all benchmarks (core + store)
+- `bun run bench:core` - Run core CRDT benchmarks (merge, read, write operations)
+- `bun run bench:store` - Run store-level benchmarks
+- See `lib/core/BENCHMARKS.md` for detailed documentation
+
 ## Architecture
 
 ### Layer Structure

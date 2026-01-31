@@ -16,9 +16,16 @@ import { validate } from "./schema";
 import type { StoreChangeEvent } from "./types";
 import { doGet, doList, doPatch, doPut, doRemove, mergeState } from "./operations";
 
+export type ListOptions<T> = {
+  where?: (doc: T) => boolean;
+};
+
 export type TransactionAPI<T extends StoreConfig> = {
   get<N extends CollectionName<T>>(collection: N, id: IdType<T[N]>): DocType<T[N]> | undefined;
-  list<N extends CollectionName<T>>(collection: N): DocType<T[N]>[];
+  list<N extends CollectionName<T>>(
+    collection: N,
+    options?: ListOptions<DocType<T[N]>>,
+  ): DocType<T[N]>[];
   put<N extends CollectionName<T>>(collection: N, data: InputType<T[N]>): DocType<T[N]>;
   patch<N extends CollectionName<T>>(
     collection: N,
@@ -67,9 +74,12 @@ export class Store<T extends StoreConfig> {
     return doGet(col.documents, col.tombstones, id);
   }
 
-  list<N extends CollectionName<T>>(collection: N): DocType<T[N]>[] {
+  list<N extends CollectionName<T>>(
+    collection: N,
+    options?: ListOptions<DocType<T[N]>>,
+  ): DocType<T[N]>[] {
     const col = this.#getCollection(collection);
-    return doList(col.documents, col.tombstones);
+    return doList(col.documents, col.tombstones, options?.where);
   }
 
   put<N extends CollectionName<T>>(collection: N, data: InputType<T[N]>): DocType<T[N]> {
@@ -170,7 +180,7 @@ export class Store<T extends StoreConfig> {
         return doGet(col.documents, col.tombstones, id);
       },
 
-      list: (collection) => {
+      list: (collection, options) => {
         // Validate collection exists
         if (!(collection in this.#config)) {
           throw new Error(`Collection "${collection}" not found`);
@@ -187,7 +197,7 @@ export class Store<T extends StoreConfig> {
           for (const id in mods.modifiedDocs) allIds.add(id);
         }
 
-        // Build result list
+        // Build result list with filtering
         for (const id of allIds) {
           // Skip if tombstoned
           if (mods?.modifiedTombstones.has(id)) continue;
@@ -196,7 +206,10 @@ export class Store<T extends StoreConfig> {
           // Use modified doc if available, otherwise main state
           const doc = mods?.modifiedDocs[id] ?? col.documents[id];
           if (doc) {
-            results.push(createReadLens(doc));
+            const plainDoc = createReadLens(doc);
+            if (!options?.where || options.where(plainDoc)) {
+              results.push(plainDoc);
+            }
           }
         }
 
