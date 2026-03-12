@@ -27,6 +27,13 @@
     "noImplicitOverride": true,
     "noImplicitReturns": true,
     "noPropertyAccessFromIndexSignature": true,
-    "exactOptionalPropertyTypes": true
+    "exactOptionalPropertyTypes": true,
+
+    // Path aliases
+    "baseUrl": ".",
+    "paths": {
+      "#": ["src/index.ts"],
+      "#*": ["src/*"]
+    }
   }
 }
