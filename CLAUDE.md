@@ -81,6 +81,6 @@ Tests use Bun's built-in Jest-compatible test runner (`bun test`) with `describe
 
 ## Publishing
 
-- Package published as `@byearlybird/starling` on npm
+- Package published as `@byearlybird/crdt` on npm
 - `bun run prepublishOnly` runs build automatically before publishing
 - Only `dist/` directory is published (see package.json files array)

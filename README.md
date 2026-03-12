@@ -7,11 +7,11 @@ Starling provides the low-level building blocks for conflict-free replicated dat
 ## Installation
 
 ```bash
-npm install @byearlybird/starling
+npm install @byearlybird/crdt
 # or
-pnpm add @byearlybird/starling
+pnpm add @byearlybird/crdt
 # or
-bun add @byearlybird/starling
+bun add @byearlybird/crdt
 ```
 
 Requires TypeScript 5 or higher.
@@ -27,7 +27,7 @@ import {
   patchDoc,
   takeAtomHashes,
   takeDiffedData,
-} from "@byearlybird/starling";
+} from "@byearlybird/crdt";
 
 // Create a document from a plain object
 const clock = createClock("device-a");
@@ -49,7 +49,7 @@ patchDoc(doc, patch);
 An atom is the smallest CRDT unit: a value, a timestamp, and an integrity hash. Every field in a document is an atom, enabling field-level conflict resolution.
 
 ```typescript
-import { makeAtom, patchAtom } from "@byearlybird/starling";
+import { makeAtom, patchAtom } from "@byearlybird/crdt";
 
 const atom = makeAtom("hello", clock.tick());
 // { "~d": "hello", "~t": "0191a2b3c4d5@000000@1a2b3c4d", "~h": 1234567 }
@@ -63,7 +63,7 @@ patchAtom(atom, "world", clock.tick()); // updated
 A document is a flat map of field names to atoms. Nested objects are automatically flattened to dot-separated keys for field-level granularity.
 
 ```typescript
-import { makeDataFromPOJO, makeDoc, patchDoc, makePOJO } from "@byearlybird/starling";
+import { makeDataFromPOJO, makeDoc, patchDoc, makePOJO } from "@byearlybird/crdt";
 
 const data = makeDataFromPOJO(
   { name: "Alice", address: { city: "Portland" } },
@@ -81,7 +81,7 @@ makePOJO(doc); // { name: "Alice", address: { city: "Portland" } }
 A hybrid logical clock produces monotonically increasing, lexicographically sortable timestamps. Each stamp encodes millisecond time, a sequence counter, and a hashed device ID.
 
 ```typescript
-import { createClock } from "@byearlybird/starling";
+import { createClock } from "@byearlybird/crdt";
 
 const clock = createClock("device-a");
 const stamp1 = clock.tick(); // "0191a2b3c4d5@000000@1a2b3c4d"
@@ -94,7 +94,7 @@ const stamp2 = clock.tick(); // "0191a2b3c4d5@000001@1a2b3c4d"
 Sync works by exchanging atom hashes. The sender shares its hashes; the receiver computes a minimal diff of only the atoms that changed.
 
 ```typescript
-import { takeAtomHashes, takeDiffedData, patchDoc } from "@byearlybird/starling";
+import { takeAtomHashes, takeDiffedData, patchDoc } from "@byearlybird/crdt";
 
 // On the receiver: take hashes and send them to the sender
 const hashes = takeAtomHashes(localDoc);
@@ -111,7 +111,7 @@ patchDoc(localDoc, diff);
 The cipher layer encrypts atom values for transport while preserving timestamps and integrity hashes. Decoding verifies integrity automatically.
 
 ```typescript
-import { createCipher } from "@byearlybird/starling";
+import { createCipher } from "@byearlybird/crdt";
 
 const cipher = createCipher(
   (value) => encrypt(value),  // your encode function

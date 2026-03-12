@@ -1,6 +1,6 @@
 {
-  "name": "@byearlybird/starling",
-  "version": "0.19.0",
+  "name": "@byearlybird/crdt",
+  "version": "0.0.1",
   "files": [
     "dist"
   ],
