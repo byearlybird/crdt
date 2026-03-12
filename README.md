@@ -4,6 +4,9 @@ Conflict-free replicated state for JavaScript. Bring your own reactivity.
 
 Starling is a CRDT (conflict-free replicated data type) library that provides automatic conflict resolution for distributed data. It manages state with Last-Write-Wins semantics using hybrid logical clocks, giving you a solid foundation for building local-first, collaborative applications.
 
+> [!IMPORTANT]
+> This library is being refocused as a primitives-only foundation. State management, persistence, and reactivity are intentionally out of scope — those concerns belong to the application layer. Active development of the new primitives is on the [`crdt`](https://github.com/byearlybird/crdt/tree/crdt) branch, published as [`@byearlybird/crdt`](https://www.npmjs.com/package/@byearlybird/crdt).
+
 ## Installation
 
 ```bash
