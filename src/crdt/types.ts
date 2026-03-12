@@ -3,15 +3,15 @@ export type Stamp = `${string}@${string}@${string}`; // lexicographically sortab
 export type DocData = Record<string, Atom>;
 
 export type Hashed = {
-  "~h": number; // hash
+	"~h": number; // hash
 };
 
 export type Timestamped = {
-  "~t": Stamp; // timestamp
+	"~t": Stamp; // timestamp
 };
 
 export type WithData<T = unknown> = {
-  "~d": T; // value
+	"~d": T; // value
 };
 
 export type Atom<TData = unknown> = Hashed & Timestamped & WithData<TData>;
