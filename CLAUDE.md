@@ -1,92 +1,111 @@
-# CLAUDE.md
+---
+description: Use Bun instead of Node.js, npm, pnpm, or vite.
+globs: "*.ts, *.tsx, *.html, *.css, *.js, *.jsx, package.json"
+alwaysApply: false
+---
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Default to using Bun instead of Node.js.
 
-## Project Overview
+- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
+- Use `bun test` instead of `jest` or `vitest`
+- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
+- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
+- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
+- Use `bunx <package> <command>` instead of `npx <package> <command>`
+- Bun automatically loads .env, so don't use dotenv.
 
-Starling is a conflict-free replicated data type (CRDT) library for JavaScript. It implements Last-Write-Wins (LWW) semantics with hybrid logical clocks (HLC) for distributed systems synchronization. The library is framework-agnostic - users integrate it with their preferred reactive system via change events.
+## APIs
 
-**Core Concepts:**
+- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
+- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
+- `Bun.redis` for Redis. Don't use `ioredis`.
+- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
+- `WebSocket` is built-in. Don't use `ws`.
+- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
+- Bun.$`ls` instead of execa.
 
-- **Documents**: Key-value objects where each field has a value and timestamp (stamp)
-- **Collections**: Groups of documents with tombstones for deletion tracking
-- **Clock**: Hybrid logical clock (milliseconds + sequence counter + nonce) for ordering operations
-- **Store**: Coordination layer managing multiple collections with clock synchronization
+## Testing
 
-## Commands
+Use `bun test` to run tests.
 
-### Build and Development
+```ts#index.test.ts
+import { test, expect } from "bun:test";
 
-- `bun run build` - Build the library using tsdown
-- `bun run dev` - Build in watch mode
+test("hello world", () => {
+  expect(1).toBe(1);
+});
+```
 
-### Testing
+## Frontend
 
-- `bun test` - Run all tests
-- `bun test lib/core/document.test.ts` - Run specific test file
-- Test files use pattern: `*.test.ts`
+Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
 
-### Code Quality
+Server:
 
-- `bun run fmt` - Format code with oxfmt
-- `bun run fmt:check` - Check formatting without changes
+```ts#index.ts
+import index from "./index.html"
 
-### Benchmarks
+Bun.serve({
+  routes: {
+    "/": index,
+    "/api/users/:id": {
+      GET: (req) => {
+        return new Response(JSON.stringify({ id: req.params.id }));
+      },
+    },
+  },
+  // optional websocket support
+  websocket: {
+    open: (ws) => {
+      ws.send("Hello, world!");
+    },
+    message: (ws, message) => {
+      ws.send(message);
+    },
+    close: (ws) => {
+      // handle close
+    }
+  },
+  development: {
+    hmr: true,
+    console: true,
+  }
+})
+```
 
-- `bun run bench` - Run all benchmarks (core + store)
-- `bun run bench:core` - Run core CRDT benchmarks (merge, read, write operations)
-- `bun run bench:store` - Run store-level benchmarks
-- See `lib/core/BENCHMARKS.md` for detailed documentation
+HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
 
-## Architecture
+```html#index.html
+<html>
+  <body>
+    <h1>Hello, world!</h1>
+    <script type="module" src="./frontend.tsx"></script>
+  </body>
+</html>
+```
 
-### Layer Structure
+With the following `frontend.tsx`:
 
-**Core Layer** (`lib/core/`):
+```tsx#frontend.tsx
+import React from "react";
+import { createRoot } from "react-dom/client";
 
-- Pure CRDT logic with no dependencies
-- `clock.ts` - Hybrid logical clock implementation (advanceClock, makeStamp, parseStamp)
-- `document.ts` - Document CRDT operations (makeDocument, parseDocument, mergeDocuments)
-- `collection.ts` - Collection-level merging (mergeCollections, mergeCollectionRecords)
-- `tombstone.ts` - Deletion tracking
-- `flatten.ts` - Nested object flattening for field-level LWW resolution
-- `hex.ts` - Hex encoding utilities and nonce generation
+// import .css files directly and it works
+import './index.css';
 
-**Store Layer** (`lib/store/`):
+const root = createRoot(document.body);
 
-- Simple coordination layer with change events
-- `store.ts` - Main store API with clock management and multi-collection coordination
-- `collection.ts` - Collection API wrapping core CRDT logic with change events
-- `schema.ts` - StandardSchema validation utilities
+export default function Frontend() {
+  return <h1>Hello, world!</h1>;
+}
 
-### Key Design Patterns
+root.render(<Frontend />);
+```
 
-1. **Field-level LWW**: Documents are flattened to individual fields, each with its own timestamp. This enables field-level conflict resolution rather than document-level.
+Then, run index.ts
 
-2. **Hybrid Logical Clock**: Stamps combine physical time (ms), logical sequence (seq), and random nonce to ensure total ordering across distributed nodes while allowing offline operations.
+```sh
+bun --hot ./index.ts
+```
 
-3. **Change Events**: Collections and stores emit change events. Users integrate with their own reactive systems (TanStack Query, useSyncExternalStore, Svelte stores, etc.).
-
-4. **Schema Flexibility**: Collections accept any StandardSchema-compatible validator (Zod, etc.). Each collection configuration requires an `getId` function that extracts the document ID from the validated data.
-
-5. **Merge Semantics**:
-   - Store.merge() syncs entire store state from remote snapshot
-   - Collection.merge() syncs individual collection
-   - Field conflicts resolved by timestamp comparison
-   - Tombstones prevent deleted documents from reappearing
-
-## TypeScript Configuration
-
-- Extremely strict mode enabled with `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, `noPropertyAccessFromIndexSignature`
-- `moduleResolution: "bundler"` with `allowImportingTsExtensions`
-- No emit - build handled by tsdown
-
-## Testing Patterns
-
-Tests use Bun's built-in Jest-compatible test runner (`bun test`) with `describe`/`test`/`expect`. See the `lib/**/**.test.ts` files for examples of typical patterns and `lib/store/store.test.ts` for store API usage examples.
-
-## Publishing
-
-- Package published as `@byearlybird/starling` on npm
-- `bun run prepublishOnly` runs build automatically before publishing
-- Only `dist/` directory is published (see package.json files array)
+For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.

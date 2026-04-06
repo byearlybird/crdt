@@ -1,47 +1,9 @@
 {
   "name": "@byearlybird/starling",
-  "version": "0.18.0",
-  "files": [
-    "dist"
-  ],
+  "module": "index.ts",
   "type": "module",
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "scripts": {
-    "build": "tsdown",
-    "dev": "tsdown --watch",
-    "test": "bun test",
-    "test:watch": "bun test --watch",
-    "bench": "bun run bench:core && bun run bench:store",
-    "bench:core": "bun run lib/core/core.bench.ts",
-    "bench:store": "bun run lib/store/store.bench.ts",
-    "fmt": "oxfmt",
-    "fmt:check": "oxfmt --check",
-    "lint": "oxlint",
-    "lint:fix": "oxlint --fix",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "bun run build"
-  },
-  "dependencies": {
-    "@standard-schema/spec": "^1.1.0"
-  },
   "devDependencies": {
-    "@types/bun": "^1.3.7",
-    "@types/node": "^22.10.5",
-    "fake-indexeddb": "^6.2.5",
-    "mitata": "^1.0.34",
-    "oxfmt": "^0.24.0",
-    "oxlint": "^1.39.0",
-    "tsdown": "^0.18.3",
-    "typescript": "^5.7.3",
-    "zod": "^4.2.1"
+    "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
