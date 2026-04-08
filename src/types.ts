@@ -36,6 +36,13 @@ export type InferRecord<C> =
 			? T
 			: never;
 
+export type InferInput<C> =
+	C extends SchemaCollectionConfig<infer S, infer _>
+		? StandardSchemaV1.InferInput<S>
+		: C extends CollectionConfig<infer T, infer _>
+			? T
+			: never;
+
 export type InferId<C> =
 	C extends SchemaCollectionConfig<infer _, infer Id>
 		? Id
@@ -45,9 +52,9 @@ export type InferId<C> =
 
 // --- Collection handle ---
 
-export type CollectionHandle<T, Id extends string = string> = {
+export type CollectionHandle<T, Id extends string = string, TInput = T> = {
 	readonly data: ReadonlyMap<Id, Readonly<T>>;
-	insert(record: T): Promise<void>;
+	insert(record: TInput): Promise<void>;
 	update(id: Id, delta: Partial<T> | ((prev: T) => T)): Promise<void>;
 	remove(id: Id): Promise<void>;
 	snapshot(): T[];
@@ -55,14 +62,18 @@ export type CollectionHandle<T, Id extends string = string> = {
 
 // --- Transaction ---
 
-export type CollectionTransaction<T, Id extends string = string> = {
-	insert(record: T): void;
+export type CollectionTransaction<T, Id extends string = string, TInput = T> = {
+	insert(record: TInput): void;
 	update(id: Id, delta: Partial<T> | ((prev: T) => T)): void;
 	remove(id: Id): void;
 };
 
 export type StoreTransaction<C extends StoreConfig> = {
-	[K in keyof C]: CollectionTransaction<InferRecord<C[K]>, InferId<C[K]>>;
+	[K in keyof C]: CollectionTransaction<
+		InferRecord<C[K]>,
+		InferId<C[K]>,
+		InferInput<C[K]>
+	>;
 };
 
 // --- Events ---
@@ -106,6 +117,10 @@ export type StoreSubscribeEvent =
 			readonly reason: unknown;
 	  };
 
+export type StoreSubscribeOptions = {
+	readonly onError?: (error: unknown, event: StoreSubscribeEvent) => void;
+};
+
 // --- Middleware ---
 
 export type StoreMutateContext = {
@@ -118,10 +133,17 @@ export type StoreMiddleware = (ctx: StoreMutateContext) => void | Promise<void>;
 // --- Store ---
 
 export type Store<C extends StoreConfig> = {
-	[K in keyof C]: CollectionHandle<InferRecord<C[K]>, InferId<C[K]>>;
+	[K in keyof C]: CollectionHandle<
+		InferRecord<C[K]>,
+		InferId<C[K]>,
+		InferInput<C[K]>
+	>;
 } & {
 	batch(transaction: (tx: StoreTransaction<C>) => void): Promise<void>;
 	use(middleware: StoreMiddleware): () => void;
-	subscribe(callback: (event: StoreSubscribeEvent) => void): () => void;
+	subscribe(
+		callback: (event: StoreSubscribeEvent) => void,
+		options?: StoreSubscribeOptions,
+	): () => void;
 	dispose(): void;
 };

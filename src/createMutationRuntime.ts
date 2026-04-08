@@ -6,6 +6,7 @@ import type {
 	StoreMutateEvent,
 	StoreSingleMutateEvent,
 	StoreSubscribeEvent,
+	StoreSubscribeOptions,
 } from "./types.ts";
 
 export type StoreOp = {
@@ -32,11 +33,19 @@ type PendingIntent = RuntimeIntent & {
 	reject: (reason: unknown) => void;
 };
 
+type Subscriber = {
+	readonly callback: (event: StoreSubscribeEvent) => void;
+	readonly onError?: StoreSubscribeOptions["onError"];
+};
+
 export type MutationRuntime = {
 	getCollectionData(name: string): ReadonlyMap<string, unknown>;
 	enqueue(intent: RuntimeIntent): Promise<void>;
 	use(middleware: StoreMiddleware): () => void;
-	subscribe(callback: (event: StoreSubscribeEvent) => void): () => void;
+	subscribe(
+		callback: (event: StoreSubscribeEvent) => void,
+		options?: StoreSubscribeOptions,
+	): () => void;
 	dispose(): void;
 	assertNotDisposed(): void;
 };
@@ -120,7 +129,7 @@ export function createMutationRuntime(
 	collections: ReadonlyMap<string, CollectionState>,
 ): MutationRuntime {
 	const pending: PendingIntent[] = [];
-	const subscribers = new Set<(event: StoreSubscribeEvent) => void>();
+	const subscribers = new Set<Subscriber>();
 	const middlewares = new Set<StoreMiddleware>();
 	const cachedData = new Map<string, ReadonlyMap<string, unknown>>();
 	let processing = false;
@@ -149,11 +158,15 @@ export function createMutationRuntime(
 	}
 
 	function notify(event: StoreSubscribeEvent): void {
-		for (const callback of subscribers) {
+		for (const subscriber of subscribers) {
 			try {
-				callback(event);
+				subscriber.callback(event);
 			} catch (error) {
-				console.error(error);
+				try {
+					subscriber.onError?.(error, event);
+				} catch {
+					// Subscriber error handlers are isolated from store execution.
+				}
 			}
 		}
 	}
@@ -296,9 +309,14 @@ export function createMutationRuntime(
 
 	function subscribe(
 		callback: (event: StoreSubscribeEvent) => void,
+		options?: StoreSubscribeOptions,
 	): () => void {
-		subscribers.add(callback);
-		return () => subscribers.delete(callback);
+		const subscriber: Subscriber = {
+			callback,
+			onError: options?.onError,
+		};
+		subscribers.add(subscriber);
+		return () => subscribers.delete(subscriber);
 	}
 
 	function dispose(): void {

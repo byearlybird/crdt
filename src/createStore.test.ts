@@ -407,6 +407,31 @@ describe("createStore", () => {
 			expect(store.tasks.data.has("1")).toBe(true);
 		});
 
+		test("subscriber onError receives the thrown error and event", async () => {
+			const store = createStore({
+				tasks: collection({ getId: (t: Task) => t.id }),
+			});
+			const errors: Array<{ error: unknown; event: StoreSubscribeEvent }> = [];
+
+			store.subscribe(
+				() => {
+					throw new Error("bad subscriber");
+				},
+				{
+					onError(error, event) {
+						errors.push({ error, event });
+					},
+				},
+			);
+
+			await store.tasks.insert(makeTask("1"));
+
+			expect(errors).toHaveLength(2);
+			expect((errors[0]?.error as Error).message).toBe("bad subscriber");
+			expect(errors[0]?.event.type).toBe("optimistic");
+			expect(errors[1]?.event.type).toBe("commit");
+		});
+
 		test("multiple subscribers all notified", async () => {
 			const store = createStore({
 				tasks: collection({ getId: (t: Task) => t.id }),
