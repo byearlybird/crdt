@@ -50,7 +50,7 @@ describe("createStore", () => {
 			expect(store.notes.data.get("n1")).toEqual(makeNote("n1"));
 		});
 
-		test("data returns stable reference on cache hit", () => {
+		test("returns the same data reference when unchanged", () => {
 			const store = createStore({
 				tasks: collection({
 					getId: (t: Task) => t.id,
@@ -82,6 +82,27 @@ describe("createStore", () => {
 				tasks: collection({ getId: (t: Task) => t.id, initial: snap }),
 			});
 			expect(store2.tasks.snapshot()).toEqual(snap);
+		});
+
+		test("snapshot reflects pending mutations", async () => {
+			const store = createStore({
+				tasks: collection({ getId: (t: Task) => t.id }),
+			});
+			let resolveGate!: () => void;
+			const gate = new Promise<void>((r) => {
+				resolveGate = r;
+			});
+			store.use(async () => {
+				await gate;
+			});
+
+			const promise = store.tasks.insert(makeTask("1"));
+
+			expect(store.tasks.snapshot().length).toBe(1);
+			expect(store.tasks.snapshot()[0]?.id).toBe("1");
+
+			resolveGate();
+			await promise;
 		});
 	});
 
@@ -126,7 +147,7 @@ describe("createStore", () => {
 	});
 
 	describe("update", () => {
-		test("partial delta merges correctly", async () => {
+		test("applies partial updates to existing records", async () => {
 			const original = makeTask("1");
 			const store = createStore({
 				tasks: collection({ getId: (t: Task) => t.id, initial: [original] }),
@@ -265,6 +286,67 @@ describe("createStore", () => {
 				tasks: collection({ schema: TaskSchema, getId: (t) => t.nonexistent }),
 			});
 			void store;
+		});
+
+		test("insert accepts input type when schema has defaults", async () => {
+			const SchemaWithDefaults = z.object({
+				id: z.string().default(() => crypto.randomUUID()),
+				title: z.string(),
+				status: z.string().default("todo"),
+			});
+			const store = createStore({
+				tasks: collection({
+					schema: SchemaWithDefaults,
+					getId: (t) => t.id,
+				}),
+			});
+
+			await store.tasks.insert({ title: "My task" });
+
+			expect(store.tasks.data.size).toBe(1);
+			const [record] = store.tasks.snapshot();
+			expect(record?.title).toBe("My task");
+			expect(record?.status).toBe("todo");
+			expect(typeof record?.id).toBe("string");
+			expect(record!.id.length).toBeGreaterThan(0);
+		});
+
+		test("insert with defaults: getId receives parsed output", async () => {
+			const Schema = z.object({
+				id: z.string().default(() => "generated-id"),
+				name: z.string(),
+			});
+			const store = createStore({
+				items: collection({
+					schema: Schema,
+					getId: (item) => item.id,
+				}),
+			});
+
+			await store.items.insert({ name: "test" });
+
+			expect(store.items.data.has("generated-id")).toBe(true);
+			expect(store.items.data.get("generated-id")?.name).toBe("test");
+		});
+
+		test("batch insert accepts input type when schema has defaults", async () => {
+			const Schema = z.object({
+				id: z.string().default(() => "batch-id"),
+				value: z.string(),
+			});
+			const store = createStore({
+				items: collection({
+					schema: Schema,
+					getId: (r) => r.id,
+				}),
+			});
+
+			await store.batch((tx) => {
+				tx.items.insert({ value: "hello" });
+			});
+
+			expect(store.items.data.has("batch-id")).toBe(true);
+			expect(store.items.data.get("batch-id")?.value).toBe("hello");
 		});
 
 		test("schema only applies to its collection, not others", async () => {
@@ -448,22 +530,7 @@ describe("createStore", () => {
 			expect(events2).toHaveLength(2);
 		});
 
-		test("data reflects change when optimistic fires", async () => {
-			const store = createStore({
-				tasks: collection({ getId: (t: Task) => t.id }),
-			});
-			let dataOnOptimistic = false;
-
-			store.subscribe((e) => {
-				if (e.type === "optimistic")
-					dataOnOptimistic = store.tasks.data.has("1");
-			});
-
-			await store.tasks.insert(makeTask("1"));
-			expect(dataOnOptimistic).toBe(true);
-		});
-
-		test("optimistic fires synchronously, commit after pipeline", async () => {
+		test("notifies optimistic synchronously, commit after middleware", async () => {
 			const store = createStore({
 				tasks: collection({ getId: (t: Task) => t.id }),
 			});
@@ -492,7 +559,7 @@ describe("createStore", () => {
 	});
 
 	describe("middleware", () => {
-		test("sync middleware runs, mutation commits", async () => {
+		test("commits mutation after synchronous middleware", async () => {
 			const store = createStore({
 				tasks: collection({ getId: (t: Task) => t.id }),
 			});
@@ -521,7 +588,7 @@ describe("createStore", () => {
 			expect(collections).toEqual(["tasks", "notes"]);
 		});
 
-		test("async middleware runs, commits after await", async () => {
+		test("commits mutation after async middleware resolves", async () => {
 			const store = createStore({
 				tasks: collection({ getId: (t: Task) => t.id }),
 			});
@@ -576,7 +643,7 @@ describe("createStore", () => {
 			expect(store.tasks.data.has("1")).toBe(true);
 		});
 
-		test("ctx.abort() triggers rollback, rejects with AbortError", async () => {
+		test("aborted mutation is rolled back and rejects with AbortError", async () => {
 			const store = createStore({
 				tasks: collection({ getId: (t: Task) => t.id }),
 			});
@@ -596,9 +663,12 @@ describe("createStore", () => {
 			expect(rollback?.type === "rollback" && rollback?.reason).toBeInstanceOf(
 				AbortError,
 			);
+			if (rollback?.type === "rollback") {
+				expect((rollback.reason as AbortError).reason).toBe("denied");
+			}
 		});
 
-		test("thrown error triggers rollback, rejects with original error", async () => {
+		test("middleware error rolls back mutation and rejects with the error", async () => {
 			const store = createStore({
 				tasks: collection({ getId: (t: Task) => t.id }),
 			});
@@ -611,29 +681,9 @@ describe("createStore", () => {
 			expect(store.tasks.data.has("1")).toBe(false);
 		});
 
-		test("rollback event includes reason", async () => {
-			const store = createStore({
-				tasks: collection({ getId: (t: Task) => t.id }),
-			});
-			const events: StoreSubscribeEvent[] = [];
-			store.subscribe((e) => events.push(e));
-			store.use((ctx) => {
-				ctx.abort("nope");
-			});
-
-			await expect(store.tasks.insert(makeTask("1"))).rejects.toBeInstanceOf(
-				AbortError,
-			);
-
-			const rollback = events.find((e) => e.type === "rollback");
-			if (rollback?.type === "rollback") {
-				expect(rollback.reason).toBeInstanceOf(AbortError);
-				expect((rollback.reason as AbortError).reason).toBe("nope");
-			}
-		});
 	});
 
-	describe("queue serialization", () => {
+	describe("mutation ordering", () => {
 		test("second mutation waits for first to complete", async () => {
 			const store = createStore({
 				tasks: collection({ getId: (t: Task) => t.id }),
@@ -672,28 +722,7 @@ describe("createStore", () => {
 			expect(order).toEqual(["start:1", "end:1", "start:2", "end:2"]);
 		});
 
-		test("snapshot includes optimistic (uncommitted) state", async () => {
-			const store = createStore({
-				tasks: collection({ getId: (t: Task) => t.id }),
-			});
-			let resolveGate!: () => void;
-			const gate = new Promise<void>((r) => {
-				resolveGate = r;
-			});
-			store.use(async () => {
-				await gate;
-			});
-
-			const promise = store.tasks.insert(makeTask("1"));
-
-			expect(store.tasks.snapshot().length).toBe(1);
-			expect(store.tasks.snapshot()[0]?.id).toBe("1");
-
-			resolveGate();
-			await promise;
-		});
-
-		test("mutations across collections queue independently", async () => {
+		test("mutations share a single serial queue across collections", async () => {
 			const store = createStore({
 				tasks: collection({ getId: (t: Task) => t.id }),
 				notes: collection({ getId: (n: Note) => n.id }),
@@ -1005,7 +1034,7 @@ describe("createStore", () => {
 			expect(store.tasks.data.size).toBe(0);
 		});
 
-		test("batch fn throwing prevents pending intent", () => {
+		test("exception in batch callback prevents enqueue", () => {
 			const store = createStore({
 				tasks: collection({ getId: (t: Task) => t.id }),
 			});
@@ -1146,15 +1175,7 @@ describe("createStore", () => {
 			resolveGate();
 		});
 
-		test("post-dispose insert throws DisposedError", () => {
-			const store = createStore({
-				tasks: collection({ getId: (t: Task) => t.id }),
-			});
-			store.dispose();
-			expect(() => store.tasks.insert(makeTask("1"))).toThrow(DisposedError);
-		});
-
-		test("post-dispose update throws DisposedError", () => {
+		test("all operations throw DisposedError after dispose", () => {
 			const store = createStore({
 				tasks: collection({
 					getId: (t: Task) => t.id,
@@ -1162,44 +1183,37 @@ describe("createStore", () => {
 				}),
 			});
 			store.dispose();
+
+			expect(() => store.tasks.insert(makeTask("2"))).toThrow(DisposedError);
 			expect(() => store.tasks.update("1", { status: "done" })).toThrow(
 				DisposedError,
 			);
-		});
-
-		test("post-dispose remove throws DisposedError", () => {
-			const store = createStore({
-				tasks: collection({
-					getId: (t: Task) => t.id,
-					initial: [makeTask("1")],
-				}),
-			});
-			store.dispose();
 			expect(() => store.tasks.remove("1")).toThrow(DisposedError);
-		});
-
-		test("post-dispose batch throws DisposedError", () => {
-			const store = createStore({
-				tasks: collection({ getId: (t: Task) => t.id }),
-			});
-			store.dispose();
 			expect(() =>
 				store.batch((tx) => {
-					tx.tasks.insert(makeTask("1"));
+					tx.tasks.insert(makeTask("3"));
 				}),
 			).toThrow(DisposedError);
 		});
 
-		test("data is empty after dispose", () => {
+		test("clears all collection data", () => {
 			const store = createStore({
 				tasks: collection({
 					getId: (t: Task) => t.id,
 					initial: [makeTask("1"), makeTask("2")],
 				}),
+				notes: collection({
+					getId: (n: Note) => n.id,
+					initial: [makeNote("n1")],
+				}),
 			});
-			expect(store.tasks.data.size).toBe(2);
+
 			store.dispose();
+
 			expect(store.tasks.data.size).toBe(0);
+			expect(store.tasks.snapshot()).toEqual([]);
+			expect(store.notes.data.size).toBe(0);
+			expect(store.notes.snapshot()).toEqual([]);
 		});
 
 		test("multiple pending mutations all rejected", async () => {
@@ -1230,31 +1244,5 @@ describe("createStore", () => {
 			resolveGate();
 		});
 
-		test("snapshot is empty after dispose", () => {
-			const store = createStore({
-				tasks: collection({
-					getId: (t: Task) => t.id,
-					initial: [makeTask("1")],
-				}),
-			});
-			store.dispose();
-			expect(store.tasks.snapshot()).toEqual([]);
-		});
-
-		test("dispose cascades to all collections", () => {
-			const store = createStore({
-				tasks: collection({
-					getId: (t: Task) => t.id,
-					initial: [makeTask("1")],
-				}),
-				notes: collection({
-					getId: (n: Note) => n.id,
-					initial: [makeNote("n1")],
-				}),
-			});
-			store.dispose();
-			expect(store.tasks.data.size).toBe(0);
-			expect(store.notes.data.size).toBe(0);
-		});
 	});
 });
