@@ -1,9 +1,11 @@
-import { AbortError, DisposedError } from "./errors.ts";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { AbortError, DisposedError, SchemaError } from "./errors.ts";
 import type {
 	DB,
 	DBOptions,
 	Middleware,
 	MutateEvent,
+	SchemaDBOptions,
 	SingleMutateEvent,
 	SubscribeEvent,
 	Transaction,
@@ -69,10 +71,30 @@ type PendingIntent<T, Id extends string> = PendingIntentOp<T, Id> & {
 	reject: (reason: unknown) => void;
 };
 
+function validateWithSchema<T>(schema: StandardSchemaV1<T, T>, record: T): void {
+	const result = schema["~standard"].validate(record);
+	if (result instanceof Promise) {
+		throw new TypeError(
+			"Async schema validation is not supported. Use middleware for async validation.",
+		);
+	}
+	if (result.issues) {
+		throw new SchemaError(result.issues);
+	}
+}
+
+export function createDB<S extends StandardSchemaV1, Id extends string = string>(
+	opts: SchemaDBOptions<S, Id>,
+): DB<StandardSchemaV1.InferOutput<S>, Id>;
 export function createDB<T, Id extends string = string>(
 	opts: DBOptions<T, Id>,
+): DB<T, Id>;
+export function createDB<T, Id extends string = string>(
+	opts: DBOptions<T, Id> | SchemaDBOptions<StandardSchemaV1<T, T>, Id>,
 ): DB<T, Id> {
-	const { getId, validate } = opts;
+	const { getId } = opts;
+	const schema: StandardSchemaV1<T, T> | undefined =
+		"schema" in opts ? opts.schema : undefined;
 	const committed = new Map<Id, T>();
 	const subscribers = new Set<(event: SubscribeEvent<T, Id>) => void>();
 	const middlewares = new Set<Middleware<T, Id>>();
@@ -245,7 +267,7 @@ export function createDB<T, Id extends string = string>(
 			if (computeData().has(id)) {
 				throw new Error(`Record with ID "${id}" already exists`);
 			}
-			if (validate) validate(record);
+			if (schema) validateWithSchema(schema, record as T);
 
 			const optimisticEvent: SingleMutateEvent<T, Id> = {
 				op: "insert",
@@ -276,7 +298,7 @@ export function createDB<T, Id extends string = string>(
 				throw new Error(`Record with ID "${id}" does not exist`);
 			}
 			const merged = mergeDelta(existing, delta);
-			if (validate) validate(merged);
+			if (schema) validateWithSchema(schema, merged as T);
 
 			const optimisticEvent: SingleMutateEvent<T, Id> = {
 				op: "update",
@@ -333,7 +355,7 @@ export function createDB<T, Id extends string = string>(
 					if (view.has(id)) {
 						throw new Error(`Record with ID "${id}" already exists`);
 					}
-					if (validate) validate(record);
+					if (schema) validateWithSchema(schema, record as T);
 					optimisticMutations.push({
 						op: "insert",
 						id,
@@ -349,7 +371,7 @@ export function createDB<T, Id extends string = string>(
 						throw new Error(`Record with ID "${id}" does not exist`);
 					}
 					const merged = mergeDelta(existing, delta);
-					if (validate) validate(merged);
+					if (schema) validateWithSchema(schema, merged as T);
 					optimisticMutations.push({
 						op: "update",
 						id,

@@ -1,3 +1,11 @@
-export { createDB } from './src/createDB.ts';
-export { AbortError, DisposedError } from './src/errors.ts';
-export type { DB, DBOptions, MutateContext, Middleware, Transaction } from './src/types.ts';
+export { createDB } from "./src/createDB.ts";
+export { AbortError, DisposedError, SchemaError } from "./src/errors.ts";
+export type {
+	DB,
+	DBOptions,
+	Middleware,
+	MutateContext,
+	SchemaDBOptions,
+	StandardSchemaV1,
+	Transaction,
+} from "./src/types.ts";
