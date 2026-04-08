@@ -2,57 +2,126 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 export type { StandardSchemaV1 };
 
-export type DBOptions<T, Id extends string = string> = {
-	getId: (record: T) => Id;
-	initial?: T[];
+// --- Collection config ---
+
+declare const _collectionBrand: unique symbol;
+
+export type CollectionConfig<T, Id extends string = string> = {
+	readonly [_collectionBrand]: true;
+	readonly getId: (record: T) => Id;
+	readonly initial?: T[];
 };
 
-export type SchemaDBOptions<
+export type SchemaCollectionConfig<
 	S extends StandardSchemaV1,
 	Id extends string = string,
 > = {
-	schema: S;
-	getId: (record: StandardSchemaV1.InferOutput<S>) => Id;
-	initial?: StandardSchemaV1.InferOutput<S>[];
+	readonly [_collectionBrand]: true;
+	readonly schema: S;
+	readonly getId: (record: StandardSchemaV1.InferOutput<S>) => Id;
+	readonly initial?: StandardSchemaV1.InferOutput<S>[];
 };
 
-export type SingleMutateEvent<T, Id extends string = string> =
-	| { op: "insert"; id: Id; record: T; previous: null }
-	| { op: "update"; id: Id; record: T; previous: T }
-	| { op: "remove"; id: Id; record: null; previous: T };
-
-export type MutateEvent<T, Id extends string = string> =
-	| SingleMutateEvent<T, Id>
-	| { op: "batch"; mutations: SingleMutateEvent<T, Id>[] };
-
-export type SubscribeEvent<T, Id extends string = string> =
-	| { type: "optimistic"; event: MutateEvent<T, Id> }
-	| { type: "commit"; event: MutateEvent<T, Id> }
-	| { type: "rollback"; event: MutateEvent<T, Id>; reason: unknown };
-
-export type MutateContext<T, Id extends string = string> = {
-	event: MutateEvent<T, Id>;
-	abort: (reason?: string) => void;
+export type StoreConfig = {
+	// biome-ignore lint/suspicious/noExplicitAny: index signature requires any for contravariant T slot
+	[name: string]: CollectionConfig<any, any> | SchemaCollectionConfig<any, any>;
 };
 
-export type Middleware<T, Id extends string = string> = (
-	ctx: MutateContext<T, Id>,
-) => void | Promise<void>;
+// --- Type inference ---
 
-export type Transaction<T, Id extends string = string> = {
+export type InferRecord<C> =
+	C extends SchemaCollectionConfig<infer S, infer _>
+		? StandardSchemaV1.InferOutput<S>
+		: C extends CollectionConfig<infer T, infer _>
+			? T
+			: never;
+
+export type InferId<C> =
+	C extends SchemaCollectionConfig<infer _, infer Id>
+		? Id
+		: C extends CollectionConfig<infer _, infer Id>
+			? Id
+			: string;
+
+// --- Collection handle ---
+
+export type CollectionHandle<T, Id extends string = string> = {
+	readonly data: ReadonlyMap<Id, Readonly<T>>;
+	insert(record: T): Promise<void>;
+	update(id: Id, delta: Partial<T> | ((prev: T) => T)): Promise<void>;
+	remove(id: Id): Promise<void>;
+	snapshot(): T[];
+};
+
+// --- Transaction ---
+
+export type CollectionTransaction<T, Id extends string = string> = {
 	insert(record: T): void;
 	update(id: Id, delta: Partial<T> | ((prev: T) => T)): void;
 	remove(id: Id): void;
 };
 
-export type DB<T, Id extends string = string> = {
-	readonly data: ReadonlyMap<Id, Readonly<T>>;
-	insert(record: T): Promise<void>;
-	update(id: Id, delta: Partial<T> | ((prev: T) => T)): Promise<void>;
-	remove(id: Id): Promise<void>;
-	batch(fn: (tx: Transaction<T, Id>) => void): Promise<void>;
-	snapshot(): T[];
-	subscribe(callback: (event: SubscribeEvent<T, Id>) => void): () => void;
-	use(fn: Middleware<T, Id>): () => void;
+export type StoreTransaction<C extends StoreConfig> = {
+	[K in keyof C]: CollectionTransaction<InferRecord<C[K]>, InferId<C[K]>>;
+};
+
+// --- Events ---
+
+export type StoreSingleMutateEvent =
+	| {
+			readonly collection: string;
+			readonly op: "insert";
+			readonly id: string;
+			readonly record: unknown;
+			readonly previous: null;
+	  }
+	| {
+			readonly collection: string;
+			readonly op: "update";
+			readonly id: string;
+			readonly record: unknown;
+			readonly previous: unknown;
+	  }
+	| {
+			readonly collection: string;
+			readonly op: "remove";
+			readonly id: string;
+			readonly record: null;
+			readonly previous: unknown;
+	  };
+
+export type StoreMutateEvent =
+	| StoreSingleMutateEvent
+	| {
+			readonly op: "batch";
+			readonly mutations: ReadonlyArray<StoreSingleMutateEvent>;
+	  };
+
+export type StoreSubscribeEvent =
+	| { readonly type: "optimistic"; readonly event: StoreMutateEvent }
+	| { readonly type: "commit"; readonly event: StoreMutateEvent }
+	| {
+			readonly type: "rollback";
+			readonly event: StoreMutateEvent;
+			readonly reason: unknown;
+	  };
+
+// --- Middleware ---
+
+export type StoreMutateContext = {
+	readonly event: StoreMutateEvent;
+	readonly abort: (reason?: string) => void;
+};
+
+export type StoreMiddleware = (ctx: StoreMutateContext) => void | Promise<void>;
+
+// --- Store ---
+
+export type Store<C extends StoreConfig> = {
+	[K in keyof C]: CollectionHandle<InferRecord<C[K]>, InferId<C[K]>>;
+} & {
+	batch(transaction: (tx: StoreTransaction<C>) => void): Promise<void>;
+	use(middleware: StoreMiddleware): () => void;
+	subscribe(callback: (event: StoreSubscribeEvent) => void): () => void;
 	dispose(): void;
 };

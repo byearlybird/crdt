@@ -1,11 +1,17 @@
-export { createDB } from "./src/createDB.ts";
+export { collection, createStore } from "./src/createStore.ts";
 export { AbortError, DisposedError, SchemaError } from "./src/errors.ts";
 export type {
-	DB,
-	DBOptions,
-	Middleware,
-	MutateContext,
-	SchemaDBOptions,
+	CollectionConfig,
+	CollectionHandle,
+	InferInput,
+	SchemaCollectionConfig,
 	StandardSchemaV1,
-	Transaction,
+	Store,
+	StoreConfig,
+	StoreMiddleware,
+	StoreMutateContext,
+	StoreMutateEvent,
+	StoreSingleMutateEvent,
+	StoreSubscribeEvent,
+	StoreTransaction,
 } from "./src/types.ts";

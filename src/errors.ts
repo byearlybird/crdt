@@ -1,17 +1,17 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 export class AbortError extends Error {
-  constructor(public reason?: string) {
-    super(reason ?? 'Mutation aborted');
-    this.name = 'AbortError';
-  }
+	constructor(public readonly reason: string = "Mutation aborted") {
+		super(reason);
+		this.name = "AbortError";
+	}
 }
 
 export class DisposedError extends Error {
-  constructor() {
-    super('DB instance has been disposed');
-    this.name = 'DisposedError';
-  }
+	constructor() {
+		super("DB instance has been disposed");
+		this.name = "DisposedError";
+	}
 }
 
 export class SchemaError extends Error {
